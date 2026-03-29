@@ -1,0 +1,25 @@
+# Lightcode — attribution and upstream credits
+
+## Original author of this derivative work (Lightcode)
+
+**commonriskpro** — identified in LICENSE as the copyright holder for the Lightcode derivative work relative to OpenCode.
+
+## Upstream project
+
+This software is derived from OpenCode:
+
+- Project: OpenCode
+- Copyright (c) 2025 opencode
+- Source: https://github.com/anomalyco/opencode
+
+OpenCode remains under the MIT License; see LICENSE.
+
+## Redistribution (including forks)
+
+You may distribute forks and derivative works under the same MIT terms. To respect both upstream and Lightcode:
+
+1. Keep the **LICENSE** file complete, including **every** copyright line (OpenCode and Lightcode).
+2. Keep this **NOTICE** file alongside LICENSE in source distributions.
+3. For public forks or releases, keep LICENSE + NOTICE where notices are normally shown (for example in the repository root).
+
+The MIT license legally requires the copyright and permission notices in LICENSE to be preserved in copies; this NOTICE makes the attribution chain explicit for forks and downstream projects.
