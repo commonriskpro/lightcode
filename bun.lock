@@ -9,6 +9,7 @@
         "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/script": "workspace:*",
         "@opencode-ai/sdk": "workspace:*",
+        "opencode-ai": "0.0.0-dev-202603291941",
         "typescript": "catalog:",
       },
       "devDependencies": {
@@ -1913,7 +1914,7 @@
 
     "@solidjs/router": ["@solidjs/router@0.15.4", "", { "peerDependencies": { "solid-js": "^1.8.6" } }, "sha512-WOpgg9a9T638cR+5FGbFi/IV4l2FpmBs1GpIMSPa0Ce9vyJN7Wts+X2PqMf9IYn0zUj2MlSJtm1gp7/HI/n5TQ=="],
 
-    "@solidjs/start": ["@solidjs/start@https://pkg.pr.new/@solidjs/start@dfb2020", { "dependencies": { "@babel/core": "^7.28.3", "@babel/traverse": "^7.28.3", "@babel/types": "^7.28.5", "@solidjs/meta": "^0.29.4", "@tanstack/server-functions-plugin": "1.134.5", "@types/babel__traverse": "^7.28.0", "@types/micromatch": "^4.0.9", "cookie-es": "^2.0.0", "defu": "^6.1.4", "error-stack-parser": "^2.1.4", "es-module-lexer": "^1.7.0", "esbuild": "^0.25.3", "fast-glob": "^3.3.3", "h3": "npm:h3@2.0.1-rc.4", "html-to-image": "^1.11.13", "micromatch": "^4.0.8", "path-to-regexp": "^8.2.0", "pathe": "^2.0.3", "radix3": "^1.1.2", "seroval": "^1.3.2", "seroval-plugins": "^1.2.1", "shiki": "^1.26.1", "solid-js": "^1.9.9", "source-map-js": "^1.2.1", "srvx": "^0.9.1", "terracotta": "^1.0.6", "vite": "7.1.10", "vite-plugin-solid": "^2.11.9", "vitest": "^4.0.10" } }, "sha512-7JjjA49VGNOsMRI8QRUhVudZmv0CnJ18SliSgK1ojszs/c3ijftgVkzvXdkSLN4miDTzbkXewf65D6ZBo6W+GQ=="],
+    "@solidjs/start": ["@solidjs/start@https://pkg.pr.new/@solidjs/start@dfb2020", { "dependencies": { "@babel/core": "^7.28.3", "@babel/traverse": "^7.28.3", "@babel/types": "^7.28.5", "@solidjs/meta": "^0.29.4", "@tanstack/server-functions-plugin": "1.134.5", "@types/babel__traverse": "^7.28.0", "@types/micromatch": "^4.0.9", "cookie-es": "^2.0.0", "defu": "^6.1.4", "error-stack-parser": "^2.1.4", "es-module-lexer": "^1.7.0", "esbuild": "^0.25.3", "fast-glob": "^3.3.3", "h3": "npm:h3@2.0.1-rc.4", "html-to-image": "^1.11.13", "micromatch": "^4.0.8", "path-to-regexp": "^8.2.0", "pathe": "^2.0.3", "radix3": "^1.1.2", "seroval": "^1.3.2", "seroval-plugins": "^1.2.1", "shiki": "^1.26.1", "solid-js": "^1.9.9", "source-map-js": "^1.2.1", "srvx": "^0.9.1", "terracotta": "^1.0.6", "vite": "7.1.10", "vite-plugin-solid": "^2.11.9", "vitest": "^4.0.10" } }],
 
     "@speed-highlight/core": ["@speed-highlight/core@1.2.14", "", {}, "sha512-G4ewlBNhUtlLvrJTb88d2mdy2KRijzs4UhnlrOSRT4bmjh/IqNElZa3zkrZ+TC47TwtlDWzVLFADljF1Ijp5hA=="],
 
@@ -3801,9 +3802,35 @@
 
     "opencode": ["opencode@workspace:packages/opencode"],
 
+    "opencode-ai": ["opencode-ai@0.0.0-dev-202603291941", "", { "optionalDependencies": { "opencode-darwin-arm64": "0.0.0-dev-202603291941", "opencode-darwin-x64": "0.0.0-dev-202603291941", "opencode-darwin-x64-baseline": "0.0.0-dev-202603291941", "opencode-linux-arm64": "0.0.0-dev-202603291941", "opencode-linux-arm64-musl": "0.0.0-dev-202603291941", "opencode-linux-x64": "0.0.0-dev-202603291941", "opencode-linux-x64-baseline": "0.0.0-dev-202603291941", "opencode-linux-x64-baseline-musl": "0.0.0-dev-202603291941", "opencode-linux-x64-musl": "0.0.0-dev-202603291941", "opencode-windows-arm64": "0.0.0-dev-202603291941", "opencode-windows-x64": "0.0.0-dev-202603291941", "opencode-windows-x64-baseline": "0.0.0-dev-202603291941" }, "bin": { "opencode": "bin/opencode" } }, "sha512-4+WWxKGs0PWdNdVxGAt9D0l852oAAs7HK6CeV1q3g3utc/i4Jji7kzwm6ZXr0A1G2Mic5wzP+AuiYdL6TDvIoQ=="],
+
+    "opencode-darwin-arm64": ["opencode-darwin-arm64@0.0.0-dev-202603291941", "", { "os": "darwin", "cpu": "arm64" }, "sha512-KWlDEMhzE/OjZe3PjKTjrg2WLaWU5ThWH5mZYcOQ1OsEyP5me4p8Xd6EzxL0u1udgFT5Vwr1d0deB8z46yy/4g=="],
+
+    "opencode-darwin-x64": ["opencode-darwin-x64@0.0.0-dev-202603291941", "", { "os": "darwin", "cpu": "x64" }, "sha512-y5VBlUjC0xmrsC9Jw1gTSDwoxpupK1b+dM+6LEYcOHN1dsPeMoBgBsp5SyQQY9dExQIOUsRJLeRR951+n7q6UQ=="],
+
+    "opencode-darwin-x64-baseline": ["opencode-darwin-x64-baseline@0.0.0-dev-202603291941", "", { "os": "darwin", "cpu": "x64" }, "sha512-BnwtpLTrfnqlrzb8KlwW9+0301lLTpUCDCxW3T3kx9Bl1DACEpZnyY/UQ7XcS3Q0cT+VKlzT451VSbGYXYN98A=="],
+
     "opencode-gitlab-auth": ["opencode-gitlab-auth@2.0.1", "", { "dependencies": { "@fastify/rate-limit": "^10.2.0", "@opencode-ai/plugin": "*", "fastify": "^5.2.0", "open": "^10.0.0" } }, "sha512-1EMZHdbADLMVaTVLQ6C/V8uVMDr6MP++osj2lmOecowtn46AafP/w6ADkV4AN/ddjA1rob5cWpMuf/iME6DI6A=="],
 
+    "opencode-linux-arm64": ["opencode-linux-arm64@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "arm64" }, "sha512-zpLl2KK527YjeDo0rPwZtCmReDvIHhsFp/xY8FbJhPUy+r1XV18sWfo7r7kxbbrXvCxCOA33dteI7zW8woHukA=="],
+
+    "opencode-linux-arm64-musl": ["opencode-linux-arm64-musl@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "arm64" }, "sha512-akK9Ql+s8EXTxOacCLbpsfeB4OKr/MHDSId3fjFuIplD6yuOV7v/24BvGCO1eGQ6tEBZN5bBuy8L9dEs5K9DmA=="],
+
+    "opencode-linux-x64": ["opencode-linux-x64@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "x64" }, "sha512-/pgWNHJEaVpVYqoyfunupzG8iFCLHVCdm5Bq9tCUPSAT/Ax2fvlZrsTsleC5RUYE2Qwno9dSMSAL3KOYLOIaFA=="],
+
+    "opencode-linux-x64-baseline": ["opencode-linux-x64-baseline@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "x64" }, "sha512-FfEByR9qFon5vbZoPWnndYiU6FTm/+asJmKq/oTSTjPZ7UhwGHmOuCGAxLTazUcEoxeVWJdCdMs4BngN4eR3Ow=="],
+
+    "opencode-linux-x64-baseline-musl": ["opencode-linux-x64-baseline-musl@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "x64" }, "sha512-9p5ZMDjRUQravAPmVQd6a3waYCx/8uA+dUqwInVvLbvbge7Wc1zRdzReI4P7lfIvQbRYrKs0wujwgmoWZ5zfdg=="],
+
+    "opencode-linux-x64-musl": ["opencode-linux-x64-musl@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "x64" }, "sha512-jxMc/xy0T9pWUBh3/G1RWXUiEWUdJm10Hgzm2oSF6O2ztazY7aaiO+Uo1C0EySJbSVQKcXxhaRKW/hQCjKndAw=="],
+
     "opencode-poe-auth": ["opencode-poe-auth@0.0.1", "", { "dependencies": { "open": "^10.0.0", "poe-oauth": "*" }, "peerDependencies": { "@opencode-ai/plugin": "*" } }, "sha512-cXqTlS6AXHzo1oBdosnxbT47ZJEZ9WXn050X8Re6wZ1vaNnTpB/l2fMQt90evT7RBK0fB8UjXQUDMKyd7bbiqg=="],
+
+    "opencode-windows-arm64": ["opencode-windows-arm64@0.0.0-dev-202603291941", "", { "os": "win32", "cpu": "arm64" }, "sha512-/wpXxs0Txe8xOxfuCDVvW1ZNSPtQzyM+AhBURNj6BOqsJikODIGy+0JVmx3kNmXhwJweA8lFpzKZ3u8ZLgW+QQ=="],
+
+    "opencode-windows-x64": ["opencode-windows-x64@0.0.0-dev-202603291941", "", { "os": "win32", "cpu": "x64" }, "sha512-Kscrx7PuUjL4sgIhdUTFPRp+f5hxYOTNTdRE514tcm//1GKeoj6NHuMCJngQdGF+jdxLlmUz+kiIZbp+kF6YaQ=="],
+
+    "opencode-windows-x64-baseline": ["opencode-windows-x64-baseline@0.0.0-dev-202603291941", "", { "os": "win32", "cpu": "x64" }, "sha512-VjNLdECMfb76K4F2a3SBQMGX73y4UQlUnj42s+hGPdM4XBnM791zunw5V8IARRqaKDfS6+uawTzqg7MOfmMZsg=="],
 
     "opencontrol": ["opencontrol@0.0.6", "", { "dependencies": { "@modelcontextprotocol/sdk": "1.6.1", "@tsconfig/bun": "1.0.7", "hono": "4.7.4", "zod": "3.24.2", "zod-to-json-schema": "3.24.3" }, "bin": { "opencontrol": "bin/index.mjs" } }, "sha512-QeCrpOK5D15QV8kjnGVeD/BHFLwcVr+sn4T6KKmP0WAMs2pww56e4h+eOGHb5iPOufUQXbdbBKi6WV2kk7tefQ=="],
 

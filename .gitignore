@@ -24,6 +24,7 @@ target
 .direnv/
 
 # Local dev files
+.local-opencode/
 opencode-dev
 logs/
 *.bun-build

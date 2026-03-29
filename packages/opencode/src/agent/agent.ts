@@ -13,6 +13,15 @@ import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
+import PROMPT_SDD_EXPLORE from "./prompt/sdd-explore.txt"
+import PROMPT_SDD_PROPOSE from "./prompt/sdd-propose.txt"
+import PROMPT_SDD_DESIGN from "./prompt/sdd-design.txt"
+import PROMPT_SDD_TASKS from "./prompt/sdd-tasks.txt"
+import PROMPT_SDD_SPEC from "./prompt/sdd-spec.txt"
+import PROMPT_SDD_APPLY from "./prompt/sdd-apply.txt"
+import PROMPT_SDD_VERIFY from "./prompt/sdd-verify.txt"
+import PROMPT_SDD_ARCHIVE from "./prompt/sdd-archive.txt"
+import PROMPT_JUDGMENT_DAY from "./prompt/judgment-day.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@/global"
@@ -229,6 +238,181 @@ export namespace Agent {
                 user,
               ),
               prompt: PROMPT_SUMMARY,
+            },
+            "sdd-explore": {
+              name: "sdd-explore",
+              description:
+                "Investigate codebase and gather information for technical designs. Use this when you need to understand existing patterns, architecture, or conventions before creating a design.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  grep: "allow",
+                  glob: "allow",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_EXPLORE,
+            },
+            "sdd-spec": {
+              name: "sdd-spec",
+              description:
+                "Write specifications with requirements and scenarios (delta specs for changes). Use this when you need to document what to build.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_SPEC,
+            },
+            "sdd-apply": {
+              name: "sdd-apply",
+              description:
+                "Implement tasks from the change, writing actual code following the specs and design. Use this when you need to write code.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "allow",
+                  write: "allow",
+                  todowrite: "deny",
+                }),
+              ),
+              prompt: PROMPT_SDD_APPLY,
+            },
+            "sdd-verify": {
+              name: "sdd-verify",
+              description:
+                "Validate that implementation matches specs, design, and tasks. Use this when you need to verify implementation is correct.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_VERIFY,
+            },
+            "sdd-propose": {
+              name: "sdd-propose",
+              description:
+                "Create change proposals with intent, scope, and approach. Use this when you need to define what to build before writing specs.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_PROPOSE,
+            },
+            "sdd-design": {
+              name: "sdd-design",
+              description:
+                "Create technical design documents with architecture decisions and approach. Use this when you need to plan implementation details.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_DESIGN,
+            },
+            "sdd-tasks": {
+              name: "sdd-tasks",
+              description:
+                "Break down specs and designs into implementation task checklists. Use this when you need to plan implementation steps.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_TASKS,
+            },
+            "sdd-archive": {
+              name: "sdd-archive",
+              description:
+                "Sync delta specs to main specs and archive completed changes. Use this when you need to finalize and document completed work.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "allow",
+                  read: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_ARCHIVE,
+            },
+            "judgment-day": {
+              name: "judgment-day",
+              description:
+                "Parallel adversarial review protocol. Launch two independent blind judge sub-agents to review the same target, synthesize findings, apply fixes, and re-judge until both pass or escalate after 2 iterations.",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "allow",
+                  write: "allow",
+                  read: "allow",
+                  grep: "allow",
+                  glob: "allow",
+                }),
+              ),
+              prompt: PROMPT_JUDGMENT_DAY,
             },
           }
 

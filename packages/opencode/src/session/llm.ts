@@ -101,6 +101,12 @@ export namespace LLM {
         .join("\n"),
     )
 
+    // Inject agent-mode specific skills for SDD agents
+    const agentModeSkills = getAgentModeSkills(input.agent)
+    if (agentModeSkills) {
+      system.push(agentModeSkills)
+    }
+
     const header = system[0]
     await Plugin.trigger(
       "experimental.chat.system.transform",
@@ -337,5 +343,33 @@ export namespace LLM {
       }
     }
     return false
+  }
+
+  const sddSkillMap: Record<string, string[]> = {
+    "sdd-explore": ["explore", "read"],
+    "sdd-propose": ["read"],
+    "sdd-spec": ["read"],
+    "sdd-design": ["read", "architecture"],
+    "sdd-tasks": ["read"],
+    "sdd-apply": ["edit", "write", "typescript", "go-testing"],
+    "sdd-verify": ["read", "pytest"],
+    "sdd-archive": ["read"],
+    "judgment-day": ["read", "review"],
+  }
+
+  function getAgentModeSkills(agent: Agent.Info): string | undefined {
+    const skills = sddSkillMap[agent.name]
+    if (!skills || skills.length === 0) return undefined
+
+    const lines = [
+      "",
+      "## Relevant Skills for this task:",
+    ]
+    for (const skill of skills) {
+      lines.push(`- @skill ${skill}`)
+    }
+    lines.push("")
+
+    return lines.join("\n")
   }
 }

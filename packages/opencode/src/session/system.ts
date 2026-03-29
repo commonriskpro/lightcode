@@ -15,6 +15,8 @@ import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 
+const skillsCache = new Map<string, string | undefined>()
+
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
     if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -61,14 +63,21 @@ export namespace SystemPrompt {
   export async function skills(agent: Agent.Info) {
     if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
-    const list = await Skill.available(agent)
+    const cacheKey = agent.mode === "subagent" ? agent.name : "primary"
+    const cached = skillsCache.get(cacheKey)
+    if (cached !== undefined) return cached
 
-    return [
+    const result = [
       "Skills provide specialized instructions and workflows for specific tasks.",
       "Use the skill tool to load a skill when a task matches its description.",
-      // the agents seem to ingest the information about skills a bit better if we present a more verbose
-      // version of them here and a less verbose version in tool description, rather than vice versa.
-      Skill.fmt(list, { verbose: true }),
+      "The skill tool takes a skill name parameter and returns the skill's documentation.",
     ].join("\n")
+
+    skillsCache.set(cacheKey, result)
+    return result
+  }
+
+  export function clearSkillsCache() {
+    skillsCache.clear()
   }
 }
