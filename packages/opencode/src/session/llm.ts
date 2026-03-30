@@ -285,33 +285,23 @@ export namespace LLM {
           error,
         })
       },
-      async experimental_repairToolCall(failed) {
-        const lower = failed.toolCall.toolName.toLowerCase()
-        if (lower !== failed.toolCall.toolName && tools[lower]) {
+      async experimental_repairToolCall(opts) {
+        const tc = opts.toolCall
+        const lower = tc.toolName.toLowerCase()
+        if (lower !== tc.toolName && tools[lower]) {
           l.info("repairing tool call", {
-            tool: failed.toolCall.toolName,
+            tool: tc.toolName,
             repaired: lower,
           })
-          return {
-            ...failed.toolCall,
-            toolName: lower,
-          }
+          return { ...tc, toolName: lower }
         }
-        return {
-          ...failed.toolCall,
-          input: JSON.stringify({
-            tool: failed.toolCall.toolName,
-            error: failed.error.message,
-          }),
-          toolName: "invalid",
-        }
+        // Bad args or unknown tool: returning null lets the SDK emit tool-error on the original name.
+        return null
       },
       temperature: params.temperature,
       topP: params.topP,
       topK: params.topK,
       providerOptions: ProviderTransform.providerOptions(input.model, params.options),
-      // Keep `invalid` in activeTools: experimental_repairToolCall rewrites bad tool args to toolName "invalid";
-      // excluding it caused "unavailable tool 'invalid'" when the model's glob/edit call failed schema validation.
       activeTools: Object.keys(tools),
       tools,
       toolChoice: input.toolChoice,
