@@ -14,8 +14,10 @@
 ## Código
 
 - `src/session/initial-tool-tier.ts`, `src/session/tool-router.ts`
-- `src/session/prompt.ts` — `resolveTools`
+- `src/session/prompt.ts` — `resolveTools`, `SystemPromptCache.getParts`
+- `src/session/system-prompt-cache.ts` — cache TTL de partes del system prompt
+- `src/session/debug-request.ts` — logs `phase=wire` / `phase=usage` (`llm.ts`, `processor.ts`)
 - `src/config/config.ts` — esquema Zod
-- `src/flag/flag.ts` — `OPENCODE_INITIAL_TOOL_TIER`, `OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH`
+- `src/flag/flag.ts` — `OPENCODE_INITIAL_TOOL_TIER`, `OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH`, `OPENCODE_DEBUG_REQUEST`
 
-Especificación larga: `spec-offline-tool-router.md`.
+Especificación larga: `spec-offline-tool-router.md`. Debug: `debug-request.md`.

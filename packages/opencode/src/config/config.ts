@@ -1093,6 +1093,12 @@ export namespace Config {
             .describe(
               "First model request only: minimal exposes read/grep/glob/skill (+ optional bash via OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH) with shorter tool descriptions; full after any assistant message.",
             ),
+          debug_request: z
+            .boolean()
+            .optional()
+            .describe(
+              "Same as OPENCODE_DEBUG_REQUEST: log structured wire/usage lines (service=debug-request) for prompt and tool payload sizes.",
+            ),
           tool_router: z
             .object({
               enabled: z.boolean().optional().describe("Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md)."),

@@ -17,6 +17,7 @@
   },
   "experimental": {
     "initial_tool_tier": "minimal",
+    "debug_request": false,
     "tool_router": {
       "enabled": true,
       "mode": "rules",

@@ -79,6 +79,8 @@ export namespace Flag {
   export const OPENCODE_SKIP_MIGRATIONS = truthy("OPENCODE_SKIP_MIGRATIONS")
   export const OPENCODE_STRICT_CONFIG_DEPS = truthy("OPENCODE_STRICT_CONFIG_DEPS")
   export const OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH = truthy("OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH")
+  /** Log wire/usage analytics; also configurable as experimental.debug_request. */
+  export const OPENCODE_DEBUG_REQUEST = truthy("OPENCODE_DEBUG_REQUEST")
   export declare const OPENCODE_INITIAL_TOOL_TIER: "minimal" | "full" | undefined
 
   function number(key: string) {

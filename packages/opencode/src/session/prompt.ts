@@ -17,6 +17,7 @@ import { Instance } from "../project/instance"
 import { Bus } from "../bus"
 import { ProviderTransform } from "../provider/transform"
 import { SystemPrompt } from "./system"
+import { SystemPromptCache } from "./system-prompt-cache"
 import { InstructionPrompt } from "./instruction"
 import { Plugin } from "../plugin"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
@@ -682,13 +683,8 @@ export namespace SessionPrompt {
 
       await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-      // Build system prompt, adding structured output instruction if needed
-      const skills = await SystemPrompt.skills(agent)
-      const system = [
-        ...(await SystemPrompt.environment(model)),
-        ...(skills ? [skills] : []),
-        ...(await InstructionPrompt.system()),
-      ]
+      // Build system prompt (cached when inputs unchanged; see system-prompt-cache.ts)
+      const system = await SystemPromptCache.getParts({ agent, model })
       const format = lastUser.format ?? { type: "text" }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -700,6 +696,7 @@ export namespace SessionPrompt {
         permission: session.permission,
         abort,
         sessionID,
+        assistantID: processor.message.id,
         system,
         messages: [
           ...(await MessageV2.toModelMessages(msgs, model)),

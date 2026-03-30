@@ -16,6 +16,7 @@ import { Flag } from "@/flag/flag"
 import { Permission } from "@/permission"
 import { Auth } from "@/auth"
 import { Installation } from "@/installation"
+import { DebugRequest } from "./debug-request"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -34,6 +35,8 @@ export namespace LLM {
     tools: Record<string, Tool>
     retries?: number
     toolChoice?: "auto" | "required" | "none"
+    /** Pairs debug_request usage log with this assistant message. */
+    assistantID?: string
   }
 
   export type Event = Awaited<ReturnType<typeof stream>>["fullStream"] extends AsyncIterable<infer T> ? T : never
@@ -193,6 +196,25 @@ export namespace LLM {
         : ProviderTransform.maxOutputTokens(input.model)
 
     const tools = await resolveTools(input)
+
+    if (DebugRequest.enabled(cfg)) {
+      const toolsBytes = JSON.stringify(tools).length
+      const promptBytes =
+        isOpenaiOauth || isWorkflow
+          ? JSON.stringify(messages).length + system.join("\n").length
+          : JSON.stringify(messages).length
+      DebugRequest.wire({
+        sessionID: input.sessionID,
+        assistantID: input.assistantID,
+        userID: input.user.id,
+        providerID: input.model.providerID,
+        modelID: input.model.id,
+        agent: input.agent.name,
+        small: input.small,
+        toolsBytes,
+        promptBytes,
+      })
+    }
 
     // LiteLLM and some Anthropic proxies require the tools parameter to be present
     // when message history contains tool calls, even if no tools are being used.

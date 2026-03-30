@@ -19,6 +19,7 @@ import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
 import { Question } from "@/question"
+import { DebugRequest } from "./debug-request"
 
 export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
@@ -271,6 +272,15 @@ export namespace SessionProcessor {
               ctx.assistantMessage.finish = value.finishReason
               ctx.assistantMessage.cost += usage.cost
               ctx.assistantMessage.tokens = usage.tokens
+              if (DebugRequest.enabled(yield* config.get())) {
+                DebugRequest.usage({
+                  sessionID: ctx.sessionID,
+                  assistantID: ctx.assistantMessage.id,
+                  finish: value.finishReason,
+                  tokens: usage.tokens,
+                  cost: usage.cost,
+                })
+              }
               yield* session.updatePart({
                 id: PartID.ascending(),
                 reason: value.finishReason,
