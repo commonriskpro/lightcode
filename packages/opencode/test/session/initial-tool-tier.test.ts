@@ -95,9 +95,43 @@ describe("applyInitialToolTier", () => {
     expect(out).toBe(tools)
   })
 
+  test("minimal includes webfetch/websearch when flags", () => {
+    const tools = {
+      read: dummyTool(),
+      grep: dummyTool(),
+      glob: dummyTool(),
+      skill: dummyTool(),
+      webfetch: dummyTool(),
+      websearch: dummyTool(),
+    }
+    const out = applyInitialToolTier({
+      tools,
+      messages: [userMsg("hi")],
+      tier: "minimal",
+      includeBash: false,
+      includeWebfetch: true,
+      includeWebsearch: true,
+    })
+    expect(Object.keys(out).sort()).toEqual([
+      "glob",
+      "grep",
+      "read",
+      "skill",
+      "webfetch",
+      "websearch",
+    ])
+  })
+
   test("minimalTierPromptHint lists ids", () => {
     expect(minimalTierPromptHint({ includeBash: false })).toContain("read, grep, glob, skill")
     expect(minimalTierPromptHint({ includeBash: true })).toContain("bash")
+    expect(
+      minimalTierPromptHint({
+        includeBash: false,
+        includeWebfetch: true,
+        includeWebsearch: true,
+      }),
+    ).toContain("webfetch")
   })
 
   test("empty allowlist with tools present falls back to full", () => {

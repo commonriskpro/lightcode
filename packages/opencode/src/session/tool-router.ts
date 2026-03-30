@@ -8,11 +8,13 @@ import { threadHasAssistant } from "./wire-tier"
 const log = Log.create({ service: "tool-router" })
 
 /**
- * Offline router: narrows `tools` after permissions, after `applyInitialToolTier`.
- * When `apply_after_first_assistant` is true (default), skips until an assistant message exists (pairs with `initial_tool_tier` on T1).
- * `threadHasAssistant` / `routerFiltersFirstTurn` (`wire-tier.ts`) use the same assistant check for system prompt policy.
+ * Offline router: after `applyInitialToolTier`, either **narrows** (default) or **adds** (`experimental.tool_router.additive`)
+ * from the full registry when the tier left a minimal map.
  *
- * Rules are **intent buckets** (synonyms / multilingual), not an embedding model — see docs/spec-offline-tool-router.md §6.2 for future semantic routing.
+ * Tool ids are intersected with **agent + session permission + user toggles** (`allowedToolIds` from `resolveTools`)
+ * so the model is never advertised tools that `LLM.resolveTools` would strip.
+ *
+ * When `apply_after_first_assistant` is true (default), skips until an assistant message exists — unless `additive` is true.
  */
 const DEFAULT_BASE = ["read", "task", "skill"]
 
@@ -24,8 +26,9 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     label: "create/implement",
   },
   {
-    re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borrar|borra|borras|eliminar|elimina|suprimir)\b/i,
-    add: ["bash", "read", "glob"],
+    // Spanish: "borralo/borrarlos/borrarlo" are one word — \bborra\b does not match inside them.
+    re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borr(?:as|ar|a|alo|ala|arlos|arlas|arlo|arla)|eliminar|elimina|suprimir)\b/i,
+    add: ["bash", "edit", "write", "read", "glob"],
     label: "delete/remove",
   },
   {
@@ -36,22 +39,54 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   { re: /\b(fix|debug|bug|broken|arreglar|depurar)\b/i, add: ["edit", "grep", "read", "bash"], label: "fix/debug" },
   { re: /\b(test|npm test|pytest|jest|vitest|mocha|cargo test)\b/i, add: ["bash", "read"], label: "test" },
   { re: /\b(shell|bash|run|execute|pnpm|yarn|cargo|make)\b/i, add: ["bash", "read"], label: "shell/run" },
-  { re: /\b(find|glob|search files|list files)\b/i, add: ["glob", "grep", "read"], label: "find/search" },
-  { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"], label: "web" },
-  { re: /\b(todo|task list)\b/i, add: ["todowrite", "read"], label: "todo" },
+  {
+    re: /\b(find|glob|search files|list files|documentos?|archivos?|listar|repositorio|directorio|chequea|revisa|explora)\b/i,
+    add: ["glob", "grep", "read"],
+    label: "find/search",
+  },
+  {
+    re: /\b(ver|verificar|muestra|muéstrame|mira|analiza|analizar|busca|buscar|encuentra|comprueba|explica|cuáles|cuales|dónde|donde|fichero|código|codigo|proyecto|ejecuta|instala|compila)\b/i,
+    add: ["glob", "grep", "read", "task"],
+    label: "explore/es",
+  },
+  {
+    re: /\b(show|display|verify|analyze|analyse|search|install|build|compile|check|inspect|browse|look at)\b/i,
+    add: ["glob", "grep", "read", "task"],
+    label: "explore/en",
+  },
+  {
+    re: /https?:\/\/[^\s]+|www\.[^\s]+/i,
+    add: ["webfetch", "websearch", "read"],
+    label: "web/url",
+  },
+  {
+    re: /\b(http|curl|fetch|url|website|web\s+search|internet|navegador|wikipedia|búsqueda\s+web|en\s+internet|investigar\s+sobre|investigaci[oó]n\s+sobre|investigaci[oó]n\s+de|investigues\s+sobre|investigue\s+sobre|buscar\s+informaci[oó]n\s+sobre|buscar\s+informaci[oó]n\s+de|busca\s+informaci[oó]n\s+sobre|busca\s+informaci[oó]n\s+de|informaci[oó]n\s+sobre|producto\s+externo|software\s+externo|herramienta\s+externa|documentaci[oó]n\s+pública|documentaci[oó]n\s+oficial|mercado\s+externo|research\s+(on|about|into)|look\s+up\s+online|third[- ]party|external\s+(product|software|tool|vendor))\b/i,
+    add: ["webfetch", "websearch", "read"],
+    label: "web/research",
+  },
+  { re: /\b(todo\s+list|task\s+list|my\s+todo)\b/i, add: ["todowrite", "read"], label: "todo" },
   { re: /\b(delegate|subagent|sdd-|orchestrat)\b/i, add: ["task", "read"], label: "delegate/sdd" },
   { re: /\b(question|ask me|choose)\b/i, add: ["question"], label: "question" },
   { re: /\b(code ?search|codesearch)\b/i, add: ["codesearch", "read"], label: "codesearch" },
   { re: /\b(skill|load skill)\b/i, add: ["skill", "read"], label: "skill" },
 ]
 
+function normalizeUserText(raw: string) {
+  return raw
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 16_000)
+}
+
 function userText(msgs: MessageV2.WithParts[]) {
   const u = msgs.findLast((m) => m.info.role === "user")
   if (!u) return ""
-  return u.parts
-    .map((p) => (p.type === "text" ? p.text : ""))
-    .join("\n\n")
-    .trim()
+  return normalizeUserText(
+    u.parts
+      .map((p) => (p.type === "text" ? p.text : ""))
+      .join("\n\n"),
+  )
 }
 
 function orderIds(base: string[], extra: Set<string>, available: Set<string>, max: number) {
@@ -67,19 +102,43 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
   return out
 }
 
-function promptHint(input: { ids: string[]; labels: string[] }) {
+function promptHint(input: {
+  ids: string[]
+  labels: string[]
+  additive: boolean
+  blockedByPermission: string[]
+}) {
   const intent = input.labels.length ? input.labels.join(", ") : "base only (no keyword rule matched)"
-  return [
+  const lines = [
     "## Offline tool router",
+    input.additive
+      ? "Mode: additive (minimal tier + rule matches merged from full registry)."
+      : "Mode: subtractive (subset of attached tools).",
     `Intent from the last user message (keyword rules): ${intent}.`,
     `Tools attached for this request: ${input.ids.sort().join(", ")}.`,
     "Use only these tools; if something is missing, say so and suggest rephrasing the request.",
-  ].join("\n")
+  ]
+  if (input.blockedByPermission.length)
+    lines.push(
+      `Rules suggested tools not available for this agent (permissions or session toggles): ${input.blockedByPermission.sort().join(", ")}. Delegate with **task** or switch agent if the user needs those capabilities.`,
+    )
+  const wantsDelete = input.labels.includes("delete/remove")
+  const hasDestructive = ["bash", "edit", "write"].some((id) => input.ids.includes(id))
+  if (wantsDelete && !hasDestructive)
+    lines.push(
+      "Delete/remove intent: this agent has no bash/edit/write in the tool set. Use the **task** tool to delegate to a subagent that can edit or run shell (e.g. `build` or `sdd-apply`), or switch primary agent.",
+    )
+  return lines.join("\n")
 }
 
 export namespace ToolRouter {
   export type Input = {
+    /** After `applyInitialToolTier` (may be minimal allowlist on first turn). */
     tools: Record<string, AITool>
+    /** Full tool map before tier strip; required for additive mode to attach rule-matched ids not in `tools`. */
+    registryTools?: Record<string, AITool>
+    /** Agent + session permission + user tool toggles; tools not in this set are never attached. */
+    allowedToolIds?: Set<string>
     messages: MessageV2.WithParts[]
     agent: { name: string; mode: string }
     cfg: Config.Info
@@ -99,15 +158,21 @@ export namespace ToolRouter {
     if (!routerOn || input.skip) return { tools: input.tools }
     if (input.agent.name === "compaction" || input.agent.mode === "compaction") return { tools: input.tools }
 
+    const additive = tr?.additive === true
     const hasAssistant = threadHasAssistant(input.messages)
-    if (tr?.apply_after_first_assistant !== false && !hasAssistant) return { tools: input.tools }
+    if (!additive && tr?.apply_after_first_assistant !== false && !hasAssistant) return { tools: input.tools }
 
     const text = userText(input.messages)
-    const available = new Set(Object.keys(input.tools))
+    const full = input.registryTools ?? input.tools
+    const availableKeys = new Set(Object.keys(additive ? full : input.tools))
+    const allowed = input.allowedToolIds
+    const available = new Set(
+      [...availableKeys].filter((id) => (allowed ? allowed.has(id) : true)),
+    )
     const base = tr?.base_tools?.length ? tr.base_tools : DEFAULT_BASE
     const max = tr?.max_tools ?? 12
     const mcpAlways = tr?.mcp_always_include !== false
-    const beforeBytes = JSON.stringify(input.tools).length
+    const beforeBytes = JSON.stringify(additive ? full : input.tools).length
 
     const matched = new Set<string>()
     const labels: string[] = []
@@ -117,18 +182,33 @@ export namespace ToolRouter {
       for (const id of r.add) matched.add(id)
     }
 
+    const noMatchFb = tr?.no_match_fallback !== false
+    const fbTools = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]
+    if (labels.length === 0 && noMatchFb) {
+      labels.push("fallback/no_match")
+      for (const id of fbTools) matched.add(id)
+    }
+
+    const blockedByPermission = [...matched].filter(
+      (id) => allowed && !allowed.has(id) && availableKeys.has(id),
+    )
+
     const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
-    const ordered = orderIds(base, matched, builtinAvailable, max)
+    const fromRules = orderIds(base, matched, builtinAvailable, max)
+    // Additive: keep every tool from the tier-limited map (e.g. minimal + bash for sdd-init), then rule matches — otherwise rule orderIds can drop bash.
+    const ordered = additive
+      ? [...new Set([...Object.keys(input.tools), ...fromRules])].slice(0, max)
+      : fromRules
 
     const out: Record<string, AITool> = {}
     for (const id of ordered) {
-      const t = input.tools[id]
+      const t = additive ? input.tools[id] ?? input.registryTools?.[id] : input.tools[id]
       if (t) out[id] = t
     }
 
     if (mcpAlways) {
       for (const id of input.mcpIds) {
-        const t = input.tools[id]
+        const t = additive ? input.tools[id] ?? input.registryTools?.[id] : input.tools[id]
         if (t) out[id] = t
       }
     }
@@ -140,16 +220,17 @@ export namespace ToolRouter {
 
     const inject = tr?.inject_prompt !== false
     const ids = Object.keys(out)
-    const hint = inject ? promptHint({ ids, labels }) : undefined
+    const hint = inject ? promptHint({ ids, labels, additive, blockedByPermission }) : undefined
 
     log.info("tool_router", {
       selected: ids.sort(),
-      builtin: ordered.sort(),
+      builtin: fromRules.sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
-      reason: "rules",
+      reason: additive ? "additive" : "rules",
       userPreview: text.slice(0, 120),
       bytes_saved_estimate: Math.max(0, beforeBytes - JSON.stringify(out).length),
       inject_prompt: inject,
+      blocked_by_permission: blockedByPermission.sort(),
     })
 
     return { tools: out, promptHint: hint }

@@ -22,6 +22,7 @@ import PROMPT_SDD_APPLY from "./prompt/sdd-apply.txt"
 import PROMPT_SDD_VERIFY from "./prompt/sdd-verify.txt"
 import PROMPT_SDD_ARCHIVE from "./prompt/sdd-archive.txt"
 import PROMPT_SDD_ORCHESTRATOR from "./prompt/sdd-orchestrator.txt"
+import PROMPT_SDD_INIT from "./prompt/sdd-init.txt"
 import PROMPT_JUDGMENT_DAY from "./prompt/judgment-day.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
@@ -156,7 +157,7 @@ export namespace Agent {
             "sdd-orchestrator": {
               name: "sdd-orchestrator",
               description:
-                "Coordinates SDD phases: delegate to sdd-* sub-agents via task; read/grep/glob/skill only—no app edits from this agent.",
+                "Agent Teams Orchestrator - coordinates sub-agents, never does work inline",
               mode: "primary",
               native: true,
               options: {},
@@ -171,13 +172,32 @@ export namespace Agent {
                   grep: "allow",
                   glob: "allow",
                   skill: "allow",
-                  edit: "deny",
-                  write: "deny",
-                  bash: "deny",
                 }),
                 user,
               ),
               prompt: PROMPT_SDD_ORCHESTRATOR,
+            },
+            "sdd-init": {
+              name: "sdd-init",
+              description: "Bootstrap SDD context and project configuration",
+              mode: "subagent",
+              native: true,
+              hidden: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "allow",
+                  write: "allow",
+                  read: "allow",
+                  grep: "allow",
+                  glob: "allow",
+                  bash: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_INIT,
             },
             general: {
               name: "general",
@@ -269,47 +289,7 @@ export namespace Agent {
             "sdd-explore": {
               name: "sdd-explore",
               description:
-                "Investigate codebase and gather information for technical designs. Use this when you need to understand existing patterns, architecture, or conventions before creating a design.",
-              mode: "subagent",
-              native: true,
-              options: {},
-              permission: Permission.merge(
-                defaults,
-                Permission.fromConfig({
-                  "*": "deny",
-                  skill: "allow",
-                  edit: "deny",
-                  write: "deny",
-                  grep: "allow",
-                  glob: "allow",
-                  read: "allow",
-                }),
-              ),
-              prompt: PROMPT_SDD_EXPLORE,
-            },
-            "sdd-spec": {
-              name: "sdd-spec",
-              description:
-                "Write specifications with requirements and scenarios (delta specs for changes). Use this when you need to document what to build.",
-              mode: "subagent",
-              native: true,
-              options: {},
-              permission: Permission.merge(
-                defaults,
-                Permission.fromConfig({
-                  "*": "deny",
-                  skill: "allow",
-                  edit: "deny",
-                  write: "deny",
-                  read: "allow",
-                }),
-              ),
-              prompt: PROMPT_SDD_SPEC,
-            },
-            "sdd-apply": {
-              name: "sdd-apply",
-              description:
-                "Implement tasks from the change, writing actual code following the specs and design. Use this when you need to write code.",
+                "Investigate codebase and think through ideas",
               mode: "subagent",
               native: true,
               options: {},
@@ -320,6 +300,53 @@ export namespace Agent {
                   skill: "allow",
                   edit: "allow",
                   write: "allow",
+                  grep: "allow",
+                  glob: "allow",
+                  read: "allow",
+                  webfetch: "allow",
+                  websearch: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_EXPLORE,
+            },
+            "sdd-spec": {
+              name: "sdd-spec",
+              description:
+                "Write detailed specifications from proposals",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "allow",
+                  write: "allow",
+                  read: "allow",
+                  grep: "allow",
+                  glob: "allow",
+                }),
+              ),
+              prompt: PROMPT_SDD_SPEC,
+            },
+            "sdd-apply": {
+              name: "sdd-apply",
+              description:
+                "Implement code changes from task definitions",
+              mode: "subagent",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  "*": "deny",
+                  skill: "allow",
+                  edit: "allow",
+                  write: "allow",
+                  read: "allow",
+                  grep: "allow",
+                  glob: "allow",
                   todowrite: "deny",
                 }),
               ),
@@ -328,7 +355,7 @@ export namespace Agent {
             "sdd-verify": {
               name: "sdd-verify",
               description:
-                "Validate that implementation matches specs, design, and tasks. Use this when you need to verify implementation is correct.",
+                "Validate implementation against specs",
               mode: "subagent",
               native: true,
               options: {},
@@ -337,9 +364,11 @@ export namespace Agent {
                 Permission.fromConfig({
                   "*": "deny",
                   skill: "allow",
-                  edit: "deny",
-                  write: "deny",
+                  edit: "allow",
+                  write: "allow",
                   read: "allow",
+                  grep: "allow",
+                  glob: "allow",
                 }),
               ),
               prompt: PROMPT_SDD_VERIFY,
@@ -347,7 +376,7 @@ export namespace Agent {
             "sdd-propose": {
               name: "sdd-propose",
               description:
-                "Create change proposals with intent, scope, and approach. Use this when you need to define what to build before writing specs.",
+                "Create change proposals from explorations",
               mode: "subagent",
               native: true,
               options: {},
@@ -356,9 +385,11 @@ export namespace Agent {
                 Permission.fromConfig({
                   "*": "deny",
                   skill: "allow",
-                  edit: "deny",
-                  write: "deny",
+                  edit: "allow",
+                  write: "allow",
                   read: "allow",
+                  grep: "allow",
+                  glob: "allow",
                 }),
               ),
               prompt: PROMPT_SDD_PROPOSE,
@@ -366,7 +397,7 @@ export namespace Agent {
             "sdd-design": {
               name: "sdd-design",
               description:
-                "Create technical design documents with architecture decisions and approach. Use this when you need to plan implementation details.",
+                "Create technical design from proposals",
               mode: "subagent",
               native: true,
               options: {},
@@ -375,9 +406,11 @@ export namespace Agent {
                 Permission.fromConfig({
                   "*": "deny",
                   skill: "allow",
-                  edit: "deny",
-                  write: "deny",
+                  edit: "allow",
+                  write: "allow",
                   read: "allow",
+                  grep: "allow",
+                  glob: "allow",
                 }),
               ),
               prompt: PROMPT_SDD_DESIGN,
@@ -385,7 +418,7 @@ export namespace Agent {
             "sdd-tasks": {
               name: "sdd-tasks",
               description:
-                "Break down specs and designs into implementation task checklists. Use this when you need to plan implementation steps.",
+                "Break down specs and designs into implementation tasks",
               mode: "subagent",
               native: true,
               options: {},
@@ -394,9 +427,11 @@ export namespace Agent {
                 Permission.fromConfig({
                   "*": "deny",
                   skill: "allow",
-                  edit: "deny",
-                  write: "deny",
+                  edit: "allow",
+                  write: "allow",
                   read: "allow",
+                  grep: "allow",
+                  glob: "allow",
                 }),
               ),
               prompt: PROMPT_SDD_TASKS,
@@ -404,7 +439,7 @@ export namespace Agent {
             "sdd-archive": {
               name: "sdd-archive",
               description:
-                "Sync delta specs to main specs and archive completed changes. Use this when you need to finalize and document completed work.",
+                "Archive completed change artifacts",
               mode: "subagent",
               native: true,
               options: {},
@@ -413,9 +448,11 @@ export namespace Agent {
                 Permission.fromConfig({
                   "*": "deny",
                   skill: "allow",
-                  edit: "deny",
+                  edit: "allow",
                   write: "allow",
                   read: "allow",
+                  grep: "allow",
+                  glob: "allow",
                 }),
               ),
               prompt: PROMPT_SDD_ARCHIVE,

@@ -111,6 +111,63 @@ describe("ToolRouter.apply", () => {
     expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
   })
 
+  test("borrar todo does not match todo list rule (Spanish todo = everything)", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("borrar todo en la carpeta tmp")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("delete/remove")
+    expect(out.promptHint).not.toContain("todowrite")
+    expect(out.tools.bash).toBeDefined()
+  })
+
+  test("Spanish borralo one word matches delete rule (bash)", async () => {
+    const minimal = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const registry = { ...minimal, bash: dummyTool("bash"), edit: dummyTool("edit"), write: dummyTool("write") }
+    const out = ToolRouter.apply({
+      tools: minimal,
+      registryTools: registry,
+      allowedToolIds: new Set([...Object.keys(registry)]),
+      messages: [userMsg("si, al directorio actual borralo todo")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            additive: true,
+            apply_after_first_assistant: false,
+            max_tools: 12,
+            base_tools: ["read", "task", "skill", "grep", "glob"],
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.promptHint).toContain("delete/remove")
+  })
+
   test("delete/remove intent adds bash without saying shell", async () => {
     const tools = {
       read: dummyTool("read"),
@@ -132,6 +189,96 @@ describe("ToolRouter.apply", () => {
     })
     expect(out.tools.bash).toBeDefined()
     expect(out.promptHint).toContain("delete/remove")
+  })
+
+  test("delete intent subtractive without bash in tool map injects delegate hint", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("elimina los archivos viejos")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 8 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("delete/remove")
+    expect(out.promptHint).toContain("task")
+    expect(out.promptHint).toContain("delegate")
+  })
+
+  test("orchestrator delete intent gets bash when additive and registry permit", async () => {
+    const minimal = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const registry = {
+      ...minimal,
+      bash: dummyTool("bash"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+    }
+    const allowed = new Set(["read", "grep", "glob", "skill", "task", "bash", "edit", "write"])
+    const out = ToolRouter.apply({
+      tools: minimal,
+      registryTools: registry,
+      allowedToolIds: allowed,
+      messages: [userMsg("elimina los archivos viejos")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            additive: true,
+            apply_after_first_assistant: false,
+            max_tools: 12,
+            base_tools: ["read", "task", "skill", "grep", "glob"],
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.promptHint).toContain("delete/remove")
+    expect(out.promptHint).not.toContain("this agent has no bash")
+  })
+
+  test("Spanish list repo intent includes glob/grep", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("chequea que documentos hay en el repo")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.glob).toBeDefined()
+    expect(out.tools.grep).toBeDefined()
+    expect(out.promptHint).toContain("find/search")
   })
 
   test("first user turn routes when apply_after_first_assistant false", async () => {
@@ -180,6 +327,142 @@ describe("ToolRouter.apply", () => {
     })
     expect(out.tools.bash).toBeDefined()
     expect(out.promptHint).toBeUndefined()
+  })
+
+  test("no_match_fallback adds glob/grep/read/task when text matches nothing", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("hello")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 100 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("fallback/no_match")
+    expect(out.tools.glob).toBeDefined()
+    expect(out.tools.grep).toBeDefined()
+  })
+
+  test("allowedToolIds surfaces blocked tools in hint", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      edit: dummyTool("edit"),
+      grep: dummyTool("grep"),
+    }
+    const allowed = new Set(["read", "grep"])
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("refactor the module")],
+      allowedToolIds: allowed,
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("permissions")
+    expect(out.promptHint).toContain("edit")
+    expect(out.tools.edit).toBeUndefined()
+  })
+
+  test("additive first turn adds tools from registry not in minimal map", async () => {
+    const registry: Record<string, AITool> = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+    }
+    const minimal: Record<string, AITool> = {
+      read: registry.read,
+      grep: registry.grep,
+      glob: registry.glob,
+      skill: registry.skill,
+    }
+    const out = ToolRouter.apply({
+      tools: minimal,
+      registryTools: registry,
+      messages: [userMsg("refactor foo.ts")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            additive: true,
+            apply_after_first_assistant: true,
+            max_tools: 100,
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.edit).toBeDefined()
+    expect(out.tools.write).toBeDefined()
+    expect(out.promptHint).toContain("additive")
+  })
+
+  test("web research Spanish adds webfetch websearch (subagent explore)", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      glob: dummyTool("glob"),
+      webfetch: dummyTool("webfetch"),
+      websearch: dummyTool("websearch"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("investiga sobre DealerCenter y el mercado externo")],
+      agent: { name: "sdd-explore", mode: "subagent" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 24 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.webfetch).toBeDefined()
+    expect(out.tools.websearch).toBeDefined()
+    expect(out.promptHint).toContain("web/research")
+  })
+
+  test("literal URL in message adds web tools", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      webfetch: dummyTool("webfetch"),
+      websearch: dummyTool("websearch"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("open https://example.com/docs")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.webfetch).toBeDefined()
+    expect(out.promptHint).toContain("web/url")
   })
 
   test("OPENCODE_TOOL_ROUTER enables without experimental.tool_router.enabled", async () => {

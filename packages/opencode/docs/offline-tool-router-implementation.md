@@ -3,7 +3,7 @@
 ## Pipeline
 
 1. Construir mapa completo de tools (registro + MCP).
-2. **`applyInitialToolTier`** (`initial-tool-tier.ts`): si `experimental.initial_tool_tier === "minimal"` (o `OPENCODE_INITIAL_TOOL_TIER=minimal`) y **no** hay mensaje `assistant`, solo `read` / `grep` / `glob` / `skill` (+ `bash` si `OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH`), con descripciones recortadas.
+2. **`applyInitialToolTier`** (`initial-tool-tier.ts`): si `experimental.initial_tool_tier === "minimal"` (o `OPENCODE_INITIAL_TOOL_TIER=minimal`) y **no** hay mensaje `assistant`, allowlist base `read` / `grep` / `glob` / `skill` (+ `bash` si aplica; + `webfetch` / `websearch` si el ruleset de la sesión los permite), con descripciones recortadas.
 3. **`ToolRouter.apply`** (`tool-router.ts`): si `experimental.tool_router.enabled` **o** `OPENCODE_TOOL_ROUTER=1`, filtra por reglas sobre el último texto de usuario; `mcp_always_include` vuelve a adjuntar MCP; compaction y JSON-schema se omiten según política. Logs incluyen `bytes_saved_estimate` (diferencia aproximada de tamaño JSON del mapa de tools).
 
 ## Configuración
@@ -17,6 +17,7 @@
 - `src/session/prompt.ts` — `resolveTools`, `SystemPromptCache.getParts`
 - `src/session/system-prompt-cache.ts` — cache TTL de partes del system prompt
 - `src/session/debug-request.ts` — logs `phase=wire` / `phase=usage` (`llm.ts`, `processor.ts`)
+- `src/cli/cmd/tui/util/session-usage.ts` — lectura de contexto en TUI (prompt del último turno: input + caché, `total` como respaldo)
 - `src/config/config.ts` — esquema Zod
 - `src/flag/flag.ts` — `OPENCODE_INITIAL_TOOL_TIER`, `OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH`, `OPENCODE_DEBUG_REQUEST`, `OPENCODE_TOOL_ROUTER`
 

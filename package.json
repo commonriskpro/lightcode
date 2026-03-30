@@ -89,7 +89,8 @@
     "@opencode-ai/script": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
     "opencode-ai": "0.0.0-dev-202603291941",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "yaml-language-server": "1.21.0"
   },
   "repository": {
     "type": "git",
@@ -101,6 +102,7 @@
     "printWidth": 120
   },
   "trustedDependencies": [
+    "prettier",
     "esbuild",
     "protobufjs",
     "tree-sitter",

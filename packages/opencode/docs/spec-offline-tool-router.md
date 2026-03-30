@@ -121,7 +121,7 @@ type ToolRouterOutput = {
 To avoid double-filtering or contradictions, apply **in this order**:
 
 1. Build full tool map from `resolveTools` (agent, session, permissions, user tool toggles, structured-output tools, etc.).
-2. **`applyInitialToolTier`** (unchanged): if `initial_tool_tier === "minimal"` **and** `has_assistant_message === false`, restrict to minimal allowlist + slim descriptions → call this map `tools_after_tier`.
+2. **`applyInitialToolTier`**: if `initial_tool_tier === "minimal"` **and** `has_assistant_message === false`, restrict to minimal allowlist + slim descriptions (base `read`/`grep`/`glob`/`skill`; optional `bash`; optional `webfetch`/`websearch` when session permissions allow) → call this map `tools_after_tier`.
 3. **`ToolRouter.decide`** (this spec): if `tool_router.enabled` and policy says run on this turn (`apply_after_first_assistant` or equivalent), filter `tools_after_tier` to `selected_ids`; drop keys not in `selected_ids`. If router is off, skip step 3.
 4. Pass result to `LLM.stream`.
 

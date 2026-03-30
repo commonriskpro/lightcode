@@ -15,7 +15,7 @@ Rama por defecto de desarrollo: **`dev`**. Este documento resume los cambios del
 7. [Debug de requests (`debug_request`)](#debug-de-requests-debug_request)
 8. [Inyección global de documentación](#inyección-global-de-documentación)
 9. [Agentes SDD y Gentle AI](#agentes-sdd-y-gentle-ai)
-10. [TUI: logo y autocompletado `@`](#tui-logo-y-autocompletado-)
+10. [TUI: contexto, logo y autocompletado `@`](#tui-contexto-logo-y-autocompletado-)
 11. [Configuración: `.opencode` y `fork.opencode.env`](#configuración-opencode-y-forkopencodeenv)
 12. [Build y tests](#build-y-tests)
 13. [Archivos fuente relevantes](#archivos-fuente-relevantes)
@@ -39,16 +39,17 @@ Rama por defecto de desarrollo: **`dev`**. Este documento resume los cambios del
    ```
 4. CLI autocontenida (datos en `<repo>/.local-opencode`): `./scripts/opencode-isolated.sh` (véase sección [Build](#build-y-tests)).
 
-### Perfil por defecto: router offline desde el **primer** prompt
+### Perfil en el repo (`.opencode/opencode.jsonc`)
 
-En `.opencode/opencode.jsonc` el fork está alineado para que **desde el primer mensaje de usuario**:
+Por defecto en este fork (rama `dev`):
 
-- **`initial_tool_tier: full`** — no hay allowlist minimal fija; el pool base son los tools permitidos por el agente + MCP.
-- **`tool_router.apply_after_first_assistant: false`** — el **router offline** filtra tools e inyecta en el system la línea de intención + lista de tool ids (`inject_prompt`).
+- **`initial_tool_tier: minimal`** — primer turno con allowlist reducida (véase [Tier inicial](#tier-inicial-de-tools-minimal--full)); luego pool completo según permisos y router.
+- **`tool_router.apply_after_first_assistant: true`** — el router offline **no** aplica hasta que exista un mensaje `assistant`; el primer turno lo fija solo el tier minimal (+ `webfetch`/`websearch` si el agente y la sesión los permiten).
+- **`experimental.debug_request: false`** — sin logs `debug-request` salvo que lo actives.
 
-Así el “asistente offline” (reglas por keywords sobre tu texto) elige qué tools incluir en la petición al modelo. El tool **`skill`** sigue en `base_tools` / reglas: el modelo puede cargar skills por nombre con el tool `skill`.
+El tool **`skill`** sigue en `base_tools` / reglas cuando el router corre; el modelo puede cargar skills por nombre.
 
-**Alternativa** (más barato en T1): `initial_tool_tier: minimal` + `apply_after_first_assistant: true` — primer turno solo `read`/`grep`/`glob`/`skill`; el router empieza tras el primer mensaje del assistant.
+**Otra configuración habitual:** `initial_tool_tier: full` + `tool_router.apply_after_first_assistant: false` — router desde el **primer** mensaje de usuario sobre el pool completo de tools; el “asistente offline” elige el subconjunto por keywords e inyecta `inject_prompt`.
 
 ---
 
@@ -57,7 +58,7 @@ Así el “asistente offline” (reglas por keywords sobre tu texto) elige qué 
 En cada turno del bucle de chat (`packages/opencode/src/session/prompt.ts`), el orden conceptual es:
 
 1. **Registro de tools** — permisos del agente, sesión, toggles de usuario, MCP.
-2. **`applyInitialToolTier`** — si `experimental.initial_tool_tier` es `minimal` **y** el hilo **aún no tiene** mensaje `assistant`, se reduce a `read`, `grep`, `glob`, `skill` (y opcionalmente `bash` con `OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH`), con descripciones recortadas.
+2. **`applyInitialToolTier`** — si `experimental.initial_tool_tier` es `minimal` **y** el hilo **aún no tiene** mensaje `assistant`, se reduce a `read`, `grep`, `glob`, `skill` (y opcionalmente `bash`; y `webfetch`/`websearch` si la sesión los permite, como el agente `sdd-explore`), con descripciones recortadas.
 3. **`ToolRouter.apply`** — router offline por reglas (regex / “intent buckets”) sobre el **último mensaje de usuario**; recorta el mapa de tools y puede generar **`promptHint`** para el system.
 4. **System prompt** — `SystemPromptCache.getParts` + líneas opcionales (router, tier minimal, structured output, etc.).
 
@@ -83,7 +84,7 @@ Con **`apply_after_first_assistant: false`** y router activo, el **router recort
 **Archivo:** `packages/opencode/src/session/initial-tool-tier.ts`
 
 - **`full`**: no recorta por tier; el mapa sigue siendo el de permisos + MCP.
-- **`minimal`** (solo si **no** hay assistant en el hilo): allowlist fija `read`, `grep`, `glob`, `skill` (± `bash`).
+- **`minimal`** (solo si **no** hay assistant en el hilo): allowlist base `read`, `grep`, `glob`, `skill`; se añaden **`bash`** (según env/permiso), **`webfetch`** y **`websearch`** cuando el ruleset de la sesión los permite (no dependen solo del router).
 
 **`minimalTierPromptHint`**: solo si el tier es **`minimal`** y aún no hay assistant: si `inject_prompt` está activo y el router no devolvió `promptHint`, se inyecta un bloque que lista la allowlist del primer turno. Con **`full`** + router desde T1, suele bastar el **`promptHint`** del router.
 
@@ -144,7 +145,7 @@ Activo con **`OPENCODE_DEBUG_REQUEST=1`** o **`experimental.debug_request: true`
 
 - **Nativos** en `packages/opencode/src/agent/agent.ts`: `sdd-orchestrator` (primary), subagentes `sdd-explore`, `sdd-spec`, `sdd-apply`, `sdd-verify`, `sdd-propose`, `sdd-design`, `sdd-tasks`, `sdd-archive`, etc.
 - **Prompt del orquestador:** `packages/opencode/src/agent/prompt/sdd-orchestrator.txt`
-- **Override de proyecto:** `.opencode/opencode.jsonc` redefine p. ej. `sdd-orchestrator` con prompt `{file:../gentle-ai/AGENTS.md}` y permisos (solo `task` hacia `sdd-*`, sin `edit`/`bash` inline).
+- **Override de proyecto:** `.opencode/opencode.jsonc` redefine p. ej. `sdd-orchestrator` con prompt `{file:../gentle-ai/AGENTS.md}` y permisos (`task` solo hacia `sdd-*`; `bash`/`edit`/`write` siguen el default allow para que el router offline pueda adjuntarlos por intención).
 - **`sdd-init`** y prompts de fases suelen vivir solo en config apuntando a `gentle-ai/skills/.../SKILL.md`.
 - **`sddSkillMap` en `llm.ts`**: inyecta líneas `@skill <nombre>` para agentes SDD; los nombres deben ser **skills registrados** (frontmatter `name:` en `SKILL.md`), no ids de tools como `write` o `edit`.
 
@@ -152,8 +153,9 @@ Activo con **`OPENCODE_DEBUG_REQUEST=1`** o **`experimental.debug_request: true`
 
 ---
 
-## TUI: logo y autocompletado `@`
+## TUI: contexto, logo y autocompletado `@`
 
+- **Contexto (sidebar y barra inferior):** el número grande es el **tamaño aproximado del prompt del último turno** (`packages/opencode/src/cli/cmd/tui/util/session-usage.ts`): `input + cache.read + cache.write` del último mensaje `assistant`, con respeto a `total - output - reasoning` si el proveedor subdeclara el input. **No** es la suma acumulada de todos los turnos (eso sería volumen de facturación, no “contexto actual”). El **% used** usa la misma base frente al límite de contexto del modelo.
 - Logo ASCII con marca **commonriskpro** junto al logo opencode: `packages/opencode/src/cli/cmd/tui/component/logo.tsx`
 - Picker de agentes con `@`: solo **`sdd-orchestrator`** como primary visible además del flujo habitual; subagentes SDD permanecen ocultos en el picker según lógica en `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`
 
@@ -166,10 +168,10 @@ Activo con **`OPENCODE_DEBUG_REQUEST=1`** o **`experimental.debug_request: true`
 | Clave | Rol |
 |--------|-----|
 | `skills.paths` | `["gentle-ai/skills"]` (raíz del workspace = repo) |
-| `experimental.initial_tool_tier` | `full` — pool completo antes del router; usar `minimal` para ahorrar en T1 |
-| `experimental.debug_request` | Logs de wire/usage (poner `false` en producción si molesta) |
+| `experimental.initial_tool_tier` | `minimal` en el repo — primer turno allowlist acotada (+ web si permisos); `full` = sin recorte por tier |
+| `experimental.debug_request` | `false` por defecto; `true` → logs wire/usage (`debug-request`) |
 | `experimental.tool_router.enabled` | Router offline |
-| `experimental.tool_router.apply_after_first_assistant` | `false` — router desde el primer user turn |
+| `experimental.tool_router.apply_after_first_assistant` | `true` en el repo — router tras el primer `assistant`; `false` = router desde el primer user turn |
 | `experimental.tool_router.inject_prompt` | `true` — texto de intención + tools en system |
 | `experimental.tool_router.base_tools` / `max_tools` | Base y tope de recorte |
 | `agent.sdd-orchestrator` | Primary SDD; prompt desde `gentle-ai/AGENTS.md` |
@@ -180,7 +182,7 @@ Activo con **`OPENCODE_DEBUG_REQUEST=1`** o **`experimental.debug_request: true`
 |----------|------------------------|
 | `OPENCODE_PORTABLE_ROOT` | Datos locales bajo `<repo>/.local-opencode` |
 | `OPENCODE_TOOL_ROUTER` | `1` — activa router |
-| `OPENCODE_INITIAL_TOOL_TIER` | `full` — alineado con JSON |
+| `OPENCODE_INITIAL_TOOL_TIER` | Opcional; si no se define, rige `experimental.initial_tool_tier` del JSON |
 | `OPENCODE_DISABLE_GLOBAL_DOC_READS` | `1` — sin merge global de AGENTS/CLAUDE home |
 | `OPENCODE_SYSTEM_PROMPT_CACHE_MS` | TTL más largo para caché de system |
 | `OPENCODE_DEBUG_REQUEST` | Opcional; suele bastar `experimental.debug_request` en JSON |
@@ -198,7 +200,7 @@ Tests relevantes (desde `packages/opencode`, no desde la raíz del monorepo):
 
 ```bash
 cd packages/opencode
-bun test test/session/wire-tier.test.ts test/session/tool-router.test.ts test/session/initial-tool-tier.test.ts --preload ./test/preload.ts
+bun test test/session/wire-tier.test.ts test/session/tool-router.test.ts test/session/initial-tool-tier.test.ts test/cli/session-usage.test.ts --preload ./test/preload.ts
 bun test test/agent/agent.test.ts --preload ./test/preload.ts
 ```
 
@@ -212,6 +214,7 @@ Regenerar SDK JS si aplica: `./packages/sdk/js/script/build.ts` (véase `AGENTS.
 |------|----------------|
 | Wire-tier | `packages/opencode/src/session/wire-tier.ts` |
 | Tier minimal | `packages/opencode/src/session/initial-tool-tier.ts` |
+| Métricas contexto TUI | `packages/opencode/src/cli/cmd/tui/util/session-usage.ts` |
 | Router | `packages/opencode/src/session/tool-router.ts` |
 | Bucle prompt + `resolveTools` | `packages/opencode/src/session/prompt.ts` |
 | LLM stream + `sddSkillMap` | `packages/opencode/src/session/llm.ts` |
@@ -229,6 +232,7 @@ Regenerar SDK JS si aplica: `./packages/sdk/js/script/build.ts` (véase `AGENTS.
 - Especificación router offline: `packages/opencode/docs/spec-offline-tool-router.md`
 - Índice implementación: `packages/opencode/docs/offline-tool-router-implementation.md`
 - Debug request: `packages/opencode/docs/debug-request.md`
+- Métricas de contexto (TUI): implementación en `packages/opencode/src/cli/cmd/tui/util/session-usage.ts` (véase sección [TUI](#tui-contexto-logo-y-autocompletado-))
 - Gentle AI (skills, AGENTS): `gentle-ai/README.md`
 
 ---
@@ -241,7 +245,7 @@ Regenerar SDK JS si aplica: `./packages/sdk/js/script/build.ts` (véase `AGENTS.
 
 ---
 
-*Última actualización de esta guía: alineada con el fork en rama `dev` (token pipeline, SDD, TUI, flags y docs listados arriba).*
+*Última actualización de esta guía: alineada con el fork en rama `dev` (tier minimal + web, métricas de contexto en TUI, router, SDD, flags y docs listados arriba).*
 
 ---
 
