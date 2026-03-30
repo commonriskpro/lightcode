@@ -30,6 +30,9 @@ import { ReadTool } from "../tool/read"
 import { FileTime } from "../file/time"
 import { NotFoundError } from "@/storage/db"
 import { Flag } from "../flag/flag"
+import { Config } from "@/config/config"
+import { applyInitialToolTier } from "./initial-tool-tier"
+import { ToolRouter } from "./tool-router"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -638,6 +641,7 @@ export namespace SessionPrompt {
         processor,
         bypassAgentCheck,
         messages: msgs,
+        skipToolRouter: lastUser.format?.type === "json_schema",
       })
 
       // Inject StructuredOutput tool if JSON schema mode enabled
@@ -777,6 +781,8 @@ export namespace SessionPrompt {
     processor: SessionProcessor.Info
     bypassAgentCheck: boolean
     messages: MessageV2.WithParts[]
+    /** Skip offline tool router (e.g. JSON schema mode needs full tool surface + StructuredOutput). */
+    skipToolRouter?: boolean
   }) {
     using _ = log.time("resolveTools")
     const tools: Record<string, AITool> = {}
@@ -863,7 +869,9 @@ export namespace SessionPrompt {
       })
     }
 
+    const mcpIds = new Set<string>()
     for (const [key, item] of Object.entries(await MCP.tools())) {
+      mcpIds.add(key)
       const execute = item.execute
       if (!execute) continue
 
@@ -957,7 +965,22 @@ export namespace SessionPrompt {
       tools[key] = item
     }
 
-    return tools
+    const cfg = await Config.get()
+    const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+    const afterTier = applyInitialToolTier({
+      tools,
+      messages: input.messages,
+      tier,
+      includeBash: Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH,
+    })
+    return ToolRouter.apply({
+      tools: afterTier,
+      messages: input.messages,
+      agent: input.agent,
+      cfg,
+      mcpIds,
+      skip: input.skipToolRouter ?? false,
+    })
   }
 
   /** @internal Exported for testing */

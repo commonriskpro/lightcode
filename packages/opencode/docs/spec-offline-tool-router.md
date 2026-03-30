@@ -279,9 +279,9 @@ If no keyword matches, **only base** (3 tools) + log `reason: default_base`.
 
 - `packages/opencode/src/session/initial-tool-tier.ts` — current minimal tier.
 - `packages/opencode/src/session/prompt.ts` — `resolveTools`, prompt loop.
-- `packages/opencode/docs/debug-request.md` — measuring wire/http size.
+- `packages/opencode/src/session/tool-router.ts` — rules-based router.
 
-**Implementation status (this fork):** see [`offline-tool-router-implementation.md`](./offline-tool-router-implementation.md) for what is shipped, configuration, observability, deviations from this spec, and operational notes (including `opencode-isolated`).
+**Implementation status (this fork):** see [`offline-tool-router-implementation.md`](./offline-tool-router-implementation.md) for what is shipped, configuration, and code paths.
 
 ---
 

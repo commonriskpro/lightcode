@@ -15,4 +15,15 @@
     "github-triage": false,
     "github-pr-search": false,
   },
+  "experimental": {
+    "initial_tool_tier": "minimal",
+    "tool_router": {
+      "enabled": true,
+      "mode": "rules",
+      "apply_after_first_assistant": true,
+      "base_tools": ["read", "task", "skill"],
+      "max_tools": 12,
+      "mcp_always_include": true,
+    },
+  },
 }

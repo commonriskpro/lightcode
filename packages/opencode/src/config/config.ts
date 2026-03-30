@@ -1087,6 +1087,30 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
+          initial_tool_tier: z
+            .enum(["full", "minimal"])
+            .optional()
+            .describe(
+              "First model request only: minimal exposes read/grep/glob/skill (+ optional bash via OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH) with shorter tool descriptions; full after any assistant message.",
+            ),
+          tool_router: z
+            .object({
+              enabled: z.boolean().optional().describe("Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md)."),
+              mode: z.enum(["rules"]).optional().default("rules"),
+              apply_after_first_assistant: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe("When true (default), skip router on the first user turn (initial_tool_tier unchanged)."),
+              base_tools: z.array(z.string()).optional().describe("Always-included tool ids before rule matches; defaults to read, task, skill."),
+              max_tools: z.number().int().min(1).max(64).optional().default(12),
+              mcp_always_include: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe("When true, MCP tools are always attached and not filtered by rules."),
+            })
+            .optional(),
         })
         .optional(),
     })

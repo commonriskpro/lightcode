@@ -78,6 +78,8 @@ export namespace Flag {
   export const OPENCODE_DISABLE_CHANNEL_DB = truthy("OPENCODE_DISABLE_CHANNEL_DB")
   export const OPENCODE_SKIP_MIGRATIONS = truthy("OPENCODE_SKIP_MIGRATIONS")
   export const OPENCODE_STRICT_CONFIG_DEPS = truthy("OPENCODE_STRICT_CONFIG_DEPS")
+  export const OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH = truthy("OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH")
+  export declare const OPENCODE_INITIAL_TOOL_TIER: "minimal" | "full" | undefined
 
   function number(key: string) {
     const value = process.env[key]
@@ -148,6 +150,16 @@ Object.defineProperty(Flag, "OPENCODE_PLUGIN_META_FILE", {
 Object.defineProperty(Flag, "OPENCODE_CLIENT", {
   get() {
     return process.env["OPENCODE_CLIENT"] ?? "cli"
+  },
+  enumerable: true,
+  configurable: false,
+})
+
+Object.defineProperty(Flag, "OPENCODE_INITIAL_TOOL_TIER", {
+  get() {
+    const v = process.env["OPENCODE_INITIAL_TOOL_TIER"]?.toLowerCase()
+    if (v === "minimal" || v === "full") return v
+    return undefined
   },
   enumerable: true,
   configurable: false,
