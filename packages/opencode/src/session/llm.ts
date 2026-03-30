@@ -310,7 +310,9 @@ export namespace LLM {
       topP: params.topP,
       topK: params.topK,
       providerOptions: ProviderTransform.providerOptions(input.model, params.options),
-      activeTools: Object.keys(tools).filter((x) => x !== "invalid"),
+      // Keep `invalid` in activeTools: experimental_repairToolCall rewrites bad tool args to toolName "invalid";
+      // excluding it caused "unavailable tool 'invalid'" when the model's glob/edit call failed schema validation.
+      activeTools: Object.keys(tools),
       tools,
       toolChoice: input.toolChoice,
       maxOutputTokens,

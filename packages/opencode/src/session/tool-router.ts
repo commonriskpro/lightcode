@@ -36,7 +36,11 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   { re: /\b(fix|debug|bug|broken|arreglar|depurar)\b/i, add: ["edit", "grep", "read", "bash"], label: "fix/debug" },
   { re: /\b(test|npm test|pytest|jest|vitest|mocha|cargo test)\b/i, add: ["bash", "read"], label: "test" },
   { re: /\b(shell|bash|run|execute|pnpm|yarn|cargo|make)\b/i, add: ["bash", "read"], label: "shell/run" },
-  { re: /\b(find|glob|search files|list files)\b/i, add: ["glob", "grep", "read"], label: "find/search" },
+  {
+    re: /\b(find|glob|search files|list files|documentos?|archivos?|listar|repositorio|directorio|chequea|revisa|explora)\b/i,
+    add: ["glob", "grep", "read"],
+    label: "find/search",
+  },
   { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"], label: "web" },
   // Avoid matching Spanish "todo" (= everything) in phrases like "borrar todo"
   { re: /\b(todo\s+list|task\s+list|my\s+todo)\b/i, add: ["todowrite", "read"], label: "todo" },

@@ -183,6 +183,31 @@ describe("ToolRouter.apply", () => {
     expect(out.promptHint).toContain("delegate")
   })
 
+  test("Spanish list repo intent includes glob/grep", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("chequea que documentos hay en el repo")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.glob).toBeDefined()
+    expect(out.tools.grep).toBeDefined()
+    expect(out.promptHint).toContain("find/search")
+  })
+
   test("first user turn routes when apply_after_first_assistant false", async () => {
     const tools = {
       read: dummyTool("read"),
