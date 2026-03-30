@@ -139,3 +139,7 @@ It's very similar to Claude Code in terms of capability. Here are the key differ
 ---
 
 **Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+
+---
+
+Fork-specific notes: [README-FORK.md](README-FORK.md) (commonriskpro / lightcode).
