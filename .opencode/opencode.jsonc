@@ -23,7 +23,7 @@
       "mode": "rules",
       "apply_after_first_assistant": true,
       "base_tools": ["read", "task", "skill"],
-      "max_tools": 12,
+      "max_tools": 8,
       "mcp_always_include": true,
     },
   },

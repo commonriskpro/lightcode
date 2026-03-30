@@ -4,7 +4,10 @@ import { Instance } from "@/project/instance"
 import { InstructionPrompt } from "./instruction"
 import { SystemPrompt } from "./system"
 
-const TTL_MS = 30_000
+const TTL_MS = (() => {
+  const n = Number(process.env.OPENCODE_SYSTEM_PROMPT_CACHE_MS)
+  return Number.isFinite(n) && n > 0 ? n : 30_000
+})()
 const store = new Map<string, { at: number; parts: string[] }>()
 
 function key(agent: Agent.Info, model: Provider.Model) {

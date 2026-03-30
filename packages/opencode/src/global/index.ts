@@ -3,25 +3,18 @@ import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import path from "path"
 import os from "os"
 import { Filesystem } from "../util/filesystem"
+import { loadForkEnvSync, repoRootFromExecPath } from "../util/fork-env"
 
 const app = "opencode"
+
+loadForkEnvSync()
 
 function inferFromExecPath(): string | undefined {
   const off = process.env.OPENCODE_DISABLE_PORTABLE_INFER?.toLowerCase()
   if (off === "true" || off === "1") return
-  try {
-    const execPath = process.execPath
-    if (!execPath) return
-    const normalized = path.normalize(execPath)
-    const needle = `${path.sep}dist${path.sep}opencode-`
-    const idx = normalized.indexOf(needle)
-    if (idx === -1) return
-    const packageRoot = normalized.slice(0, idx)
-    const repoRoot = path.resolve(packageRoot, "..", "..")
-    return path.join(repoRoot, ".local-opencode")
-  } catch {
-    return
-  }
+  const repo = repoRootFromExecPath()
+  if (!repo) return
+  return path.join(repo, ".local-opencode")
 }
 
 /** Self-contained mode: all app data under one tree (no XDG / ~/.config). */
