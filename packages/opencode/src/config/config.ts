@@ -1246,6 +1246,69 @@ export namespace Config {
     })
   }
 
+  const SddModelsOverlayFile = z
+    .object({
+      active: z.string().optional(),
+      profiles: z.record(z.string(), z.record(z.string(), z.string())),
+    })
+    .passthrough()
+
+  async function applySddModelsOverlay(input: {
+    directory: string
+    worktree: string
+    agent: Info["agent"]
+  }) {
+    const { agent } = input
+    if (!agent) return
+    if (Flag.OPENCODE_DISABLE_PROJECT_CONFIG) return
+
+    let filepath: string | undefined
+    for (const name of ["sdd-models.jsonc", "sdd-models.json"] as const) {
+      const hits = await Filesystem.findUp(path.join(".opencode", name), input.directory, input.worktree)
+      if (hits.length > 0) {
+        filepath = hits[0]
+        break
+      }
+    }
+    if (!filepath) return
+
+    const text = await ConfigPaths.readFile(filepath)
+    if (!text) return
+
+    let data: unknown
+    try {
+      data = await ConfigPaths.parseText(text, filepath)
+    } catch (e) {
+      log.warn("failed to parse sdd-models overlay", { path: filepath, error: String(e) })
+      return
+    }
+
+    const parsed = SddModelsOverlayFile.safeParse(data)
+    if (!parsed.success) {
+      log.warn("invalid sdd-models overlay", { path: filepath, issues: parsed.error.issues })
+      return
+    }
+
+    const envActive = process.env.OPENCODE_SDD_MODEL_PROFILE
+    const active = envActive ?? parsed.data.active ?? "default"
+    const profile = parsed.data.profiles[active]
+    if (!profile) {
+      log.warn("sdd-models profile not found", {
+        path: filepath,
+        active,
+        profiles: Object.keys(parsed.data.profiles),
+      })
+      return
+    }
+
+    for (const [name, model] of Object.entries(profile)) {
+      if (typeof model !== "string" || !model.trim()) continue
+      agent[name] = mergeDeep(agent[name] ?? {}, { model })
+    }
+
+    log.debug("applied sdd-models overlay", { path: filepath, profile: active })
+  }
+
   export const { JsonError, InvalidError } = ConfigPaths
 
   export const ConfigDirectoryTypoError = NamedError.create(
@@ -1452,6 +1515,14 @@ export namespace Config {
             result.agent = mergeDeep(result.agent, yield* Effect.promise(() => loadMode(dir)))
             result.plugin.push(...(yield* Effect.promise(() => loadPlugin(dir))))
           }
+
+          yield* Effect.promise(() =>
+            applySddModelsOverlay({
+              directory: ctx.directory,
+              worktree: ctx.worktree,
+              agent: result.agent,
+            }),
+          )
 
           if (process.env.OPENCODE_CONFIG_CONTENT) {
             result = mergeConfigConcatArrays(

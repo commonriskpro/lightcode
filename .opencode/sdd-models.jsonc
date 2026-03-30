@@ -1,0 +1,11 @@
+{
+  "active": "balanced",
+  "profiles": {
+    "balanced": {
+      "sdd-apply": "opencode/mimo-v2-pro-free",
+      "sdd-archive": "opencode/minimax-m2.5-free"
+    },
+    "quality": {},
+    "economy": {}
+  }
+}
