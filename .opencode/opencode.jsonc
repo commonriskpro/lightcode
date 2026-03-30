@@ -1,0 +1,115 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Router offline desde el 1.er user turn: initial_tool_tier full + apply_after_first_assistant false (sin allowlist minimal).
+  // wire-tier: packages/opencode/src/session/wire-tier.ts
+  "default_agent": "build",
+  "skills": {
+    "paths": ["gentle-ai/skills"],
+  },
+  "provider": {
+    "opencode": {
+      "options": {},
+    },
+  },
+  "permission": {
+    "edit": {
+      "packages/opencode/migration/*": "deny",
+    },
+  },
+  "mcp": {},
+  "tools": {
+    "github-triage": false,
+    "github-pr-search": false,
+  },
+  "agent": {
+    "sdd-orchestrator": {
+      "mode": "primary",
+      "description": "Agent Teams Orchestrator — coordinates SDD sub-agents; no inline execution (Gentle AI)",
+      "prompt": "{file:../gentle-ai/AGENTS.md}",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "sdd-*": "allow",
+        },
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "skill": "allow",
+        "edit": "deny",
+        "bash": "deny",
+      },
+    },
+    "sdd-init": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Bootstrap SDD context and project configuration",
+      "prompt": "SDD init phase. Follow the skill (registry step first): {file:../gentle-ai/skills/sdd-init/SKILL.md}",
+    },
+    "sdd-explore": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Investigate codebase and compare approaches",
+      "prompt": "SDD explore phase. Follow: {file:../gentle-ai/skills/sdd-explore/SKILL.md}",
+    },
+    "sdd-propose": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Create change proposals",
+      "prompt": "SDD propose phase. Follow: {file:../gentle-ai/skills/sdd-propose/SKILL.md}",
+    },
+    "sdd-spec": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Write specifications",
+      "prompt": "SDD spec phase. Follow: {file:../gentle-ai/skills/sdd-spec/SKILL.md}",
+    },
+    "sdd-design": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Technical design",
+      "prompt": "SDD design phase. Follow: {file:../gentle-ai/skills/sdd-design/SKILL.md}",
+    },
+    "sdd-tasks": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Break work into tasks",
+      "prompt": "SDD tasks phase. Follow: {file:../gentle-ai/skills/sdd-tasks/SKILL.md}",
+    },
+    "sdd-apply": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Implement from tasks",
+      "prompt": "SDD apply phase. Follow: {file:../gentle-ai/skills/sdd-apply/SKILL.md}",
+    },
+    "sdd-verify": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Validate against specs",
+      "prompt": "SDD verify phase. Follow: {file:../gentle-ai/skills/sdd-verify/SKILL.md}",
+    },
+    "sdd-archive": {
+      "mode": "subagent",
+      "hidden": true,
+      "description": "Archive completed change",
+      "prompt": "SDD archive phase. Follow: {file:../gentle-ai/skills/sdd-archive/SKILL.md}",
+    },
+  },
+  "experimental": {
+    "initial_tool_tier": "full",
+    // true → logs debug-request (toolsBytes, systemBytes, promptBytes) — activar para medir
+    "debug_request": true,
+    "tool_router": {
+      "enabled": true,
+      "mode": "rules",
+      "apply_after_first_assistant": false,
+      "inject_prompt": true,
+      "base_tools": ["read", "task", "skill", "grep", "glob"],
+      "max_tools": 8,
+      "mcp_always_include": true,
+      "fallback": {
+        "max_expansions_per_turn": 1,
+        "expand_to": "full"
+      }
+    },
+  },
+}
