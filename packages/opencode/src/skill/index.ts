@@ -9,7 +9,7 @@ import { Bus } from "@/bus"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { Flag } from "@/flag/flag"
-import { Global } from "@/global"
+import { Global, portableRoot } from "@/global"
 import { Permission } from "@/permission"
 import { Filesystem } from "@/util/filesystem"
 import { Config } from "../config/config"
@@ -143,11 +143,13 @@ export namespace Skill {
     worktree: string,
   ) {
     if (!Flag.OPENCODE_DISABLE_EXTERNAL_SKILLS) {
-      for (const dir of EXTERNAL_DIRS) {
-        const root = path.join(Global.Path.home, dir)
-        const isDir = yield* Effect.promise(() => Filesystem.isDir(root))
-        if (!isDir) continue
-        yield* scan(state, bus, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
+      if (!portableRoot()) {
+        for (const dir of EXTERNAL_DIRS) {
+          const root = path.join(Global.Path.home, dir)
+          const isDir = yield* Effect.promise(() => Filesystem.isDir(root))
+          if (!isDir) continue
+          yield* scan(state, bus, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
+        }
       }
 
       const upDirs = yield* Effect.promise(async () => {

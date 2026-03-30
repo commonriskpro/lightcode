@@ -1300,11 +1300,19 @@ export namespace Provider {
           }
         }
 
+        const debugHttp = Flag.OPENCODE_DEBUG_REQUEST && opts.method === "POST" && typeof opts.body === "string"
+        const httpBodyBytes = debugHttp ? (opts.body as string).length : 0
         const res = await fetchFn(input, {
           ...opts,
           // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
           timeout: false,
         })
+        if (debugHttp) {
+          Log.create({ service: "debug-request" }).info("debug_request", {
+            phase: "http",
+            bodyBytes: httpBodyBytes,
+          })
+        }
 
         if (!chunkAbortCtl) return res
         return wrapSSE(res, chunkTimeout, chunkAbortCtl)

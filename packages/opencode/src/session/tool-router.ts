@@ -1,5 +1,6 @@
 import type { Tool as AITool } from "ai"
 import type { Config } from "@/config/config"
+import { Flag } from "@/flag/flag"
 import type { MessageV2 } from "./message-v2"
 import { Log } from "@/util/log"
 
@@ -54,17 +55,19 @@ export namespace ToolRouter {
 
   export function apply(input: Input): Record<string, AITool> {
     const tr = input.cfg.experimental?.tool_router
-    if (!tr?.enabled || input.skip) return input.tools
+    const routerOn = Flag.OPENCODE_TOOL_ROUTER || tr?.enabled
+    if (!routerOn || input.skip) return input.tools
     if (input.agent.name === "compaction" || input.agent.mode === "compaction") return input.tools
 
     const hasAssistant = input.messages.some((m) => m.info.role === "assistant")
-    if (tr.apply_after_first_assistant !== false && !hasAssistant) return input.tools
+    if (tr?.apply_after_first_assistant !== false && !hasAssistant) return input.tools
 
     const text = userText(input.messages)
     const available = new Set(Object.keys(input.tools))
-    const base = tr.base_tools?.length ? tr.base_tools : DEFAULT_BASE
-    const max = tr.max_tools ?? 12
-    const mcpAlways = tr.mcp_always_include !== false
+    const base = tr?.base_tools?.length ? tr.base_tools : DEFAULT_BASE
+    const max = tr?.max_tools ?? 12
+    const mcpAlways = tr?.mcp_always_include !== false
+    const beforeBytes = JSON.stringify(input.tools).length
 
     const matched = new Set<string>()
     for (const r of RULES) {
@@ -99,6 +102,7 @@ export namespace ToolRouter {
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
       reason: "rules",
       userPreview: text.slice(0, 120),
+      bytes_saved_estimate: Math.max(0, beforeBytes - JSON.stringify(out).length),
     })
 
     return out

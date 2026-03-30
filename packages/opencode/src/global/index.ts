@@ -6,10 +6,34 @@ import { Filesystem } from "../util/filesystem"
 
 const app = "opencode"
 
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
+/** Self-contained mode: all app data under one tree (no XDG / ~/.config). */
+export function portableRoot(): string | undefined {
+  const ex = process.env.OPENCODE_PORTABLE_ROOT
+  if (ex) return path.resolve(ex)
+  const p = process.env.OPENCODE_PORTABLE?.toLowerCase()
+  if (p === "true" || p === "1") return path.join(process.cwd(), ".local-opencode")
+  return undefined
+}
+
+function basePaths() {
+  const r = portableRoot()
+  if (r) {
+    return {
+      data: path.join(r, "data", app),
+      cache: path.join(r, "cache", app),
+      config: path.join(r, "config", app),
+      state: path.join(r, "state", app),
+    }
+  }
+  return {
+    data: path.join(xdgData!, app),
+    cache: path.join(xdgCache!, app),
+    config: path.join(xdgConfig!, app),
+    state: path.join(xdgState!, app),
+  }
+}
+
+const base = basePaths()
 
 export namespace Global {
   export const Path = {
@@ -17,12 +41,12 @@ export namespace Global {
     get home() {
       return process.env.OPENCODE_TEST_HOME || os.homedir()
     },
-    data,
-    bin: path.join(cache, "bin"),
-    log: path.join(data, "log"),
-    cache,
-    config,
-    state,
+    data: base.data,
+    bin: path.join(base.cache, "bin"),
+    log: path.join(base.data, "log"),
+    cache: base.cache,
+    config: base.config,
+    state: base.state,
   }
 }
 

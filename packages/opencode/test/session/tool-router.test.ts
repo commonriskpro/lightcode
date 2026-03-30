@@ -106,4 +106,30 @@ describe("ToolRouter.apply", () => {
     })
     expect(Object.keys(out).sort()).toEqual(["bash", "read"])
   })
+
+  test("OPENCODE_TOOL_ROUTER enables without experimental.tool_router.enabled", async () => {
+    const prev = process.env.OPENCODE_TOOL_ROUTER
+    process.env.OPENCODE_TOOL_ROUTER = "1"
+    try {
+      const tools = {
+        read: dummyTool("read"),
+        bash: dummyTool("bash"),
+        edit: dummyTool("edit"),
+        skill: dummyTool("skill"),
+        task: dummyTool("task"),
+      }
+      const out = ToolRouter.apply({
+        tools,
+        messages: [userMsg("x"), assistantMsg(), userMsg("refactor the module")],
+        agent: { name: "build", mode: "primary" },
+        cfg: { experimental: {} } as Config.Info,
+        mcpIds: new Set(),
+        skip: false,
+      })
+      expect(out.edit).toBeDefined()
+    } finally {
+      if (prev === undefined) delete process.env.OPENCODE_TOOL_ROUTER
+      else process.env.OPENCODE_TOOL_ROUTER = prev
+    }
+  })
 })

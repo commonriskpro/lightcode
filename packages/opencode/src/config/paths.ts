@@ -5,7 +5,7 @@ import { type ParseError as JsoncParseError, parse as parseJsonc, printParseErro
 import { NamedError } from "@opencode-ai/util/error"
 import { Filesystem } from "@/util/filesystem"
 import { Flag } from "@/flag/flag"
-import { Global } from "@/global"
+import { Global, portableRoot } from "@/global"
 
 export namespace ConfigPaths {
   export async function projectFiles(name: string, directory: string, worktree: string) {
@@ -31,13 +31,15 @@ export namespace ConfigPaths {
             }),
           )
         : []),
-      ...(await Array.fromAsync(
-        Filesystem.up({
-          targets: [".opencode"],
-          start: Global.Path.home,
-          stop: Global.Path.home,
-        }),
-      )),
+      ...(portableRoot()
+        ? []
+        : await Array.fromAsync(
+            Filesystem.up({
+              targets: [".opencode"],
+              start: Global.Path.home,
+              stop: Global.Path.home,
+            }),
+          )),
       ...(Flag.OPENCODE_CONFIG_DIR ? [Flag.OPENCODE_CONFIG_DIR] : []),
     ]
   }

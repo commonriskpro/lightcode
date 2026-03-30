@@ -1115,6 +1115,15 @@ export namespace Config {
                 .optional()
                 .default(true)
                 .describe("When true, MCP tools are always attached and not filtered by rules."),
+              fallback: z
+                .object({
+                  max_expansions_per_turn: z.number().int().min(0).max(16).optional().default(1),
+                  expand_to: z.enum(["full"]).optional().default("full"),
+                })
+                .optional()
+                .describe(
+                  "Spec §7: retry with full tools on tool-layer error. Schema only until processor wiring lands.",
+                ),
             })
             .optional(),
         })

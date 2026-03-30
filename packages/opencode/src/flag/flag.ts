@@ -81,6 +81,8 @@ export namespace Flag {
   export const OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH = truthy("OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH")
   /** Log wire/usage analytics; also configurable as experimental.debug_request. */
   export const OPENCODE_DEBUG_REQUEST = truthy("OPENCODE_DEBUG_REQUEST")
+  /** Enable offline tool router; merges with experimental.tool_router.enabled. */
+  export declare const OPENCODE_TOOL_ROUTER: boolean
   export declare const OPENCODE_INITIAL_TOOL_TIER: "minimal" | "full" | undefined
 
   function number(key: string) {
@@ -152,6 +154,14 @@ Object.defineProperty(Flag, "OPENCODE_PLUGIN_META_FILE", {
 Object.defineProperty(Flag, "OPENCODE_CLIENT", {
   get() {
     return process.env["OPENCODE_CLIENT"] ?? "cli"
+  },
+  enumerable: true,
+  configurable: false,
+})
+
+Object.defineProperty(Flag, "OPENCODE_TOOL_ROUTER", {
+  get() {
+    return truthy("OPENCODE_TOOL_ROUTER")
   },
   enumerable: true,
   configurable: false,
