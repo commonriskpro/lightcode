@@ -11,10 +11,10 @@ const log = Log.create({ service: "tool-router" })
  * Offline router: after `applyInitialToolTier`, either **narrows** (default) or **adds** (`experimental.tool_router.additive`)
  * from the full registry when the tier left a minimal map.
  *
- * When `apply_after_first_assistant` is true (default), skips until an assistant message exists — unless `additive` is true (router runs on T1 to add tools).
- * `threadHasAssistant` / `routerFiltersFirstTurn` (`wire-tier.ts`) use the same assistant check for system prompt policy.
+ * Tool ids are intersected with **agent + session permission + user toggles** (`allowedToolIds` from `resolveTools`)
+ * so the model is never advertised tools that `LLM.resolveTools` would strip.
  *
- * Rules are **intent buckets** (synonyms / multilingual), not an embedding model — see docs/spec-offline-tool-router.md §6.2 for future semantic routing.
+ * When `apply_after_first_assistant` is true (default), skips until an assistant message exists — unless `additive` is true.
  */
 const DEFAULT_BASE = ["read", "task", "skill"]
 
@@ -43,8 +43,17 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     add: ["glob", "grep", "read"],
     label: "find/search",
   },
+  {
+    re: /\b(ver|verificar|muestra|muéstrame|mira|analiza|analizar|busca|buscar|encuentra|comprueba|explica|cuáles|cuales|dónde|donde|fichero|código|codigo|proyecto|ejecuta|instala|compila)\b/i,
+    add: ["glob", "grep", "read", "task"],
+    label: "explore/es",
+  },
+  {
+    re: /\b(show|display|verify|analyze|analyse|search|install|build|compile|check|inspect|browse|look at)\b/i,
+    add: ["glob", "grep", "read", "task"],
+    label: "explore/en",
+  },
   { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"], label: "web" },
-  // Avoid matching Spanish "todo" (= everything) in phrases like "borrar todo"
   { re: /\b(todo\s+list|task\s+list|my\s+todo)\b/i, add: ["todowrite", "read"], label: "todo" },
   { re: /\b(delegate|subagent|sdd-|orchestrat)\b/i, add: ["task", "read"], label: "delegate/sdd" },
   { re: /\b(question|ask me|choose)\b/i, add: ["question"], label: "question" },
@@ -52,13 +61,22 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   { re: /\b(skill|load skill)\b/i, add: ["skill", "read"], label: "skill" },
 ]
 
+function normalizeUserText(raw: string) {
+  return raw
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 16_000)
+}
+
 function userText(msgs: MessageV2.WithParts[]) {
   const u = msgs.findLast((m) => m.info.role === "user")
   if (!u) return ""
-  return u.parts
-    .map((p) => (p.type === "text" ? p.text : ""))
-    .join("\n\n")
-    .trim()
+  return normalizeUserText(
+    u.parts
+      .map((p) => (p.type === "text" ? p.text : ""))
+      .join("\n\n"),
+  )
 }
 
 function orderIds(base: string[], extra: Set<string>, available: Set<string>, max: number) {
@@ -74,7 +92,12 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
   return out
 }
 
-function promptHint(input: { ids: string[]; labels: string[]; additive: boolean }) {
+function promptHint(input: {
+  ids: string[]
+  labels: string[]
+  additive: boolean
+  blockedByPermission: string[]
+}) {
   const intent = input.labels.length ? input.labels.join(", ") : "base only (no keyword rule matched)"
   const lines = [
     "## Offline tool router",
@@ -85,6 +108,10 @@ function promptHint(input: { ids: string[]; labels: string[]; additive: boolean 
     `Tools attached for this request: ${input.ids.sort().join(", ")}.`,
     "Use only these tools; if something is missing, say so and suggest rephrasing the request.",
   ]
+  if (input.blockedByPermission.length)
+    lines.push(
+      `Rules suggested tools not available for this agent (permissions or session toggles): ${input.blockedByPermission.sort().join(", ")}. Delegate with **task** or switch agent if the user needs those capabilities.`,
+    )
   const wantsDelete = input.labels.includes("delete/remove")
   const hasDestructive = ["bash", "edit", "write"].some((id) => input.ids.includes(id))
   if (wantsDelete && !hasDestructive)
@@ -100,6 +127,8 @@ export namespace ToolRouter {
     tools: Record<string, AITool>
     /** Full tool map before tier strip; required for additive mode to attach rule-matched ids not in `tools`. */
     registryTools?: Record<string, AITool>
+    /** Agent + session permission + user tool toggles; tools not in this set are never attached. */
+    allowedToolIds?: Set<string>
     messages: MessageV2.WithParts[]
     agent: { name: string; mode: string }
     cfg: Config.Info
@@ -125,7 +154,11 @@ export namespace ToolRouter {
 
     const text = userText(input.messages)
     const full = input.registryTools ?? input.tools
-    const available = new Set(Object.keys(additive ? full : input.tools))
+    const availableKeys = new Set(Object.keys(additive ? full : input.tools))
+    const allowed = input.allowedToolIds
+    const available = new Set(
+      [...availableKeys].filter((id) => (allowed ? allowed.has(id) : true)),
+    )
     const base = tr?.base_tools?.length ? tr.base_tools : DEFAULT_BASE
     const max = tr?.max_tools ?? 12
     const mcpAlways = tr?.mcp_always_include !== false
@@ -138,6 +171,17 @@ export namespace ToolRouter {
       labels.push(r.label)
       for (const id of r.add) matched.add(id)
     }
+
+    const noMatchFb = tr?.no_match_fallback !== false
+    const fbTools = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]
+    if (labels.length === 0 && noMatchFb) {
+      labels.push("fallback/no_match")
+      for (const id of fbTools) matched.add(id)
+    }
+
+    const blockedByPermission = [...matched].filter(
+      (id) => allowed && !allowed.has(id) && availableKeys.has(id),
+    )
 
     const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
     const ordered = orderIds(base, matched, builtinAvailable, max)
@@ -162,7 +206,7 @@ export namespace ToolRouter {
 
     const inject = tr?.inject_prompt !== false
     const ids = Object.keys(out)
-    const hint = inject ? promptHint({ ids, labels, additive }) : undefined
+    const hint = inject ? promptHint({ ids, labels, additive, blockedByPermission }) : undefined
 
     log.info("tool_router", {
       selected: ids.sort(),
@@ -172,6 +216,7 @@ export namespace ToolRouter {
       userPreview: text.slice(0, 120),
       bytes_saved_estimate: Math.max(0, beforeBytes - JSON.stringify(out).length),
       inject_prompt: inject,
+      blocked_by_permission: blockedByPermission.sort(),
     })
 
     return { tools: out, promptHint: hint }

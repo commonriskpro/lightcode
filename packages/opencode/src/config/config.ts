@@ -1123,6 +1123,17 @@ export namespace Config {
                   "When true with initial_tool_tier minimal: start from the tier allowlist, then add tools from rules using full registry definitions (see ToolRouter).",
                 ),
               max_tools: z.number().int().min(1).max(100).optional().default(12),
+              no_match_fallback: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe(
+                  "When no keyword rule matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.",
+                ),
+              no_match_fallback_tools: z
+                .array(z.string())
+                .optional()
+                .describe("Defaults to glob, grep, read, task when no_match_fallback is true."),
               mcp_always_include: z
                 .boolean()
                 .optional()

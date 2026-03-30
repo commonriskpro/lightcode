@@ -256,6 +256,56 @@ describe("ToolRouter.apply", () => {
     expect(out.promptHint).toBeUndefined()
   })
 
+  test("no_match_fallback adds glob/grep/read/task when text matches nothing", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("hello")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 100 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("fallback/no_match")
+    expect(out.tools.glob).toBeDefined()
+    expect(out.tools.grep).toBeDefined()
+  })
+
+  test("allowedToolIds surfaces blocked tools in hint", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      edit: dummyTool("edit"),
+      grep: dummyTool("grep"),
+    }
+    const allowed = new Set(["read", "grep"])
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("refactor the module")],
+      allowedToolIds: allowed,
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("permissions")
+    expect(out.promptHint).toContain("edit")
+    expect(out.tools.edit).toBeUndefined()
+  })
+
   test("additive first turn adds tools from registry not in minimal map", async () => {
     const registry: Record<string, AITool> = {
       read: dummyTool("read"),

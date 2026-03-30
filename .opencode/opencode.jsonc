@@ -106,6 +106,8 @@
       "inject_prompt": true,
       "base_tools": ["read", "task", "skill", "grep", "glob"],
       "max_tools": 100,
+      "no_match_fallback": true,
+      "no_match_fallback_tools": ["glob", "grep", "read", "task"],
       "mcp_always_include": true,
       "fallback": {
         "max_expansions_per_turn": 1,

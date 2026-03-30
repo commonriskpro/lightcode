@@ -980,9 +980,19 @@ export namespace SessionPrompt {
       tier,
       includeBash: Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH,
     })
+    const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+    const disabled = Permission.disabled(Object.keys(tools), ruleset)
+    const allowedToolIds = new Set(
+      Object.keys(tools).filter((id) => {
+        if (input.tools?.[id] === false) return false
+        if (disabled.has(id)) return false
+        return true
+      }),
+    )
     const routed = ToolRouter.apply({
       tools: afterTier,
       registryTools: tools,
+      allowedToolIds,
       messages: input.messages,
       agent: input.agent,
       cfg,
