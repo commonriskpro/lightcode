@@ -6,13 +6,31 @@ import { Filesystem } from "../util/filesystem"
 
 const app = "opencode"
 
+function inferFromExecPath(): string | undefined {
+  const off = process.env.OPENCODE_DISABLE_PORTABLE_INFER?.toLowerCase()
+  if (off === "true" || off === "1") return
+  try {
+    const execPath = process.execPath
+    if (!execPath) return
+    const normalized = path.normalize(execPath)
+    const needle = `${path.sep}dist${path.sep}opencode-`
+    const idx = normalized.indexOf(needle)
+    if (idx === -1) return
+    const packageRoot = normalized.slice(0, idx)
+    const repoRoot = path.resolve(packageRoot, "..", "..")
+    return path.join(repoRoot, ".local-opencode")
+  } catch {
+    return
+  }
+}
+
 /** Self-contained mode: all app data under one tree (no XDG / ~/.config). */
 export function portableRoot(): string | undefined {
   const ex = process.env.OPENCODE_PORTABLE_ROOT
   if (ex) return path.resolve(ex)
   const p = process.env.OPENCODE_PORTABLE?.toLowerCase()
   if (p === "true" || p === "1") return path.join(process.cwd(), ".local-opencode")
-  return undefined
+  return inferFromExecPath()
 }
 
 function basePaths() {

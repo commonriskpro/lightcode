@@ -6,7 +6,7 @@ import os from "os"
 import z from "zod"
 import { ModelsDev } from "../provider/models"
 import { mergeDeep, pipe, unique } from "remeda"
-import { Global } from "../global"
+import { Global, portableRoot } from "../global"
 import fsNode from "fs/promises"
 import { NamedError } from "@opencode-ai/util/error"
 import { Flag } from "../flag/flag"
@@ -1349,6 +1349,7 @@ export namespace Config {
             if (value.type === "wellknown") {
               const url = key.replace(/\/+$/, "")
               process.env[value.key] = value.token
+              if (portableRoot()) continue
               log.debug("fetching remote config", { url: `${url}/.well-known/opencode` })
               const response = yield* Effect.promise(() => fetch(`${url}/.well-known/opencode`))
               if (!response.ok) {
@@ -1446,7 +1447,7 @@ export namespace Config {
               }
 
               const config = Option.getOrUndefined(configOpt)
-              if (config) {
+              if (config && !portableRoot()) {
                 result = mergeConfigConcatArrays(
                   result,
                   yield* loadConfig(JSON.stringify(config), {
@@ -1465,7 +1466,7 @@ export namespace Config {
             )
           }
 
-          if (existsSync(managedDir)) {
+          if (existsSync(managedDir) && !portableRoot()) {
             for (const file of ["opencode.jsonc", "opencode.json"]) {
               result = mergeConfigConcatArrays(result, yield* loadFile(path.join(managedDir, file)))
             }
