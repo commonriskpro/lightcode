@@ -25,7 +25,7 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   },
   {
     re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borrar|borra|borras|eliminar|elimina|suprimir)\b/i,
-    add: ["bash", "read", "glob"],
+    add: ["bash", "edit", "write", "read", "glob"],
     label: "delete/remove",
   },
   {
@@ -38,7 +38,8 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   { re: /\b(shell|bash|run|execute|pnpm|yarn|cargo|make)\b/i, add: ["bash", "read"], label: "shell/run" },
   { re: /\b(find|glob|search files|list files)\b/i, add: ["glob", "grep", "read"], label: "find/search" },
   { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"], label: "web" },
-  { re: /\b(todo|task list)\b/i, add: ["todowrite", "read"], label: "todo" },
+  // Avoid matching Spanish "todo" (= everything) in phrases like "borrar todo"
+  { re: /\b(todo\s+list|task\s+list|my\s+todo)\b/i, add: ["todowrite", "read"], label: "todo" },
   { re: /\b(delegate|subagent|sdd-|orchestrat)\b/i, add: ["task", "read"], label: "delegate/sdd" },
   { re: /\b(question|ask me|choose)\b/i, add: ["question"], label: "question" },
   { re: /\b(code ?search|codesearch)\b/i, add: ["codesearch", "read"], label: "codesearch" },
@@ -69,12 +70,19 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
 
 function promptHint(input: { ids: string[]; labels: string[] }) {
   const intent = input.labels.length ? input.labels.join(", ") : "base only (no keyword rule matched)"
-  return [
+  const lines = [
     "## Offline tool router",
     `Intent from the last user message (keyword rules): ${intent}.`,
     `Tools attached for this request: ${input.ids.sort().join(", ")}.`,
     "Use only these tools; if something is missing, say so and suggest rephrasing the request.",
-  ].join("\n")
+  ]
+  const wantsDelete = input.labels.includes("delete/remove")
+  const hasDestructive = ["bash", "edit", "write"].some((id) => input.ids.includes(id))
+  if (wantsDelete && !hasDestructive)
+    lines.push(
+      "Delete/remove intent: this agent has no bash/edit/write in the tool set. Use the **task** tool to delegate to a subagent that can edit or run shell (e.g. `build` or `sdd-apply`), or switch primary agent.",
+    )
+  return lines.join("\n")
 }
 
 export namespace ToolRouter {

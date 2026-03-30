@@ -111,6 +111,30 @@ describe("ToolRouter.apply", () => {
     expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
   })
 
+  test("borrar todo does not match todo list rule (Spanish todo = everything)", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("borrar todo en la carpeta tmp")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("delete/remove")
+    expect(out.promptHint).not.toContain("todowrite")
+    expect(out.tools.bash).toBeDefined()
+  })
+
   test("delete/remove intent adds bash without saying shell", async () => {
     const tools = {
       read: dummyTool("read"),
@@ -132,6 +156,31 @@ describe("ToolRouter.apply", () => {
     })
     expect(out.tools.bash).toBeDefined()
     expect(out.promptHint).toContain("delete/remove")
+  })
+
+  test("delete intent without destructive tools injects delegate hint (e.g. orchestrator)", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("elimina los archivos viejos")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 8 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("delete/remove")
+    expect(out.promptHint).toContain("task")
+    expect(out.promptHint).toContain("delegate")
   })
 
   test("first user turn routes when apply_after_first_assistant false", async () => {
