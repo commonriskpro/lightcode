@@ -121,7 +121,12 @@ export namespace LLM {
     const header = system[0]
     await Plugin.trigger(
       "experimental.chat.system.transform",
-      { sessionID: input.sessionID, model: input.model },
+      {
+        sessionID: input.sessionID,
+        model: input.model,
+        agent: input.agent,
+        small: input.small,
+      },
       { system },
     )
     // rejoin to maintain 2-part structure for caching if header unchanged

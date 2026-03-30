@@ -238,7 +238,14 @@ export interface Hooks {
     },
   ) => Promise<void>
   "experimental.chat.system.transform"?: (
-    input: { sessionID?: string; model: Model },
+    input: {
+      sessionID?: string
+      model: Model
+      /** Present for chat turns; omitted in some internal triggers (e.g. agent generator). */
+      agent?: { name: string; mode?: string }
+      /** When true, skip heavy system injections (titles, small completions). */
+      small?: boolean
+    },
     output: {
       system: string[]
     },

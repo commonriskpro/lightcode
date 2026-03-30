@@ -1,1 +1,2 @@
-# preload disabled - causes hangs with missing @opentui/solid/preload
+# Registers @opentui/solid Bun plugin so JSX is transformed (avoids jsxDEV resolution on jsx-runtime.d.ts).
+preload = ["@opentui/solid/preload"]

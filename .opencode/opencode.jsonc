@@ -2,6 +2,10 @@
   "$schema": "https://opencode.ai/config.json",
   // Router offline aditivo: tier minimal en T1 + reglas añaden tools desde el registro completo; max_tools 100.
   // wire-tier: packages/opencode/src/session/wire-tier.ts
+  "plugin": [
+    "../gentle-ai/plugins/skill-registry-plugin.ts",
+    "../gentle-ai/plugins/background-agents.ts",
+  ],
   "default_agent": "build",
   "skills": {
     "paths": ["gentle-ai/skills"],
@@ -16,7 +20,23 @@
       "packages/opencode/migration/*": "deny",
     },
   },
-  "mcp": {},
+  // Engram: memoria persistente (mem_save, mem_search, …). Requiere `engram` en PATH.
+  // Context7: docs actuales de librerías (resolve-library-id, query-docs). Requiere Node/npx; opcional CONTEXT7_API_KEY en el entorno.
+  // Guías: docs/engram-opencode.md, docs/context7-opencode.md
+  "mcp": {
+    "engram": {
+      "type": "local",
+      "command": ["engram", "mcp"],
+      "enabled": true,
+      "timeout": 30000,
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true,
+      "timeout": 60000,
+    },
+  },
   "tools": {
     "github-triage": false,
     "github-pr-search": false,
@@ -31,6 +51,9 @@
           "*": "deny",
           "sdd-*": "allow",
         },
+        "delegate": "allow",
+        "delegation_read": "allow",
+        "delegation_list": "allow",
         "read": "allow",
         "grep": "allow",
         "glob": "allow",
