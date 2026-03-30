@@ -20,6 +20,12 @@ export namespace DebugRequest {
     toolsBytes: number
     promptBytes: number
     systemBytes: number
+    /** Effective tier (env or config); minimal only shrinks tools + defers instructions when thread_has_assistant is false. */
+    initial_tool_tier?: "minimal" | "full"
+    /** True when this request’s message history already includes an assistant turn (minimal tier inactive for tools/instructions). */
+    thread_has_assistant?: boolean
+    /** Whether offline tool router is enabled (env or config). */
+    tool_router?: boolean
   }) {
     log.info("debug_request", { phase: "wire", ...input })
   }

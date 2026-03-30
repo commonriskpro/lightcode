@@ -1121,6 +1121,13 @@ export namespace Config {
                 .optional()
                 .default(true)
                 .describe("When true, MCP tools are always attached and not filtered by rules."),
+              inject_prompt: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe(
+                  "When true (default), append a short system line with offline-router intent hints and the tool ids attached this turn.",
+                ),
               fallback: z
                 .object({
                   max_expansions_per_turn: z.number().int().min(0).max(16).optional().default(1),

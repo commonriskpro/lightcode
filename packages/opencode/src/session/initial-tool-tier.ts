@@ -5,7 +5,18 @@ import { threadHasAssistant } from "./wire-tier"
 const SLIM_LEN = 200
 
 /** First-turn allowlist when `initial_tool_tier` is minimal (spec: read/grep/glob/skill ± bash). */
-const MINIMAL_IDS = ["read", "grep", "glob", "skill"] as const
+export const MINIMAL_IDS = ["read", "grep", "glob", "skill"] as const
+
+/** System line when tier is minimal and the thread has no assistant yet (router runs only after first assistant). */
+export function minimalTierPromptHint(input: { includeBash: boolean }) {
+  const ids: string[] = [...MINIMAL_IDS]
+  if (input.includeBash) ids.push("bash")
+  return [
+    "## Initial tool tier (first turn in this thread)",
+    `Only these tools are attached until after the first assistant message: ${ids.join(", ")}.`,
+    "Use read/skill (and glob/grep) to inspect the workspace; later turns unlock the full tool surface, then the offline router narrows by your message.",
+  ].join("\n")
+}
 
 function slim(t: AITool): AITool {
   const d = t.description

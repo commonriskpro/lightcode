@@ -53,7 +53,8 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: false,
     })
-    expect(Object.keys(out).sort()).toEqual(["bash", "read"])
+    expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
+    expect(out.promptHint).toBeUndefined()
   })
 
   test("enabled after assistant narrows by rules", async () => {
@@ -76,9 +77,11 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: false,
     })
-    expect(out.bash).toBeDefined()
-    expect(out.read).toBeDefined()
-    expect(out.edit).toBeUndefined()
+    expect(out.tools.bash).toBeDefined()
+    expect(out.tools.read).toBeDefined()
+    expect(out.tools.edit).toBeUndefined()
+    expect(out.promptHint).toContain("Offline tool router")
+    expect(out.promptHint).toContain("test")
   })
 
   test("skip on first user turn when apply_after_first_assistant", async () => {
@@ -91,7 +94,8 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: false,
     })
-    expect(Object.keys(out).sort()).toEqual(["bash", "read"])
+    expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
+    expect(out.promptHint).toBeUndefined()
   })
 
   test("skip flag bypasses router", async () => {
@@ -104,7 +108,7 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: true,
     })
-    expect(Object.keys(out).sort()).toEqual(["bash", "read"])
+    expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
   })
 
   test("delete/remove intent adds bash without saying shell", async () => {
@@ -126,7 +130,56 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: false,
     })
-    expect(out.bash).toBeDefined()
+    expect(out.tools.bash).toBeDefined()
+    expect(out.promptHint).toContain("delete/remove")
+  })
+
+  test("first user turn routes when apply_after_first_assistant false", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+      grep: dummyTool("grep"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("refactor foo.ts")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.edit).toBeDefined()
+    expect(out.promptHint).toContain("edit/refactor")
+  })
+
+  test("inject_prompt false omits promptHint", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("run tests")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, inject_prompt: false, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.promptHint).toBeUndefined()
   })
 
   test("OPENCODE_TOOL_ROUTER enables without experimental.tool_router.enabled", async () => {
@@ -148,7 +201,7 @@ describe("ToolRouter.apply", () => {
         mcpIds: new Set(),
         skip: false,
       })
-      expect(out.edit).toBeDefined()
+      expect(out.tools.edit).toBeDefined()
     } finally {
       if (prev === undefined) delete process.env.OPENCODE_TOOL_ROUTER
       else process.env.OPENCODE_TOOL_ROUTER = prev

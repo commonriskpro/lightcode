@@ -1,7 +1,7 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // Lazy wire: initial_tool_tier + tool_router + mergedInstructionBodies (packages/opencode/src/session/wire-tier.ts).
-  // fork.opencode.env refuerza OPENCODE_TOOL_ROUTER / OPENCODE_INITIAL_TOOL_TIER al arrancar.
+  // Router offline desde el 1.er user turn: initial_tool_tier full + apply_after_first_assistant false (sin allowlist minimal).
+  // wire-tier: packages/opencode/src/session/wire-tier.ts
   "default_agent": "build",
   "skills": {
     "paths": ["gentle-ai/skills"],
@@ -95,13 +95,14 @@
     },
   },
   "experimental": {
-    "initial_tool_tier": "minimal",
-    // true → logs debug-request (toolsBytes, systemBytes, promptBytes)
-    "debug_request": false,
+    "initial_tool_tier": "full",
+    // true → logs debug-request (toolsBytes, systemBytes, promptBytes) — activar para medir
+    "debug_request": true,
     "tool_router": {
       "enabled": true,
       "mode": "rules",
-      "apply_after_first_assistant": true,
+      "apply_after_first_assistant": false,
+      "inject_prompt": true,
       "base_tools": ["read", "task", "skill", "grep", "glob"],
       "max_tools": 8,
       "mcp_always_include": true,

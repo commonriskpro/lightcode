@@ -16,30 +16,33 @@ const log = Log.create({ service: "tool-router" })
  */
 const DEFAULT_BASE = ["read", "task", "skill"]
 
-const RULES: { re: RegExp; add: string[] }[] = [
-  { re: /\b(edit|write|patch|refactor)\b/i, add: ["edit", "write", "grep", "read"] },
+const RULES: { re: RegExp; add: string[]; label: string }[] = [
+  { re: /\b(edit|write|patch|refactor)\b/i, add: ["edit", "write", "grep", "read"], label: "edit/refactor" },
   {
     re: /\b(create|add|implement|new file|scaffold|crear|añadir|implementar)\b/i,
     add: ["write", "edit", "grep", "read"],
+    label: "create/implement",
   },
   {
     re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borrar|borra|borras|eliminar|elimina|suprimir)\b/i,
     add: ["bash", "read", "glob"],
+    label: "delete/remove",
   },
   {
     re: /\b(move|rename|mv\b|relocate|mover|renombrar)\b/i,
     add: ["bash", "read", "glob"],
+    label: "move/rename",
   },
-  { re: /\b(fix|debug|bug|broken|arreglar|depurar)\b/i, add: ["edit", "grep", "read", "bash"] },
-  { re: /\b(test|npm test|pytest|jest|vitest|mocha|cargo test)\b/i, add: ["bash", "read"] },
-  { re: /\b(shell|bash|run|execute|pnpm|yarn|cargo|make)\b/i, add: ["bash", "read"] },
-  { re: /\b(find|glob|search files|list files)\b/i, add: ["glob", "grep", "read"] },
-  { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"] },
-  { re: /\b(todo|task list)\b/i, add: ["todowrite", "read"] },
-  { re: /\b(delegate|subagent|sdd-|orchestrat)\b/i, add: ["task", "read"] },
-  { re: /\b(question|ask me|choose)\b/i, add: ["question"] },
-  { re: /\b(code ?search|codesearch)\b/i, add: ["codesearch", "read"] },
-  { re: /\b(skill|load skill)\b/i, add: ["skill", "read"] },
+  { re: /\b(fix|debug|bug|broken|arreglar|depurar)\b/i, add: ["edit", "grep", "read", "bash"], label: "fix/debug" },
+  { re: /\b(test|npm test|pytest|jest|vitest|mocha|cargo test)\b/i, add: ["bash", "read"], label: "test" },
+  { re: /\b(shell|bash|run|execute|pnpm|yarn|cargo|make)\b/i, add: ["bash", "read"], label: "shell/run" },
+  { re: /\b(find|glob|search files|list files)\b/i, add: ["glob", "grep", "read"], label: "find/search" },
+  { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"], label: "web" },
+  { re: /\b(todo|task list)\b/i, add: ["todowrite", "read"], label: "todo" },
+  { re: /\b(delegate|subagent|sdd-|orchestrat)\b/i, add: ["task", "read"], label: "delegate/sdd" },
+  { re: /\b(question|ask me|choose)\b/i, add: ["question"], label: "question" },
+  { re: /\b(code ?search|codesearch)\b/i, add: ["codesearch", "read"], label: "codesearch" },
+  { re: /\b(skill|load skill)\b/i, add: ["skill", "read"], label: "skill" },
 ]
 
 function userText(msgs: MessageV2.WithParts[]) {
@@ -64,6 +67,16 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
   return out
 }
 
+function promptHint(input: { ids: string[]; labels: string[] }) {
+  const intent = input.labels.length ? input.labels.join(", ") : "base only (no keyword rule matched)"
+  return [
+    "## Offline tool router",
+    `Intent from the last user message (keyword rules): ${intent}.`,
+    `Tools attached for this request: ${input.ids.sort().join(", ")}.`,
+    "Use only these tools; if something is missing, say so and suggest rephrasing the request.",
+  ].join("\n")
+}
+
 export namespace ToolRouter {
   export type Input = {
     tools: Record<string, AITool>
@@ -74,14 +87,20 @@ export namespace ToolRouter {
     skip: boolean
   }
 
-  export function apply(input: Input): Record<string, AITool> {
+  export type Result = {
+    tools: Record<string, AITool>
+    /** Appended to system prompt so the model sees intent + tool allowlist. */
+    promptHint?: string
+  }
+
+  export function apply(input: Input): Result {
     const tr = input.cfg.experimental?.tool_router
     const routerOn = Flag.OPENCODE_TOOL_ROUTER || tr?.enabled
-    if (!routerOn || input.skip) return input.tools
-    if (input.agent.name === "compaction" || input.agent.mode === "compaction") return input.tools
+    if (!routerOn || input.skip) return { tools: input.tools }
+    if (input.agent.name === "compaction" || input.agent.mode === "compaction") return { tools: input.tools }
 
     const hasAssistant = threadHasAssistant(input.messages)
-    if (tr?.apply_after_first_assistant !== false && !hasAssistant) return input.tools
+    if (tr?.apply_after_first_assistant !== false && !hasAssistant) return { tools: input.tools }
 
     const text = userText(input.messages)
     const available = new Set(Object.keys(input.tools))
@@ -91,8 +110,10 @@ export namespace ToolRouter {
     const beforeBytes = JSON.stringify(input.tools).length
 
     const matched = new Set<string>()
+    const labels: string[] = []
     for (const r of RULES) {
       if (!r.re.test(text)) continue
+      labels.push(r.label)
       for (const id of r.add) matched.add(id)
     }
 
@@ -114,18 +135,23 @@ export namespace ToolRouter {
 
     if (Object.keys(out).length === 0 && Object.keys(input.tools).length > 0) {
       log.warn("tool_router_empty_passthrough")
-      return input.tools
+      return { tools: input.tools }
     }
 
+    const inject = tr?.inject_prompt !== false
+    const ids = Object.keys(out)
+    const hint = inject ? promptHint({ ids, labels }) : undefined
+
     log.info("tool_router", {
-      selected: Object.keys(out).sort(),
+      selected: ids.sort(),
       builtin: ordered.sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
       reason: "rules",
       userPreview: text.slice(0, 120),
       bytes_saved_estimate: Math.max(0, beforeBytes - JSON.stringify(out).length),
+      inject_prompt: inject,
     })
 
-    return out
+    return { tools: out, promptHint: hint }
   }
 }

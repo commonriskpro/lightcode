@@ -32,9 +32,9 @@ import { FileTime } from "../file/time"
 import { NotFoundError } from "@/storage/db"
 import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
-import { applyInitialToolTier } from "./initial-tool-tier"
+import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
 import { ToolRouter } from "./tool-router"
-import { mergedInstructionBodies } from "./wire-tier"
+import { mergedInstructionBodies, threadHasAssistant } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -637,7 +637,7 @@ export namespace SessionPrompt {
       const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
       const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
-      const tools = await resolveTools({
+      const { tools, toolRouterPrompt } = await resolveTools({
         agent,
         session,
         model,
@@ -693,6 +693,7 @@ export namespace SessionPrompt {
         model,
         instructions: mergedInstructionBodies(cfg, msgs, lastUser.format?.type === "json_schema"),
       })
+      if (toolRouterPrompt) system.push(toolRouterPrompt)
       const format = lastUser.format ?? { type: "text" }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -789,7 +790,7 @@ export namespace SessionPrompt {
     /** Skip offline tool router (e.g. JSON schema mode needs full tool surface + StructuredOutput). */
     skipToolRouter?: boolean
     cfg?: Config.Info
-  }) {
+  }): Promise<{ tools: Record<string, AITool>; toolRouterPrompt?: string }> {
     using _ = log.time("resolveTools")
     const tools: Record<string, AITool> = {}
 
@@ -979,7 +980,7 @@ export namespace SessionPrompt {
       tier,
       includeBash: Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH,
     })
-    return ToolRouter.apply({
+    const routed = ToolRouter.apply({
       tools: afterTier,
       messages: input.messages,
       agent: input.agent,
@@ -987,6 +988,12 @@ export namespace SessionPrompt {
       mcpIds,
       skip: input.skipToolRouter ?? false,
     })
+    const inject = cfg.experimental?.tool_router?.inject_prompt !== false
+    let toolRouterPrompt = routed.promptHint
+    if (!toolRouterPrompt && inject && tier === "minimal" && !threadHasAssistant(input.messages)) {
+      toolRouterPrompt = minimalTierPromptHint({ includeBash: Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH })
+    }
+    return { tools: routed.tools, toolRouterPrompt }
   }
 
   /** @internal Exported for testing */

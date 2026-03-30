@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applyInitialToolTier } from "../../src/session/initial-tool-tier"
+import { applyInitialToolTier, minimalTierPromptHint } from "../../src/session/initial-tool-tier"
 import type { Tool as AITool } from "ai"
 import type { MessageV2 } from "../../src/session/message-v2"
 
@@ -93,6 +93,11 @@ describe("applyInitialToolTier", () => {
       includeBash: false,
     })
     expect(out).toBe(tools)
+  })
+
+  test("minimalTierPromptHint lists ids", () => {
+    expect(minimalTierPromptHint({ includeBash: false })).toContain("read, grep, glob, skill")
+    expect(minimalTierPromptHint({ includeBash: true })).toContain("bash")
   })
 
   test("empty allowlist with tools present falls back to full", () => {
