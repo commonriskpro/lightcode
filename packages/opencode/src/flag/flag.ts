@@ -81,6 +81,8 @@ export namespace Flag {
   export const OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH = truthy("OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH")
   /** Log wire/usage analytics; also configurable as experimental.debug_request. */
   export const OPENCODE_DEBUG_REQUEST = truthy("OPENCODE_DEBUG_REQUEST")
+  /** Skip global instruction paths (~/.config/.../AGENTS.md, OPENCODE_CONFIG_DIR/AGENTS.md, ~/.claude/CLAUDE.md) and append a system line discouraging proactive README/CLAUDE.md/package.json reads. */
+  export const OPENCODE_DISABLE_GLOBAL_DOC_READS = truthy("OPENCODE_DISABLE_GLOBAL_DOC_READS")
   /** Enable offline tool router; merges with experimental.tool_router.enabled. */
   export declare const OPENCODE_TOOL_ROUTER: boolean
   export declare const OPENCODE_INITIAL_TOOL_TIER: "minimal" | "full" | undefined

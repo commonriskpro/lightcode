@@ -71,15 +71,20 @@ export function Logo() {
   }
 
   return (
-    <box>
-      <For each={logo.left}>
-        {(line, index) => (
-          <box flexDirection="row" gap={1}>
-            <box flexDirection="row">{renderLine(line, theme.textMuted, false)}</box>
-            <box flexDirection="row">{renderLine(logo.right[index()], theme.text, true)}</box>
-          </box>
-        )}
-      </For>
+    <box flexDirection="row" gap={2} alignItems="center">
+      <box>
+        <For each={logo.left}>
+          {(line, index) => (
+            <box flexDirection="row" gap={1}>
+              <box flexDirection="row">{renderLine(line, theme.textMuted, false)}</box>
+              <box flexDirection="row">{renderLine(logo.right[index()], theme.text, true)}</box>
+            </box>
+          )}
+        </For>
+      </box>
+      <text fg={theme.textMuted} attributes={TextAttributes.BOLD} selectable={false}>
+        commonriskpro
+      </text>
     </box>
   )
 }

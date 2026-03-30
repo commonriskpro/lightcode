@@ -72,9 +72,9 @@ Implementations behind one interface, e.g. `ToolRouter.decide(input) → output`
 
 ### 6.1 Rule / keyword tier (MVP)
 
-- Map keywords and regexes to tool groups (`edit` → `read`,`edit`,`grep`; `deploy` → `bash`,`task`, …).
+- Map keywords and regexes to tool groups (`edit` → `read`,`edit`,`grep`; `deploy` → `bash`,`task`, …). Implementations may use **intent buckets** (synonyms, short phrases, EN/ES) for common actions (create, delete/move, fix) without ML — still deterministic.
 - **Always include** a configurable **base set** per agent (e.g. orchestrator: `read`, `task`, `skill`).
-- **Pros:** trivial to test, no ML. **Cons:** brittle.
+- **Pros:** trivial to test, no ML. **Cons:** brittle vs. paraphrase; use §6.2+ for semantic coverage.
 
 ### 6.2 Embedding similarity (offline)
 
@@ -126,6 +126,8 @@ To avoid double-filtering or contradictions, apply **in this order**:
 4. Pass result to `LLM.stream`.
 
 **Turn 1 with both minimal tier and router:** router input sees **already-minimal** tools; router may **further** narrow (optional) or **no-op** if config says “router only after first assistant”. Product default: **either** minimal tier **or** router on turn 1, not two independent aggressive cuts—recommend `router.apply_after_first_assistant: true` so turn 1 stays exactly today’s minimal tier.
+
+**System prompt (`mergedInstructionBodies` in `wire-tier.ts`):** merged AGENTS.md / instruction URLs are **omitted** on turn 1 only when `initial_tool_tier === minimal` and there is no assistant yet—**unless** the tool router is configured to **filter** on the first user turn (`apply_after_first_assistant: false` and router enabled). In that case the model receives **full** merged instructions so project context stays available alongside a keyword-narrowed tool set.
 
 **Turn 2+:** tier no longer applies → full map from step 1; router is the main savings.
 

@@ -17,6 +17,7 @@ describe("agent.sdd", () => {
         agent: {
           build: { disable: true },
           plan: { disable: true },
+          "sdd-orchestrator": { disable: true },
         },
       },
     })
@@ -24,6 +25,22 @@ describe("agent.sdd", () => {
       directory: tmp.path,
       fn: async () => {
         await expect(Agent.defaultAgent()).rejects.toThrow("no primary visible agent found")
+      },
+    })
+  })
+
+  test("sdd-orchestrator agent is primary native", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const o = await Agent.get("sdd-orchestrator")
+        expect(o).toBeDefined()
+        expect(o?.mode).toBe("primary")
+        expect(o?.native).toBe(true)
+        expect(o?.description).toContain("SDD")
+        expect(evalPerm(o, "edit")).toBe("deny")
+        expect(evalPerm(o, "read")).toBe("allow")
       },
     })
   })

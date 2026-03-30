@@ -1,5 +1,6 @@
 import type { Tool as AITool } from "ai"
 import type { MessageV2 } from "./message-v2"
+import { threadHasAssistant } from "./wire-tier"
 
 const SLIM_LEN = 200
 
@@ -20,8 +21,7 @@ export function applyInitialToolTier(input: {
 }): Record<string, AITool> {
   if (input.tier !== "minimal") return input.tools
 
-  const hasAssistant = input.messages.some((m) => m.info.role === "assistant")
-  if (hasAssistant) return input.tools
+  if (threadHasAssistant(input.messages)) return input.tools
 
   const allow = new Set<string>(MINIMAL_IDS)
   if (input.includeBash) allow.add("bash")

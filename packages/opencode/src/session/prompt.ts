@@ -34,6 +34,7 @@ import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
 import { applyInitialToolTier } from "./initial-tool-tier"
 import { ToolRouter } from "./tool-router"
+import { mergedInstructionBodies } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -598,6 +599,8 @@ export namespace SessionPrompt {
         session,
       })
 
+      const cfg = await Config.get()
+
       const processor = await SessionProcessor.create({
         assistantMessage: (await Session.updateMessage({
           id: MessageID.ascending(),
@@ -643,6 +646,7 @@ export namespace SessionPrompt {
         bypassAgentCheck,
         messages: msgs,
         skipToolRouter: lastUser.format?.type === "json_schema",
+        cfg,
       })
 
       // Inject StructuredOutput tool if JSON schema mode enabled
@@ -684,7 +688,11 @@ export namespace SessionPrompt {
       await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
       // Build system prompt (cached when inputs unchanged; see system-prompt-cache.ts)
-      const system = await SystemPromptCache.getParts({ agent, model })
+      const system = await SystemPromptCache.getParts({
+        agent,
+        model,
+        instructions: mergedInstructionBodies(cfg, msgs, lastUser.format?.type === "json_schema"),
+      })
       const format = lastUser.format ?? { type: "text" }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -780,6 +788,7 @@ export namespace SessionPrompt {
     messages: MessageV2.WithParts[]
     /** Skip offline tool router (e.g. JSON schema mode needs full tool surface + StructuredOutput). */
     skipToolRouter?: boolean
+    cfg?: Config.Info
   }) {
     using _ = log.time("resolveTools")
     const tools: Record<string, AITool> = {}
@@ -962,7 +971,7 @@ export namespace SessionPrompt {
       tools[key] = item
     }
 
-    const cfg = await Config.get()
+    const cfg = input.cfg ?? (await Config.get())
     const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
     const afterTier = applyInitialToolTier({
       tools,

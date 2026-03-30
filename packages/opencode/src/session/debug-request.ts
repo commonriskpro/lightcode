@@ -19,6 +19,7 @@ export namespace DebugRequest {
     small?: boolean
     toolsBytes: number
     promptBytes: number
+    systemBytes: number
   }) {
     log.info("debug_request", { phase: "wire", ...input })
   }

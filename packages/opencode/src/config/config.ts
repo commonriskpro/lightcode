@@ -1091,13 +1091,19 @@ export namespace Config {
             .enum(["full", "minimal"])
             .optional()
             .describe(
-              "First model request only: minimal exposes read/grep/glob/skill (+ optional bash via OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH) with shorter tool descriptions; full after any assistant message.",
+              "First thread turn only (no assistant message yet): minimal uses a small tool allowlist with shorter descriptions and omits merged AGENTS.md/CLAUDE.md/instruction bodies in favor of a short pointer (read/skill); full wire resumes after any assistant message.",
             ),
           debug_request: z
             .boolean()
             .optional()
             .describe(
               "Same as OPENCODE_DEBUG_REQUEST: log structured wire/usage lines (service=debug-request) for prompt and tool payload sizes.",
+            ),
+          disable_global_doc_reads: z
+            .boolean()
+            .optional()
+            .describe(
+              "Same as OPENCODE_DISABLE_GLOBAL_DOC_READS: no global instruction file merge from config home paths, and discourage proactive reads of README.md, CLAUDE.md, package.json.",
             ),
           tool_router: z
             .object({

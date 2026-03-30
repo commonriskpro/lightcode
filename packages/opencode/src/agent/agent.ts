@@ -21,6 +21,7 @@ import PROMPT_SDD_SPEC from "./prompt/sdd-spec.txt"
 import PROMPT_SDD_APPLY from "./prompt/sdd-apply.txt"
 import PROMPT_SDD_VERIFY from "./prompt/sdd-verify.txt"
 import PROMPT_SDD_ARCHIVE from "./prompt/sdd-archive.txt"
+import PROMPT_SDD_ORCHESTRATOR from "./prompt/sdd-orchestrator.txt"
 import PROMPT_JUDGMENT_DAY from "./prompt/judgment-day.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
@@ -151,6 +152,32 @@ export namespace Agent {
               ),
               mode: "primary",
               native: true,
+            },
+            "sdd-orchestrator": {
+              name: "sdd-orchestrator",
+              description:
+                "Coordinates SDD phases: delegate to sdd-* sub-agents via task; read/grep/glob/skill only—no app edits from this agent.",
+              mode: "primary",
+              native: true,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig({
+                  task: {
+                    "*": "deny",
+                    "sdd-*": "allow",
+                  },
+                  read: "allow",
+                  grep: "allow",
+                  glob: "allow",
+                  skill: "allow",
+                  edit: "deny",
+                  write: "deny",
+                  bash: "deny",
+                }),
+                user,
+              ),
+              prompt: PROMPT_SDD_ORCHESTRATOR,
             },
             general: {
               name: "general",

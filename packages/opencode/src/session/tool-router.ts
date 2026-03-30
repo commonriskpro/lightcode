@@ -3,13 +3,34 @@ import type { Config } from "@/config/config"
 import { Flag } from "@/flag/flag"
 import type { MessageV2 } from "./message-v2"
 import { Log } from "@/util/log"
+import { threadHasAssistant } from "./wire-tier"
 
 const log = Log.create({ service: "tool-router" })
 
+/**
+ * Offline router: narrows `tools` after permissions, after `applyInitialToolTier`.
+ * When `apply_after_first_assistant` is true (default), skips until an assistant message exists (pairs with `initial_tool_tier` on T1).
+ * `threadHasAssistant` / `routerFiltersFirstTurn` (`wire-tier.ts`) use the same assistant check for system prompt policy.
+ *
+ * Rules are **intent buckets** (synonyms / multilingual), not an embedding model — see docs/spec-offline-tool-router.md §6.2 for future semantic routing.
+ */
 const DEFAULT_BASE = ["read", "task", "skill"]
 
 const RULES: { re: RegExp; add: string[] }[] = [
   { re: /\b(edit|write|patch|refactor)\b/i, add: ["edit", "write", "grep", "read"] },
+  {
+    re: /\b(create|add|implement|new file|scaffold|crear|añadir|implementar)\b/i,
+    add: ["write", "edit", "grep", "read"],
+  },
+  {
+    re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borrar|borra|borras|eliminar|elimina|suprimir)\b/i,
+    add: ["bash", "read", "glob"],
+  },
+  {
+    re: /\b(move|rename|mv\b|relocate|mover|renombrar)\b/i,
+    add: ["bash", "read", "glob"],
+  },
+  { re: /\b(fix|debug|bug|broken|arreglar|depurar)\b/i, add: ["edit", "grep", "read", "bash"] },
   { re: /\b(test|npm test|pytest|jest|vitest|mocha|cargo test)\b/i, add: ["bash", "read"] },
   { re: /\b(shell|bash|run|execute|pnpm|yarn|cargo|make)\b/i, add: ["bash", "read"] },
   { re: /\b(find|glob|search files|list files)\b/i, add: ["glob", "grep", "read"] },
@@ -59,7 +80,7 @@ export namespace ToolRouter {
     if (!routerOn || input.skip) return input.tools
     if (input.agent.name === "compaction" || input.agent.mode === "compaction") return input.tools
 
-    const hasAssistant = input.messages.some((m) => m.info.role === "assistant")
+    const hasAssistant = threadHasAssistant(input.messages)
     if (tr?.apply_after_first_assistant !== false && !hasAssistant) return input.tools
 
     const text = userText(input.messages)

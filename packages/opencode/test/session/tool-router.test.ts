@@ -107,6 +107,28 @@ describe("ToolRouter.apply", () => {
     expect(Object.keys(out).sort()).toEqual(["bash", "read"])
   })
 
+  test("delete/remove intent adds bash without saying shell", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("borra la carpeta boom")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.bash).toBeDefined()
+  })
+
   test("OPENCODE_TOOL_ROUTER enables without experimental.tool_router.enabled", async () => {
     const prev = process.env.OPENCODE_TOOL_ROUTER
     process.env.OPENCODE_TOOL_ROUTER = "1"

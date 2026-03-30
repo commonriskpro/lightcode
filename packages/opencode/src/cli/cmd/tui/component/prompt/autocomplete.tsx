@@ -334,7 +334,11 @@ export function Autocomplete(props: {
   const agents = createMemo(() => {
     const agents = sync.data.agent
     return agents
-      .filter((agent) => !agent.hidden && agent.mode !== "primary")
+      .filter(
+        (agent) =>
+          !agent.hidden &&
+          (agent.mode !== "primary" || agent.name === "sdd-orchestrator"),
+      )
       .map(
         (agent): AutocompleteOption => ({
           display: "@" + agent.name,

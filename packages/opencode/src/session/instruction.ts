@@ -17,7 +17,8 @@ const FILES = [
   "CONTEXT.md", // deprecated
 ]
 
-function globalFiles() {
+function globalFiles(skip: boolean) {
+  if (skip) return []
   const files = []
   if (Flag.OPENCODE_CONFIG_DIR) {
     files.push(path.join(Flag.OPENCODE_CONFIG_DIR, "AGENTS.md"))
@@ -71,6 +72,8 @@ export namespace InstructionPrompt {
 
   export async function systemPaths() {
     const config = await Config.get()
+    const skipGlobal =
+      Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || config.experimental?.disable_global_doc_reads === true
     const paths = new Set<string>()
 
     if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
@@ -85,7 +88,7 @@ export namespace InstructionPrompt {
       }
     }
 
-    for (const file of globalFiles()) {
+    for (const file of globalFiles(skipGlobal)) {
       if (await Filesystem.exists(file)) {
         paths.add(path.resolve(file))
         break

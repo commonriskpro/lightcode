@@ -104,6 +104,14 @@ export namespace LLM {
         .join("\n"),
     )
 
+    const noGlobalDoc =
+      Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || cfg.experimental?.disable_global_doc_reads === true
+    if (noGlobalDoc) {
+      system.push(
+        "Do not proactively read README.md, CLAUDE.md, or package.json unless the user explicitly asks you to.",
+      )
+    }
+
     // Inject agent-mode specific skills for SDD agents
     const agentModeSkills = getAgentModeSkills(input.agent)
     if (agentModeSkills) {
@@ -213,6 +221,7 @@ export namespace LLM {
         small: input.small,
         toolsBytes,
         promptBytes,
+        systemBytes: system.join("\n").length,
       })
     }
 
@@ -367,16 +376,27 @@ export namespace LLM {
     return false
   }
 
+  /** Names must match registered skills (SKILL.md `name:`), not tool ids like read/write/edit. */
   const sddSkillMap: Record<string, string[]> = {
-    "sdd-explore": ["explore", "read"],
-    "sdd-propose": ["read"],
-    "sdd-spec": ["read"],
-    "sdd-design": ["read", "architecture"],
-    "sdd-tasks": ["read"],
-    "sdd-apply": ["edit", "write", "typescript", "go-testing"],
-    "sdd-verify": ["read", "pytest"],
-    "sdd-archive": ["read"],
-    "judgment-day": ["read", "review"],
+    "sdd-orchestrator": [
+      "sdd-explore",
+      "sdd-propose",
+      "sdd-spec",
+      "sdd-design",
+      "sdd-tasks",
+      "sdd-apply",
+      "sdd-verify",
+      "sdd-archive",
+    ],
+    "sdd-explore": ["sdd-explore"],
+    "sdd-propose": ["sdd-propose"],
+    "sdd-spec": ["sdd-spec"],
+    "sdd-design": ["sdd-design"],
+    "sdd-tasks": ["sdd-tasks"],
+    "sdd-apply": ["sdd-apply", "go-testing"],
+    "sdd-verify": ["sdd-verify"],
+    "sdd-archive": ["sdd-archive"],
+    "judgment-day": ["judgment-day"],
   }
 
   function getAgentModeSkills(agent: Agent.Info): string | undefined {
