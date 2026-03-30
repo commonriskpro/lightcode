@@ -24,7 +24,7 @@
   "agent": {
     "sdd-orchestrator": {
       "mode": "primary",
-      "description": "Agent Teams Orchestrator — coordinates SDD sub-agents; no inline execution (Gentle AI)",
+      "description": "Agent Teams Orchestrator - coordinates sub-agents, never does work inline",
       "prompt": "{file:../gentle-ai/AGENTS.md}",
       "permission": {
         "task": {
@@ -35,69 +35,68 @@
         "grep": "allow",
         "glob": "allow",
         "skill": "allow",
-        "edit": "deny",
-        "bash": "deny",
       },
     },
+    // Subagent prompts: packages/opencode/src/agent/prompt/sdd-*.txt (same as built-in defaults)
     "sdd-init": {
       "mode": "subagent",
       "hidden": true,
       "description": "Bootstrap SDD context and project configuration",
-      "prompt": "SDD init phase. Follow the skill (registry step first): {file:../gentle-ai/skills/sdd-init/SKILL.md}",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-init.txt}",
     },
     "sdd-explore": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Investigate codebase and compare approaches",
-      "prompt": "SDD explore phase. Follow: {file:../gentle-ai/skills/sdd-explore/SKILL.md}",
+      "description": "Investigate codebase and think through ideas",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-explore.txt}",
     },
     "sdd-propose": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Create change proposals",
-      "prompt": "SDD propose phase. Follow: {file:../gentle-ai/skills/sdd-propose/SKILL.md}",
+      "description": "Create change proposals from explorations",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-propose.txt}",
     },
     "sdd-spec": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Write specifications",
-      "prompt": "SDD spec phase. Follow: {file:../gentle-ai/skills/sdd-spec/SKILL.md}",
+      "description": "Write detailed specifications from proposals",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-spec.txt}",
     },
     "sdd-design": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Technical design",
-      "prompt": "SDD design phase. Follow: {file:../gentle-ai/skills/sdd-design/SKILL.md}",
+      "description": "Create technical design from proposals",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-design.txt}",
     },
     "sdd-tasks": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Break work into tasks",
-      "prompt": "SDD tasks phase. Follow: {file:../gentle-ai/skills/sdd-tasks/SKILL.md}",
+      "description": "Break down specs and designs into implementation tasks",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-tasks.txt}",
     },
     "sdd-apply": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Implement from tasks",
-      "prompt": "SDD apply phase. Follow: {file:../gentle-ai/skills/sdd-apply/SKILL.md}",
+      "description": "Implement code changes from task definitions",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-apply.txt}",
     },
     "sdd-verify": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Validate against specs",
-      "prompt": "SDD verify phase. Follow: {file:../gentle-ai/skills/sdd-verify/SKILL.md}",
+      "description": "Validate implementation against specs",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-verify.txt}",
     },
     "sdd-archive": {
       "mode": "subagent",
       "hidden": true,
-      "description": "Archive completed change",
-      "prompt": "SDD archive phase. Follow: {file:../gentle-ai/skills/sdd-archive/SKILL.md}",
+      "description": "Archive completed change artifacts",
+      "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-archive.txt}",
     },
   },
   "experimental": {
     "initial_tool_tier": "minimal",
-    // true → logs debug-request (toolsBytes, systemBytes, promptBytes) — activar para medir
-    "debug_request": true,
+    // true → logs debug-request (toolsBytes, systemBytes, promptBytes)
+    "debug_request": false,
     "tool_router": {
       "enabled": true,
       "mode": "rules",

@@ -26,7 +26,8 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     label: "create/implement",
   },
   {
-    re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borrar|borra|borras|eliminar|elimina|suprimir)\b/i,
+    // Spanish: "borralo/borrarlos/borrarlo" are one word — \bborra\b does not match inside them.
+    re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borr(?:as|ar|a|alo|ala|arlos|arlas|arlo|arla)|eliminar|elimina|suprimir)\b/i,
     add: ["bash", "edit", "write", "read", "glob"],
     label: "delete/remove",
   },
@@ -53,7 +54,16 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     add: ["glob", "grep", "read", "task"],
     label: "explore/en",
   },
-  { re: /\b(http|curl|fetch|url|website|web search)\b/i, add: ["webfetch", "websearch"], label: "web" },
+  {
+    re: /https?:\/\/[^\s]+|www\.[^\s]+/i,
+    add: ["webfetch", "websearch", "read"],
+    label: "web/url",
+  },
+  {
+    re: /\b(http|curl|fetch|url|website|web\s+search|internet|navegador|wikipedia|búsqueda\s+web|en\s+internet|investigar\s+sobre|investigaci[oó]n\s+sobre|investigaci[oó]n\s+de|investigues\s+sobre|investigue\s+sobre|buscar\s+informaci[oó]n\s+sobre|buscar\s+informaci[oó]n\s+de|busca\s+informaci[oó]n\s+sobre|busca\s+informaci[oó]n\s+de|informaci[oó]n\s+sobre|producto\s+externo|software\s+externo|herramienta\s+externa|documentaci[oó]n\s+pública|documentaci[oó]n\s+oficial|mercado\s+externo|research\s+(on|about|into)|look\s+up\s+online|third[- ]party|external\s+(product|software|tool|vendor))\b/i,
+    add: ["webfetch", "websearch", "read"],
+    label: "web/research",
+  },
   { re: /\b(todo\s+list|task\s+list|my\s+todo)\b/i, add: ["todowrite", "read"], label: "todo" },
   { re: /\b(delegate|subagent|sdd-|orchestrat)\b/i, add: ["task", "read"], label: "delegate/sdd" },
   { re: /\b(question|ask me|choose)\b/i, add: ["question"], label: "question" },
@@ -184,7 +194,11 @@ export namespace ToolRouter {
     )
 
     const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
-    const ordered = orderIds(base, matched, builtinAvailable, max)
+    const fromRules = orderIds(base, matched, builtinAvailable, max)
+    // Additive: keep every tool from the tier-limited map (e.g. minimal + bash for sdd-init), then rule matches — otherwise rule orderIds can drop bash.
+    const ordered = additive
+      ? [...new Set([...Object.keys(input.tools), ...fromRules])].slice(0, max)
+      : fromRules
 
     const out: Record<string, AITool> = {}
     for (const id of ordered) {
@@ -210,7 +224,7 @@ export namespace ToolRouter {
 
     log.info("tool_router", {
       selected: ids.sort(),
-      builtin: ordered.sort(),
+      builtin: fromRules.sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
       reason: additive ? "additive" : "rules",
       userPreview: text.slice(0, 120),

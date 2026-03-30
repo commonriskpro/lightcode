@@ -1616,6 +1616,61 @@ export type Config = {
      * Timeout in milliseconds for model context protocol (MCP) requests
      */
     mcp_timeout?: number
+    /**
+     * First thread turn only (no assistant message yet): minimal uses a small tool allowlist with shorter descriptions and omits merged AGENTS.md/CLAUDE.md/instruction bodies in favor of a short pointer (read/skill); full wire resumes after any assistant message.
+     */
+    initial_tool_tier?: "full" | "minimal"
+    /**
+     * Same as OPENCODE_DEBUG_REQUEST: log structured wire/usage lines (service=debug-request) for prompt and tool payload sizes.
+     */
+    debug_request?: boolean
+    /**
+     * Same as OPENCODE_DISABLE_GLOBAL_DOC_READS: no global instruction file merge from config home paths, and discourage proactive reads of README.md, CLAUDE.md, package.json.
+     */
+    disable_global_doc_reads?: boolean
+    tool_router?: {
+      /**
+       * Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md).
+       */
+      enabled?: boolean
+      mode?: "rules"
+      /**
+       * When true (default), skip router on the first user turn (initial_tool_tier unchanged).
+       */
+      apply_after_first_assistant?: boolean
+      /**
+       * Always-included tool ids before rule matches; defaults to read, task, skill.
+       */
+      base_tools?: Array<string>
+      /**
+       * When true with initial_tool_tier minimal: start from the tier allowlist, then add tools from rules using full registry definitions (see ToolRouter).
+       */
+      additive?: boolean
+      max_tools?: number
+      /**
+       * When no keyword rule matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.
+       */
+      no_match_fallback?: boolean
+      /**
+       * Defaults to glob, grep, read, task when no_match_fallback is true.
+       */
+      no_match_fallback_tools?: Array<string>
+      /**
+       * When true, MCP tools are always attached and not filtered by rules.
+       */
+      mcp_always_include?: boolean
+      /**
+       * When true (default), append a short system line with offline-router intent hints and the tool ids attached this turn.
+       */
+      inject_prompt?: boolean
+      /**
+       * Spec §7: retry with full tools on tool-layer error. Schema only until processor wiring lands.
+       */
+      fallback?: {
+        max_expansions_per_turn?: number
+        expand_to?: "full"
+      }
+    }
   }
 }
 

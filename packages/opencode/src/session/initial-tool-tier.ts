@@ -8,9 +8,15 @@ const SLIM_LEN = 200
 export const MINIMAL_IDS = ["read", "grep", "glob", "skill"] as const
 
 /** System line when tier is minimal and the thread has no assistant yet (router runs only after first assistant). */
-export function minimalTierPromptHint(input: { includeBash: boolean }) {
+export function minimalTierPromptHint(input: {
+  includeBash: boolean
+  includeWebfetch?: boolean
+  includeWebsearch?: boolean
+}) {
   const ids: string[] = [...MINIMAL_IDS]
   if (input.includeBash) ids.push("bash")
+  if (input.includeWebfetch) ids.push("webfetch")
+  if (input.includeWebsearch) ids.push("websearch")
   return [
     "## Initial tool tier (first turn in this thread)",
     `Only these tools are attached until after the first assistant message: ${ids.join(", ")}.`,
@@ -29,6 +35,8 @@ export function applyInitialToolTier(input: {
   messages: MessageV2.WithParts[]
   tier: "full" | "minimal"
   includeBash: boolean
+  includeWebfetch?: boolean
+  includeWebsearch?: boolean
 }): Record<string, AITool> {
   if (input.tier !== "minimal") return input.tools
 
@@ -36,6 +44,8 @@ export function applyInitialToolTier(input: {
 
   const allow = new Set<string>(MINIMAL_IDS)
   if (input.includeBash) allow.add("bash")
+  if (input.includeWebfetch) allow.add("webfetch")
+  if (input.includeWebsearch) allow.add("websearch")
 
   const out: Record<string, AITool> = {}
   for (const id of allow) {

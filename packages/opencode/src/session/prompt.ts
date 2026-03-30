@@ -974,13 +974,25 @@ export namespace SessionPrompt {
 
     const cfg = input.cfg ?? (await Config.get())
     const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+    const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+    const bashDenied = Permission.disabled(["bash"], ruleset).has("bash")
+    const includeBash =
+      Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH ||
+      (!bashDenied && input.tools?.bash !== false)
+    const webfetchDenied = Permission.disabled(["webfetch"], ruleset).has("webfetch")
+    const websearchDenied = Permission.disabled(["websearch"], ruleset).has("websearch")
+    const includeWebfetch =
+      !webfetchDenied && input.tools?.webfetch !== false && Boolean(tools.webfetch)
+    const includeWebsearch =
+      !websearchDenied && input.tools?.websearch !== false && Boolean(tools.websearch)
     const afterTier = applyInitialToolTier({
       tools,
       messages: input.messages,
       tier,
-      includeBash: Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH,
+      includeBash,
+      includeWebfetch,
+      includeWebsearch,
     })
-    const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
     const disabled = Permission.disabled(Object.keys(tools), ruleset)
     const allowedToolIds = new Set(
       Object.keys(tools).filter((id) => {
@@ -1002,7 +1014,11 @@ export namespace SessionPrompt {
     const inject = cfg.experimental?.tool_router?.inject_prompt !== false
     let toolRouterPrompt = routed.promptHint
     if (!toolRouterPrompt && inject && tier === "minimal" && !threadHasAssistant(input.messages)) {
-      toolRouterPrompt = minimalTierPromptHint({ includeBash: Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH })
+      toolRouterPrompt = minimalTierPromptHint({
+        includeBash,
+        includeWebfetch,
+        includeWebsearch,
+      })
     }
     return { tools: routed.tools, toolRouterPrompt }
   }

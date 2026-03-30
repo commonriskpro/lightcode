@@ -144,7 +144,7 @@ Activo con **`OPENCODE_DEBUG_REQUEST=1`** o **`experimental.debug_request: true`
 
 - **Nativos** en `packages/opencode/src/agent/agent.ts`: `sdd-orchestrator` (primary), subagentes `sdd-explore`, `sdd-spec`, `sdd-apply`, `sdd-verify`, `sdd-propose`, `sdd-design`, `sdd-tasks`, `sdd-archive`, etc.
 - **Prompt del orquestador:** `packages/opencode/src/agent/prompt/sdd-orchestrator.txt`
-- **Override de proyecto:** `.opencode/opencode.jsonc` redefine p. ej. `sdd-orchestrator` con prompt `{file:../gentle-ai/AGENTS.md}` y permisos (solo `task` hacia `sdd-*`, sin `edit`/`bash` inline).
+- **Override de proyecto:** `.opencode/opencode.jsonc` redefine p. ej. `sdd-orchestrator` con prompt `{file:../gentle-ai/AGENTS.md}` y permisos (`task` solo hacia `sdd-*`; `bash`/`edit`/`write` siguen el default allow para que el router offline pueda adjuntarlos por intención).
 - **`sdd-init`** y prompts de fases suelen vivir solo en config apuntando a `gentle-ai/skills/.../SKILL.md`.
 - **`sddSkillMap` en `llm.ts`**: inyecta líneas `@skill <nombre>` para agentes SDD; los nombres deben ser **skills registrados** (frontmatter `name:` en `SKILL.md`), no ids de tools como `write` o `edit`.
 

@@ -135,6 +135,39 @@ describe("ToolRouter.apply", () => {
     expect(out.tools.bash).toBeDefined()
   })
 
+  test("Spanish borralo one word matches delete rule (bash)", async () => {
+    const minimal = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const registry = { ...minimal, bash: dummyTool("bash"), edit: dummyTool("edit"), write: dummyTool("write") }
+    const out = ToolRouter.apply({
+      tools: minimal,
+      registryTools: registry,
+      allowedToolIds: new Set([...Object.keys(registry)]),
+      messages: [userMsg("si, al directorio actual borralo todo")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            additive: true,
+            apply_after_first_assistant: false,
+            max_tools: 12,
+            base_tools: ["read", "task", "skill", "grep", "glob"],
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.promptHint).toContain("delete/remove")
+  })
+
   test("delete/remove intent adds bash without saying shell", async () => {
     const tools = {
       read: dummyTool("read"),
@@ -158,7 +191,7 @@ describe("ToolRouter.apply", () => {
     expect(out.promptHint).toContain("delete/remove")
   })
 
-  test("delete intent without destructive tools injects delegate hint (e.g. orchestrator)", async () => {
+  test("delete intent subtractive without bash in tool map injects delegate hint", async () => {
     const tools = {
       read: dummyTool("read"),
       grep: dummyTool("grep"),
@@ -181,6 +214,46 @@ describe("ToolRouter.apply", () => {
     expect(out.promptHint).toContain("delete/remove")
     expect(out.promptHint).toContain("task")
     expect(out.promptHint).toContain("delegate")
+  })
+
+  test("orchestrator delete intent gets bash when additive and registry permit", async () => {
+    const minimal = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const registry = {
+      ...minimal,
+      bash: dummyTool("bash"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+    }
+    const allowed = new Set(["read", "grep", "glob", "skill", "task", "bash", "edit", "write"])
+    const out = ToolRouter.apply({
+      tools: minimal,
+      registryTools: registry,
+      allowedToolIds: allowed,
+      messages: [userMsg("elimina los archivos viejos")],
+      agent: { name: "sdd-orchestrator", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            additive: true,
+            apply_after_first_assistant: false,
+            max_tools: 12,
+            base_tools: ["read", "task", "skill", "grep", "glob"],
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.promptHint).toContain("delete/remove")
+    expect(out.promptHint).not.toContain("this agent has no bash")
   })
 
   test("Spanish list repo intent includes glob/grep", async () => {
@@ -343,6 +416,53 @@ describe("ToolRouter.apply", () => {
     expect(out.tools.edit).toBeDefined()
     expect(out.tools.write).toBeDefined()
     expect(out.promptHint).toContain("additive")
+  })
+
+  test("web research Spanish adds webfetch websearch (subagent explore)", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      glob: dummyTool("glob"),
+      webfetch: dummyTool("webfetch"),
+      websearch: dummyTool("websearch"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("investiga sobre DealerCenter y el mercado externo")],
+      agent: { name: "sdd-explore", mode: "subagent" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 24 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.webfetch).toBeDefined()
+    expect(out.tools.websearch).toBeDefined()
+    expect(out.promptHint).toContain("web/research")
+  })
+
+  test("literal URL in message adds web tools", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      webfetch: dummyTool("webfetch"),
+      websearch: dummyTool("websearch"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("open https://example.com/docs")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: false, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.webfetch).toBeDefined()
+    expect(out.promptHint).toContain("web/url")
   })
 
   test("OPENCODE_TOOL_ROUTER enables without experimental.tool_router.enabled", async () => {
