@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // Router offline desde el 1.er user turn: initial_tool_tier full + apply_after_first_assistant false (sin allowlist minimal).
+  // Router offline aditivo: tier minimal en T1 + reglas añaden tools desde el registro completo; max_tools 100.
   // wire-tier: packages/opencode/src/session/wire-tier.ts
   "default_agent": "build",
   "skills": {
@@ -95,16 +95,17 @@
     },
   },
   "experimental": {
-    "initial_tool_tier": "full",
+    "initial_tool_tier": "minimal",
     // true → logs debug-request (toolsBytes, systemBytes, promptBytes) — activar para medir
     "debug_request": true,
     "tool_router": {
       "enabled": true,
       "mode": "rules",
-      "apply_after_first_assistant": false,
+      "additive": true,
+      "apply_after_first_assistant": true,
       "inject_prompt": true,
       "base_tools": ["read", "task", "skill", "grep", "glob"],
-      "max_tools": 8,
+      "max_tools": 100,
       "mcp_always_include": true,
       "fallback": {
         "max_expansions_per_turn": 1,

@@ -256,6 +256,45 @@ describe("ToolRouter.apply", () => {
     expect(out.promptHint).toBeUndefined()
   })
 
+  test("additive first turn adds tools from registry not in minimal map", async () => {
+    const registry: Record<string, AITool> = {
+      read: dummyTool("read"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+    }
+    const minimal: Record<string, AITool> = {
+      read: registry.read,
+      grep: registry.grep,
+      glob: registry.glob,
+      skill: registry.skill,
+    }
+    const out = ToolRouter.apply({
+      tools: minimal,
+      registryTools: registry,
+      messages: [userMsg("refactor foo.ts")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            additive: true,
+            apply_after_first_assistant: true,
+            max_tools: 100,
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.edit).toBeDefined()
+    expect(out.tools.write).toBeDefined()
+    expect(out.promptHint).toContain("additive")
+  })
+
   test("OPENCODE_TOOL_ROUTER enables without experimental.tool_router.enabled", async () => {
     const prev = process.env.OPENCODE_TOOL_ROUTER
     process.env.OPENCODE_TOOL_ROUTER = "1"

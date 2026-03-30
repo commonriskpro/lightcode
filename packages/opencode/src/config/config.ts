@@ -1115,7 +1115,14 @@ export namespace Config {
                 .default(true)
                 .describe("When true (default), skip router on the first user turn (initial_tool_tier unchanged)."),
               base_tools: z.array(z.string()).optional().describe("Always-included tool ids before rule matches; defaults to read, task, skill."),
-              max_tools: z.number().int().min(1).max(64).optional().default(12),
+              additive: z
+                .boolean()
+                .optional()
+                .default(false)
+                .describe(
+                  "When true with initial_tool_tier minimal: start from the tier allowlist, then add tools from rules using full registry definitions (see ToolRouter).",
+                ),
+              max_tools: z.number().int().min(1).max(100).optional().default(12),
               mcp_always_include: z
                 .boolean()
                 .optional()

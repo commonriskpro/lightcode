@@ -8,8 +8,10 @@ import { threadHasAssistant } from "./wire-tier"
 const log = Log.create({ service: "tool-router" })
 
 /**
- * Offline router: narrows `tools` after permissions, after `applyInitialToolTier`.
- * When `apply_after_first_assistant` is true (default), skips until an assistant message exists (pairs with `initial_tool_tier` on T1).
+ * Offline router: after `applyInitialToolTier`, either **narrows** (default) or **adds** (`experimental.tool_router.additive`)
+ * from the full registry when the tier left a minimal map.
+ *
+ * When `apply_after_first_assistant` is true (default), skips until an assistant message exists — unless `additive` is true (router runs on T1 to add tools).
  * `threadHasAssistant` / `routerFiltersFirstTurn` (`wire-tier.ts`) use the same assistant check for system prompt policy.
  *
  * Rules are **intent buckets** (synonyms / multilingual), not an embedding model — see docs/spec-offline-tool-router.md §6.2 for future semantic routing.
@@ -72,10 +74,13 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
   return out
 }
 
-function promptHint(input: { ids: string[]; labels: string[] }) {
+function promptHint(input: { ids: string[]; labels: string[]; additive: boolean }) {
   const intent = input.labels.length ? input.labels.join(", ") : "base only (no keyword rule matched)"
   const lines = [
     "## Offline tool router",
+    input.additive
+      ? "Mode: additive (minimal tier + rule matches merged from full registry)."
+      : "Mode: subtractive (subset of attached tools).",
     `Intent from the last user message (keyword rules): ${intent}.`,
     `Tools attached for this request: ${input.ids.sort().join(", ")}.`,
     "Use only these tools; if something is missing, say so and suggest rephrasing the request.",
@@ -91,7 +96,10 @@ function promptHint(input: { ids: string[]; labels: string[] }) {
 
 export namespace ToolRouter {
   export type Input = {
+    /** After `applyInitialToolTier` (may be minimal allowlist on first turn). */
     tools: Record<string, AITool>
+    /** Full tool map before tier strip; required for additive mode to attach rule-matched ids not in `tools`. */
+    registryTools?: Record<string, AITool>
     messages: MessageV2.WithParts[]
     agent: { name: string; mode: string }
     cfg: Config.Info
@@ -111,15 +119,17 @@ export namespace ToolRouter {
     if (!routerOn || input.skip) return { tools: input.tools }
     if (input.agent.name === "compaction" || input.agent.mode === "compaction") return { tools: input.tools }
 
+    const additive = tr?.additive === true
     const hasAssistant = threadHasAssistant(input.messages)
-    if (tr?.apply_after_first_assistant !== false && !hasAssistant) return { tools: input.tools }
+    if (!additive && tr?.apply_after_first_assistant !== false && !hasAssistant) return { tools: input.tools }
 
     const text = userText(input.messages)
-    const available = new Set(Object.keys(input.tools))
+    const full = input.registryTools ?? input.tools
+    const available = new Set(Object.keys(additive ? full : input.tools))
     const base = tr?.base_tools?.length ? tr.base_tools : DEFAULT_BASE
     const max = tr?.max_tools ?? 12
     const mcpAlways = tr?.mcp_always_include !== false
-    const beforeBytes = JSON.stringify(input.tools).length
+    const beforeBytes = JSON.stringify(additive ? full : input.tools).length
 
     const matched = new Set<string>()
     const labels: string[] = []
@@ -134,13 +144,13 @@ export namespace ToolRouter {
 
     const out: Record<string, AITool> = {}
     for (const id of ordered) {
-      const t = input.tools[id]
+      const t = additive ? input.tools[id] ?? input.registryTools?.[id] : input.tools[id]
       if (t) out[id] = t
     }
 
     if (mcpAlways) {
       for (const id of input.mcpIds) {
-        const t = input.tools[id]
+        const t = additive ? input.tools[id] ?? input.registryTools?.[id] : input.tools[id]
         if (t) out[id] = t
       }
     }
@@ -152,13 +162,13 @@ export namespace ToolRouter {
 
     const inject = tr?.inject_prompt !== false
     const ids = Object.keys(out)
-    const hint = inject ? promptHint({ ids, labels }) : undefined
+    const hint = inject ? promptHint({ ids, labels, additive }) : undefined
 
     log.info("tool_router", {
       selected: ids.sort(),
       builtin: ordered.sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
-      reason: "rules",
+      reason: additive ? "additive" : "rules",
       userPreview: text.slice(0, 120),
       bytes_saved_estimate: Math.max(0, beforeBytes - JSON.stringify(out).length),
       inject_prompt: inject,

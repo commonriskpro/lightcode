@@ -982,6 +982,7 @@ export namespace SessionPrompt {
     })
     const routed = ToolRouter.apply({
       tools: afterTier,
+      registryTools: tools,
       messages: input.messages,
       agent: input.agent,
       cfg,
