@@ -1117,8 +1117,8 @@ export namespace Config {
               apply_after_first_assistant: z
                 .boolean()
                 .optional()
-                .default(true)
-                .describe("When true (default), skip router on the first user turn (initial_tool_tier unchanged)."),
+                .default(false)
+                .describe("When true, skip router on the first user turn. Default is false (router active from T1)."),
               base_tools: z
                 .array(z.string())
                 .optional()

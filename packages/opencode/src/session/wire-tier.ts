@@ -12,12 +12,12 @@ function routerEnabled(cfg: Config.Info) {
 
 /**
  * True when ToolRouter.apply will filter tools on the first user turn (no assistant yet):
- * router on and `apply_after_first_assistant === false`. Default is false (router skips T1).
+ * router on and `apply_after_first_assistant` is not explicitly true. Default is true (router applies on T1).
  * Kept in sync with `session/tool-router.ts`.
  */
 export function routerFiltersFirstTurn(cfg: Config.Info, msgs: MessageV2.WithParts[]) {
   if (!routerEnabled(cfg)) return false
-  if (cfg.experimental?.tool_router?.apply_after_first_assistant !== false) return false
+  if (cfg.experimental?.tool_router?.apply_after_first_assistant === true) return false
   if (threadHasAssistant(msgs)) return false
   return true
 }
@@ -35,7 +35,7 @@ export function instructionMode(
 ): "full" | "deferred" | "index" {
   if (skipRouter) return "full"
   if (routerFiltersFirstTurn(cfg, msgs)) return "full"
-  const t = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+  const t = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
   if (t !== "minimal") return "index"
   if (!threadHasAssistant(msgs)) return "deferred"
   return "index"
@@ -43,7 +43,7 @@ export function instructionMode(
 
 /** @deprecated Use instructionMode instead. */
 export function includeInstructionBodies(cfg: Config.Info, msgs: MessageV2.WithParts[]) {
-  const t = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+  const t = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
   if (t !== "minimal") return true
   return threadHasAssistant(msgs)
 }

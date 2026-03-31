@@ -120,7 +120,7 @@ export type ContextTier = "conversation" | "minimal" | "full"
  * Covers Spanish (rioplatense), English, and Portuguese basics.
  */
 const CONVERSATIONAL_RE =
-  /^(hi|hello|hey|howdy|hola|buenas|qué tal|como estas|cómo estás|qué onda|que onda|buen día|buenos dias|buenas tardes|buenas noches|good morning|good afternoon|good evening|good night|what'?s up|whats up|yo)\b/i
+  /\b(hi|hello|hey|howdy|hola|buenas|qué tal|como estas|cómo estás|qué onda|que onda|buen día|buenos dias|buenas tardes|buenas noches|good morning|good afternoon|good evening|good night|what'?s up|whats up|yo|che|dale|ok|va bien|todo bien|cómo andás|como andas|cómo vas|como vas|qué hay|que hay|qué pasa|que pasa)\b/i
 
 const CONVERSATIONAL_FULL_RE =
   /\b(what'?s your name|who are you|what can you do|cómo te llamas|quién sos|cómo te llamás|quién eres|qué podés hacer|qué sabes hacer|qué podés|qué hacés|qué haces|ayudame|ayúdame|help me|can you help|podés ayudarme|me ayudás|gracias|thank you|thanks|cheers|appreciate it|te agradezco|chau|bye|goodbye|see you|nos vemos|hasta luego|adiós|saludos|greetings|jaja|lol|xd|😂|👋|🤖|hello there|hi there)\b/i
@@ -271,7 +271,7 @@ export namespace ToolRouter {
       return { tools: {}, promptHint: undefined, contextTier: "conversation" }
     }
 
-    if (!additive && tr?.apply_after_first_assistant !== false && !hasAssistant) {
+    if (!additive && tr?.apply_after_first_assistant === true && !hasAssistant) {
       const ids = Object.keys(input.tools).sort()
       const hint = `## Offline tool router\nMode: first turn (all tools).\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
       log.info("tool_router", {

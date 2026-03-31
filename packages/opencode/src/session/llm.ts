@@ -104,8 +104,7 @@ export namespace LLM {
         .join("\n"),
     )
 
-    const noGlobalDoc =
-      Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || cfg.experimental?.disable_global_doc_reads === true
+    const noGlobalDoc = Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || cfg.experimental?.disable_global_doc_reads === true
     if (noGlobalDoc) {
       system.push(
         "Do not proactively read README.md, CLAUDE.md, or package.json unless the user explicitly asks you to.",
@@ -216,7 +215,7 @@ export namespace LLM {
         isOpenaiOauth || isWorkflow
           ? JSON.stringify(messages).length + system.join("\n").length
           : JSON.stringify(messages).length
-      const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+      const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
       const threadHasAssistant = input.messages.some((m) => m.role === "assistant")
       DebugRequest.wire({
         sessionID: input.sessionID,
@@ -405,10 +404,7 @@ export namespace LLM {
     const skills = sddSkillMap[agent.name]
     if (!skills || skills.length === 0) return undefined
 
-    const lines = [
-      "",
-      "## Relevant Skills for this task:",
-    ]
+    const lines = ["", "## Relevant Skills for this task:"]
     for (const skill of skills) {
       lines.push(`- @skill ${skill}`)
     }

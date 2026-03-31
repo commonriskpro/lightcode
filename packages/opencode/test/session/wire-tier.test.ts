@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  includeInstructionBodies,
-  mergedInstructionBodies,
-  routerFiltersFirstTurn,
-} from "../../src/session/wire-tier"
+import { includeInstructionBodies, mergedInstructionBodies, routerFiltersFirstTurn } from "../../src/session/wire-tier"
 import type { Config } from "@/config/config"
 import type { MessageV2 } from "../../src/session/message-v2"
 
@@ -45,9 +41,15 @@ function assistant() {
 
 describe("includeInstructionBodies", () => {
   test("full tier always includes", () => {
-    const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "full" as const } }
-    expect(includeInstructionBodies(cfg, [user()])).toBe(true)
-    expect(includeInstructionBodies(cfg, [user(), assistant()])).toBe(true)
+    const prev = process.env.OPENCODE_INITIAL_TOOL_TIER
+    delete process.env.OPENCODE_INITIAL_TOOL_TIER
+    try {
+      const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "full" as const } }
+      expect(includeInstructionBodies(cfg, [user()])).toBe(true)
+      expect(includeInstructionBodies(cfg, [user(), assistant()])).toBe(true)
+    } finally {
+      if (prev !== undefined) process.env.OPENCODE_INITIAL_TOOL_TIER = prev
+    }
   })
 
   test("minimal first turn omits", () => {

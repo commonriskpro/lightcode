@@ -57,7 +57,7 @@ describe("ToolRouter.apply", () => {
         skip: false,
       })
       expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
-      expect(out.promptHint).toBeUndefined()
+      expect(out.promptHint).toContain("Offline tool router")
     } finally {
       if (prev !== undefined) process.env.OPENCODE_TOOL_ROUTER = prev
     }
@@ -101,7 +101,7 @@ describe("ToolRouter.apply", () => {
       skip: false,
     })
     expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
-    expect(out.promptHint).toBeUndefined()
+    expect(out.promptHint).toContain("first turn")
   })
 
   test("skip flag bypasses router", async () => {
@@ -345,7 +345,7 @@ describe("ToolRouter.apply", () => {
     }
     const out = ToolRouter.apply({
       tools,
-      messages: [userMsg("hello")],
+      messages: [userMsg("xyzzy 42")],
       agent: { name: "build", mode: "primary" },
       cfg: {
         experimental: {
@@ -592,7 +592,7 @@ describe("ToolRouter.apply", () => {
     }
     const out = ToolRouter.apply({
       tools,
-      messages: [userMsg("x"), assistantMsg(), userMsg("hello world")],
+      messages: [userMsg("x"), assistantMsg(), userMsg("xyzzy plugh")],
       agent: { name: "build", mode: "primary" },
       cfg: {
         experimental: {
@@ -653,7 +653,7 @@ describe("ToolRouter.apply", () => {
       skip: false,
     })
     expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
-    expect(out.promptHint).toBeUndefined()
+    expect(out.promptHint).toContain("compaction agent")
   })
 
   test("max_tools caps the result", async () => {
@@ -778,7 +778,7 @@ describe("ToolRouter.apply", () => {
     }
     const out = ToolRouter.apply({
       tools,
-      messages: [userMsg("x"), assistantMsg(), userMsg("hello")],
+      messages: [userMsg("x"), assistantMsg(), userMsg("zyxel 99")],
       agent: { name: "build", mode: "primary" },
       cfg: {
         experimental: {

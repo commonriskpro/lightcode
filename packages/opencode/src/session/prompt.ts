@@ -1083,7 +1083,7 @@ export namespace SessionPrompt {
     }
 
     const cfg = input.cfg ?? (await Config.get())
-    const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+    const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
     const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
     const bashDenied = Permission.disabled(["bash"], ruleset).has("bash")
     const includeBash = Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH || (!bashDenied && input.tools?.bash !== false)
