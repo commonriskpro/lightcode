@@ -44,17 +44,23 @@ function assistantMsg() {
 
 describe("ToolRouter.apply", () => {
   test("disabled returns tools unchanged", async () => {
-    const tools = { read: dummyTool("read"), bash: dummyTool("bash") }
-    const out = ToolRouter.apply({
-      tools,
-      messages: [userMsg("hi"), assistantMsg(), userMsg("run npm test in src")],
-      agent: { name: "build", mode: "primary" },
-      cfg: { experimental: {} } as Config.Info,
-      mcpIds: new Set(),
-      skip: false,
-    })
-    expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
-    expect(out.promptHint).toBeUndefined()
+    const prev = process.env.OPENCODE_TOOL_ROUTER
+    delete process.env.OPENCODE_TOOL_ROUTER
+    try {
+      const tools = { read: dummyTool("read"), bash: dummyTool("bash") }
+      const out = ToolRouter.apply({
+        tools,
+        messages: [userMsg("hi"), assistantMsg(), userMsg("run npm test in src")],
+        agent: { name: "build", mode: "primary" },
+        cfg: { experimental: {} } as Config.Info,
+        mcpIds: new Set(),
+        skip: false,
+      })
+      expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
+      expect(out.promptHint).toBeUndefined()
+    } finally {
+      if (prev !== undefined) process.env.OPENCODE_TOOL_ROUTER = prev
+    }
   })
 
   test("enabled after assistant narrows by rules", async () => {
@@ -489,5 +495,409 @@ describe("ToolRouter.apply", () => {
       if (prev === undefined) delete process.env.OPENCODE_TOOL_ROUTER
       else process.env.OPENCODE_TOOL_ROUTER = prev
     }
+  })
+
+  // --- Slim descriptions ---
+
+  test("base tools not matched by rules get slim descriptions", async () => {
+    const tools = {
+      read: {
+        description:
+          "Read a file or directory from the filesystem. Use this tool when you need to inspect the contents of a file.",
+      } as AITool,
+      edit: { description: "Edit a file by replacing or inserting content." } as AITool,
+      task: { description: "Delegate a task to a sub-agent for parallel execution." } as AITool,
+      skill: { description: "Load a named skill from the skill registry." } as AITool,
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit the config file")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    // edit is matched by rule → keeps full description
+    expect(out.tools.edit.description).toContain("replacing or inserting")
+    // read is in edit/refactor rule's add list → matched → keeps full description
+    expect(out.tools.read.description).toContain("filesystem")
+    // task and skill are base-only → get slim descriptions
+    expect(out.tools.task.description).toBe("Delegate a task to a subagent.")
+    expect(out.tools.skill.description).toBe("Load a named skill.")
+  })
+
+  test("all matched tools keep full descriptions", async () => {
+    const tools = {
+      edit: { description: "Full edit description" } as AITool,
+      write: { description: "Full write description" } as AITool,
+      grep: { description: "Full grep description" } as AITool,
+      read: { description: "Full read description" } as AITool,
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("create a new file")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    // All tools are matched by the create/implement rule → keep full descriptions
+    expect(out.tools.edit.description).toBe("Full edit description")
+    expect(out.tools.write.description).toBe("Full write description")
+    expect(out.tools.grep.description).toBe("Full grep description")
+    expect(out.tools.read.description).toBe("Full read description")
+  })
+
+  // --- MCP filtering by intent ---
+
+  test("MCP tools filtered when rule matches but MCP not in rule", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      edit: dummyTool("edit"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+      db_query: dummyTool("db_query"), // MCP tool
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit the config")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(["db_query"]),
+      skip: false,
+    })
+    // edit rule matched → db_query MCP tool should be filtered out
+    expect(out.tools.edit).toBeDefined()
+    expect(out.tools.db_query).toBeUndefined()
+  })
+
+  test("MCP tools included on fallback (no rule matched)", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+      db_query: dummyTool("db_query"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("hello world")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(["db_query"]),
+      skip: false,
+    })
+    // No rule matched → fallback → MCP tools included
+    expect(out.tools.db_query).toBeDefined()
+    expect(out.promptHint).toContain("fallback/no_match")
+  })
+
+  test("mcp_filter_by_intent false includes all MCP tools always", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      edit: dummyTool("edit"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+      db_query: dummyTool("db_query"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit the config")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            apply_after_first_assistant: true,
+            max_tools: 12,
+            mcp_filter_by_intent: false,
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(["db_query"]),
+      skip: false,
+    })
+    // MCP filtering disabled → db_query always included
+    expect(out.tools.db_query).toBeDefined()
+  })
+
+  // --- Edge cases ---
+
+  test("compaction agent skips router", async () => {
+    const tools = { read: dummyTool("read"), bash: dummyTool("bash") }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit something")],
+      agent: { name: "compaction", mode: "compaction" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(Object.keys(out.tools).sort()).toEqual(["bash", "read"])
+    expect(out.promptHint).toBeUndefined()
+  })
+
+  test("max_tools caps the result", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("delete everything")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 3 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(Object.keys(out.tools).length).toBeLessThanOrEqual(3)
+  })
+
+  test("multiple rules union their tools", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      edit: dummyTool("edit"),
+      write: dummyTool("write"),
+      grep: dummyTool("grep"),
+      glob: dummyTool("glob"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit foo.ts and run tests")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    // "edit" matches edit/refactor rule; "run" matches shell/run rule
+    expect(out.tools.edit).toBeDefined()
+    expect(out.tools.bash).toBeDefined()
+    expect(out.tools.grep).toBeDefined()
+    expect(out.promptHint).toContain("edit/refactor")
+    expect(out.promptHint).toContain("shell/run")
+  })
+
+  test("empty user text triggers fallback", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg(""), assistantMsg(), userMsg("")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.promptHint).toContain("fallback/no_match")
+    expect(out.tools.read).toBeDefined()
+    expect(out.tools.task).toBeDefined()
+  })
+
+  test("no_match_fallback false returns only base tools on no match", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+      glob: dummyTool("glob"),
+      grep: dummyTool("grep"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("zzz nothing")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            apply_after_first_assistant: true,
+            max_tools: 12,
+            no_match_fallback: false,
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    // No fallback → only base tools
+    expect(out.tools.read).toBeDefined()
+    expect(out.tools.task).toBeDefined()
+    expect(out.tools.skill).toBeDefined()
+    expect(out.tools.glob).toBeUndefined()
+    expect(out.tools.grep).toBeUndefined()
+  })
+
+  test("mcp_always_include false skips MCP tools", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+      db_query: dummyTool("db_query"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("hello")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            apply_after_first_assistant: false,
+            max_tools: 12,
+            mcp_always_include: false,
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(["db_query"]),
+      skip: false,
+    })
+    expect(out.tools.db_query).toBeUndefined()
+  })
+
+  test("unicode and non-breaking spaces are normalized", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      edit: dummyTool("edit"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    // Non-breaking space between words
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit\u00a0the\u00a0file")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.edit).toBeDefined()
+    expect(out.promptHint).toContain("edit/refactor")
+  })
+
+  test("tool not in input.tools or registryTools is skipped gracefully", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      task: dummyTool("task"),
+      skill: dummyTool("skill"),
+    }
+    // "edit" is in base_tools but not in tools or registry
+    const out = ToolRouter.apply({
+      tools,
+      registryTools: { read: dummyTool("read"), task: dummyTool("task"), skill: dummyTool("skill") },
+      messages: [userMsg("x"), assistantMsg(), userMsg("edit the file")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: { enabled: true, apply_after_first_assistant: true, max_tools: 12 },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    // edit not available → should not crash, just omitted
+    expect(out.tools.edit).toBeUndefined()
+    expect(out.tools.read).toBeDefined()
+  })
+
+  test("custom base_tools overrides defaults", async () => {
+    const tools = {
+      bash: dummyTool("bash"),
+      glob: dummyTool("glob"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("zzz nothing")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            apply_after_first_assistant: true,
+            max_tools: 12,
+            base_tools: ["bash", "glob"],
+          },
+        },
+      } as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.tools.glob).toBeDefined()
+  })
+
+  test("custom no_match_fallback_tools uses specified tools", async () => {
+    const tools = {
+      read: dummyTool("read"),
+      bash: dummyTool("bash"),
+      skill: dummyTool("skill"),
+      task: dummyTool("task"),
+    }
+    const out = ToolRouter.apply({
+      tools,
+      messages: [userMsg("x"), assistantMsg(), userMsg("zzz nothing")],
+      agent: { name: "build", mode: "primary" },
+      cfg: {
+        experimental: {
+          tool_router: {
+            enabled: true,
+            apply_after_first_assistant: true,
+            max_tools: 12,
+            no_match_fallback_tools: ["bash", "read"],
+            base_tools: ["read"],
+          },
+        },
+      } as unknown as Config.Info,
+      mcpIds: new Set(),
+      skip: false,
+    })
+    expect(out.tools.bash).toBeDefined()
+    expect(out.tools.read).toBeDefined()
+    expect(out.tools.skill).toBeUndefined()
   })
 })

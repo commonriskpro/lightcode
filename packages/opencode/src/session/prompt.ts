@@ -33,8 +33,8 @@ import { NotFoundError } from "@/storage/db"
 import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
 import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
-import { ToolRouter } from "./tool-router"
-import { mergedInstructionBodies, threadHasAssistant } from "./wire-tier"
+import { ToolRouter, type ContextTier } from "./tool-router"
+import { instructionMode, mergedInstructionBodies, threadHasAssistant } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -637,7 +637,7 @@ export namespace SessionPrompt {
       const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
       const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
-      const { tools, toolRouterPrompt } = await resolveTools({
+      const { tools, toolRouterPrompt, contextTier } = await resolveTools({
         agent,
         session,
         model,
@@ -687,14 +687,25 @@ export namespace SessionPrompt {
 
       await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-      // Build system prompt (cached when inputs unchanged; see system-prompt-cache.ts)
-      const system = await SystemPromptCache.getParts({
-        agent,
-        model,
-        instructions: mergedInstructionBodies(cfg, msgs, lastUser.format?.type === "json_schema"),
-      })
-      if (toolRouterPrompt) system.push(toolRouterPrompt)
+      // Build system prompt based on context tier from router
       const format = lastUser.format ?? { type: "text" }
+      let system: string[]
+      if (contextTier === "conversation") {
+        // Conversational mode: minimal prompt, no tools, no project context
+        system = [
+          "You are a helpful AI assistant. Respond naturally and conversationally. " +
+            "You do not have access to files, shell, or project tools in this mode. " +
+            "If the user asks you to do something that requires code or file access, let them know they need to ask you to work on their project.",
+        ]
+      } else {
+        // Full or minimal: build the complete system prompt
+        system = await SystemPromptCache.getParts({
+          agent,
+          model,
+          instructions: instructionMode(cfg, msgs, format.type === "json_schema"),
+        })
+        if (toolRouterPrompt) system.push(toolRouterPrompt)
+      }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
       }
@@ -790,7 +801,7 @@ export namespace SessionPrompt {
     /** Skip offline tool router (e.g. JSON schema mode needs full tool surface + StructuredOutput). */
     skipToolRouter?: boolean
     cfg?: Config.Info
-  }): Promise<{ tools: Record<string, AITool>; toolRouterPrompt?: string }> {
+  }): Promise<{ tools: Record<string, AITool>; toolRouterPrompt?: string; contextTier: ContextTier }> {
     using _ = log.time("resolveTools")
     const tools: Record<string, AITool> = {}
 
@@ -976,15 +987,11 @@ export namespace SessionPrompt {
     const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
     const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
     const bashDenied = Permission.disabled(["bash"], ruleset).has("bash")
-    const includeBash =
-      Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH ||
-      (!bashDenied && input.tools?.bash !== false)
+    const includeBash = Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH || (!bashDenied && input.tools?.bash !== false)
     const webfetchDenied = Permission.disabled(["webfetch"], ruleset).has("webfetch")
     const websearchDenied = Permission.disabled(["websearch"], ruleset).has("websearch")
-    const includeWebfetch =
-      !webfetchDenied && input.tools?.webfetch !== false && Boolean(tools.webfetch)
-    const includeWebsearch =
-      !websearchDenied && input.tools?.websearch !== false && Boolean(tools.websearch)
+    const includeWebfetch = !webfetchDenied && input.tools?.webfetch !== false && Boolean(tools.webfetch)
+    const includeWebsearch = !websearchDenied && input.tools?.websearch !== false && Boolean(tools.websearch)
     const afterTier = applyInitialToolTier({
       tools,
       messages: input.messages,
@@ -1020,7 +1027,7 @@ export namespace SessionPrompt {
         includeWebsearch,
       })
     }
-    return { tools: routed.tools, toolRouterPrompt }
+    return { tools: routed.tools, toolRouterPrompt, contextTier: routed.contextTier }
   }
 
   /** @internal Exported for testing */

@@ -172,6 +172,8 @@ Para usar **solo** el árbol portable de este repo (**`<raíz-del-clon>/.local-o
 
 **Regla práctica:** si no estás seguro, no uses el `opencode` global para este proyecto; usa **`opencode-isolated.sh`** o el `bin/opencode` del clon con `OPENCODE_PORTABLE_ROOT` definido.
 
+**MCP en modo portable (estricto):** con `OPENCODE_PORTABLE_ROOT`, la config global es solo **`<portable>/config/opencode/`**; **no** se lee `~/.config/opencode` ni el `mcp` de la instalación global. Los MCP deben declararse en el **repo** (`.opencode/opencode.jsonc`) y/o copiar lo que necesites a **`OPENCODE_PORTABLE_ROOT/config/opencode/opencode.jsonc`** si quieres datos solo bajo el árbol portable.
+
 ### Perfil en el repo (`.opencode/opencode.jsonc`)
 
 Por defecto en este fork (rama `dev`):

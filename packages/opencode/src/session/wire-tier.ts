@@ -22,17 +22,33 @@ export function routerFiltersFirstTurn(cfg: Config.Info, msgs: MessageV2.WithPar
   return true
 }
 
-/** When `initial_tool_tier` is minimal and the thread has no assistant yet, omit merged instruction file bodies (see system-prompt-cache). */
+/**
+ * Instruction mode for the system prompt cache:
+ * - `"full"`: inline all instruction file contents
+ * - `"deferred"`: short note telling the model to read on demand (first turn minimal tier)
+ * - `"index"`: list available instruction source paths without inlining contents (subsequent turns)
+ */
+export function instructionMode(
+  cfg: Config.Info,
+  msgs: MessageV2.WithParts[],
+  skipRouter: boolean,
+): "full" | "deferred" | "index" {
+  if (skipRouter) return "full"
+  if (routerFiltersFirstTurn(cfg, msgs)) return "full"
+  const t = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+  if (t !== "minimal") return "index"
+  if (!threadHasAssistant(msgs)) return "deferred"
+  return "index"
+}
+
+/** @deprecated Use instructionMode instead. */
 export function includeInstructionBodies(cfg: Config.Info, msgs: MessageV2.WithParts[]) {
   const t = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
   if (t !== "minimal") return true
   return threadHasAssistant(msgs)
 }
 
-/**
- * Whether to merge AGENTS.md / instruction URLs into the system prompt.
- * Coordinates with tool-router: if the router filters on turn 1, keep full instructions so the model has project context alongside a narrowed tool set.
- */
+/** @deprecated Use instructionMode instead. */
 export function mergedInstructionBodies(cfg: Config.Info, msgs: MessageV2.WithParts[], skipRouter: boolean) {
   if (skipRouter) return true
   if (routerFiltersFirstTurn(cfg, msgs)) return true

@@ -77,6 +77,7 @@ import { Global } from "@/global"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
+import { DialogMeter } from "../../component/dialog-meter"
 import { formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
@@ -496,6 +497,17 @@ export function Session() {
             })
           })
         dialog.clear()
+      },
+    },
+    {
+      title: "Token meter",
+      value: "session.meter",
+      category: "Session",
+      slash: {
+        name: "meter",
+      },
+      onSelect: (dialog) => {
+        dialog.replace(() => <DialogMeter sessionID={route.sessionID} />)
       },
     },
     {

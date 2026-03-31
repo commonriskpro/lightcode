@@ -1107,14 +1107,22 @@ export namespace Config {
             ),
           tool_router: z
             .object({
-              enabled: z.boolean().optional().describe("Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md)."),
+              enabled: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md).",
+                ),
               mode: z.enum(["rules"]).optional().default("rules"),
               apply_after_first_assistant: z
                 .boolean()
                 .optional()
                 .default(true)
                 .describe("When true (default), skip router on the first user turn (initial_tool_tier unchanged)."),
-              base_tools: z.array(z.string()).optional().describe("Always-included tool ids before rule matches; defaults to read, task, skill."),
+              base_tools: z
+                .array(z.string())
+                .optional()
+                .describe("Always-included tool ids before rule matches; defaults to read, task, skill."),
               additive: z
                 .boolean()
                 .optional()
@@ -1139,21 +1147,19 @@ export namespace Config {
                 .optional()
                 .default(true)
                 .describe("When true, MCP tools are always attached and not filtered by rules."),
+              mcp_filter_by_intent: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe(
+                  "When true (default) and mcp_always_include is true, only attach MCP tools whose id or description matches a keyword rule. On fallback (no rule matched), all MCP tools are included.",
+                ),
               inject_prompt: z
                 .boolean()
                 .optional()
                 .default(true)
                 .describe(
                   "When true (default), append a short system line with offline-router intent hints and the tool ids attached this turn.",
-                ),
-              fallback: z
-                .object({
-                  max_expansions_per_turn: z.number().int().min(0).max(16).optional().default(1),
-                  expand_to: z.enum(["full"]).optional().default("full"),
-                })
-                .optional()
-                .describe(
-                  "Spec §7: retry with full tools on tool-layer error. Schema only until processor wiring lands.",
                 ),
             })
             .optional(),
@@ -1253,11 +1259,7 @@ export namespace Config {
     })
     .passthrough()
 
-  async function applySddModelsOverlay(input: {
-    directory: string
-    worktree: string
-    agent: Info["agent"]
-  }) {
+  async function applySddModelsOverlay(input: { directory: string; worktree: string; agent: Info["agent"] }) {
     const { agent } = input
     if (!agent) return
     if (Flag.OPENCODE_DISABLE_PROJECT_CONFIG) return
