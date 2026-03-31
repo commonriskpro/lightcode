@@ -8,6 +8,15 @@ import { threadHasAssistant } from "./wire-tier"
 const log = Log.create({ service: "tool-router" })
 
 /**
+ * Estimate token count for a string using a fast character-based heuristic.
+ * ~4 chars per token for English/Spanish text. Good enough for logging.
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0
+  return Math.ceil(text.length / 4)
+}
+
+/**
  * Offline router: after `applyInitialToolTier`, either **narrows** (default) or **adds** (`experimental.tool_router.additive`)
  * from the full registry when the tier left a minimal map.
  *
@@ -219,30 +228,61 @@ export namespace ToolRouter {
   export function apply(input: Input): Result {
     const tr = input.cfg.experimental?.tool_router
     const routerOn = Flag.OPENCODE_TOOL_ROUTER || tr?.enabled
-    if (!routerOn || input.skip) return { tools: input.tools, contextTier: "full" }
-    if (input.agent.name === "compaction" || input.agent.mode === "compaction")
-      return { tools: input.tools, contextTier: "full" }
+    if (!routerOn || input.skip) {
+      const ids = Object.keys(input.tools).sort()
+      const hint = `## Offline tool router\nMode: disabled.\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
+      log.info("tool_router", {
+        tier: "full",
+        selected: ids,
+        reason: "router off or skipped",
+        tokens: { toolCount: ids.length },
+      })
+      return { tools: input.tools, promptHint: hint, contextTier: "full" }
+    }
+    if (input.agent.name === "compaction" || input.agent.mode === "compaction") {
+      const ids = Object.keys(input.tools).sort()
+      const hint = `## Offline tool router\nMode: compaction agent.\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
+      log.info("tool_router", {
+        tier: "full",
+        selected: ids,
+        reason: "compaction agent",
+        tokens: { toolCount: ids.length },
+      })
+      return { tools: input.tools, promptHint: hint, contextTier: "full" }
+    }
 
     const additive = tr?.additive === true
     const hasAssistant = threadHasAssistant(input.messages)
 
-    // Conversational mode: greetings, chit-chat — no tools, minimal prompt.
+    // ── Conversational mode: greetings, chit-chat — no tools, minimal prompt.
     // Check BEFORE apply_after_first_assistant so T1 "hola" doesn't get full context.
     const text = userText(input.messages)
     if (detectConversational(text)) {
       log.info("tool_router", {
+        tier: "conversation",
         selected: [],
         builtin: [],
         mcp: [],
         reason: "conversational",
         userPreview: text.slice(0, 120),
-        inject_prompt: false,
+        hasAssistant,
+        tokens: { toolCount: 0, toolTokens: 0, promptHintTokens: 0 },
       })
       return { tools: {}, promptHint: undefined, contextTier: "conversation" }
     }
 
-    if (!additive && tr?.apply_after_first_assistant !== false && !hasAssistant)
-      return { tools: input.tools, contextTier: "full" }
+    if (!additive && tr?.apply_after_first_assistant !== false && !hasAssistant) {
+      const ids = Object.keys(input.tools).sort()
+      const hint = `## Offline tool router\nMode: first turn (all tools).\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
+      log.info("tool_router", {
+        tier: "full",
+        selected: ids,
+        reason: "first turn, apply_after_first_assistant=true",
+        userPreview: text.slice(0, 120),
+        tokens: { toolCount: ids.length },
+      })
+      return { tools: input.tools, promptHint: hint, contextTier: "full" }
+    }
 
     const full = input.registryTools ?? input.tools
     const availableKeys = new Set(Object.keys(additive ? full : input.tools))
@@ -314,21 +354,42 @@ export namespace ToolRouter {
     }
 
     if (Object.keys(out).length === 0 && Object.keys(input.tools).length > 0) {
+      const ids = Object.keys(input.tools).sort()
+      const hint = `## Offline tool router\nMode: empty passthrough.\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
       log.warn("tool_router_empty_passthrough")
-      return { tools: input.tools, contextTier: "full" }
+      return { tools: input.tools, promptHint: hint, contextTier: "full" }
     }
 
     const inject = tr?.inject_prompt !== false
     const ids = Object.keys(out)
     const hint = inject ? promptHint({ ids, labels, additive, matched, allowed, availableKeys }) : undefined
 
+    // ── Token accounting for logging
+    const toolTokens = (() => {
+      let total = 0
+      for (const id of ids) {
+        const t = out[id]
+        if (t?.description) total += estimateTokens(t.description)
+      }
+      return total
+    })()
+    const promptHintTokens = hint ? estimateTokens(hint) : 0
+
     log.info("tool_router", {
+      tier: labels.length === 0 ? "minimal" : "full",
       selected: ids.sort(),
       builtin: fromRules.sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
       reason: additive ? "additive" : "rules",
+      labels,
       userPreview: text.slice(0, 120),
-      inject_prompt: inject,
+      hasAssistant,
+      tokens: {
+        toolCount: ids.length,
+        toolTokens,
+        promptHintTokens,
+        total: toolTokens + promptHintTokens,
+      },
     })
 
     return { tools: out, promptHint: hint, contextTier: labels.length === 0 ? "minimal" : "full" }
