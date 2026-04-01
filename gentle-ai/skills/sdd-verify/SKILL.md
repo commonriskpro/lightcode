@@ -2,18 +2,69 @@
 name: sdd-verify
 description: >
   Validate that implementation matches specs, design, and tasks.
-  Trigger: When the orchestrator launches you to verify a completed (or partially completed) change.
+  Full 7-step verification with compliance matrix.
+  Uses parallel execution for large test suites.
+  Trigger: When the orchestrator launches you to verify a completed change.
 license: MIT
 metadata:
   author: gentleman-programming
-  version: "2.0"
+  version: "3.0"
 ---
 
 ## Purpose
 
-You are a sub-agent responsible for VERIFICATION. You are the quality gate. Your job is to prove — with real execution evidence — that the implementation is complete, correct, and behaviorally compliant with the specs.
+Eres un sub-agent responsable de VERIFICACIÓN. Tu trabajo es probar — con evidencia REAL de ejecución — que la implementación está completa, correcta, y behaviorally compliant con los specs.
 
-Static analysis alone is NOT enough. You must execute the code.
+**Estático análisis NO es suficiente** — debes ejecutar código.
+
+## 7-Step Verification Workflow
+
+| Step | Name | What | Required |
+|------|------|------|----------|
+| 1 | Completeness | Tasks done? | ✅ |
+| 2 | Correctness | Static specs match | ✅ |
+| 3 | Coherence | Design match + edge cases | ✅ |
+| 4 | Testing (Static) | Test files exist? | ✅ |
+| 5b | Testing (Real) | Execute tests! | ✅ |
+| 5c | Build | Build + type check | ✅ |
+| 5d | Coverage | Coverage validation | ⚠️ If configured |
+| 6 | Compliance | SPEC COMPLIANCE MATRIX | ✅ |
+
+## NEW: Parallel Test Execution
+
+Para test suites grandes (> 50 tests), usa sub-agents en paralelo:
+
+```typescript
+// Detecta tamaño de test suite
+const testCount = await countTests()
+
+if (testCount > 50) {
+  // Divide en parallel sub-agents
+  const results = await Promise.all([
+    delegate("verify-unit", { pattern: "unit" }),
+    delegate("verify-integration", { pattern: "integration" })
+  ])
+  
+  return aggregateResults(results)
+}
+```
+
+**Trigger de parallelization**: Automatic cuando testCount > 50
+
+## NEW: Edge Case Auto-generation
+
+En Step 3, genera edge cases no cubiertos automáticamente:
+
+```
+EDGE CASE GENERATION:
+Para cada scenario en specs:
+├── Generar 3 edge cases potenciales:
+│   ├── Empty/null inputs
+│   ├── Boundary conditions
+│   └── Error states
+├── Buscar tests existentes para cada edge case
+└── Flag UNTESTED si no existe test
+```
 
 ## What You Receive
 
@@ -23,12 +74,7 @@ From the orchestrator:
 
 ## Execution and Persistence Contract
 
-> Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
-
-- **engram**: Read `sdd/{change-name}/proposal`, `sdd/{change-name}/spec` (required for compliance matrix), `sdd/{change-name}/design`, `sdd/{change-name}/tasks` (all required). Save as `sdd/{change-name}/verify-report`.
-- **openspec**: Read and follow `skills/_shared/openspec-convention.md`. Save to `openspec/changes/{change-name}/verify-report.md`.
-- **hybrid**: Follow BOTH conventions — persist to Engram AND write `verify-report.md` to filesystem.
-- **none**: Return the verification report inline only. Never write files.
+> Follow **Section B** (retrieval) and **Section C** from `skills/_shared/sdd-phase-common.md`.
 
 ## What to Do
 
@@ -44,62 +90,47 @@ Read tasks.md
 ├── Count total tasks
 ├── Count completed tasks [x]
 ├── List incomplete tasks [ ]
-└── Flag: CRITICAL if core tasks incomplete, WARNING if cleanup tasks incomplete
+└── Flag: CRITICAL if core tasks incomplete
 ```
 
-### Step 3: Check Correctness (Static Specs Match)
+### Step 3: Check Coherence + Edge Cases
 
-For EACH spec requirement and scenario, search the codebase for structural evidence:
-
-```
-FOR EACH REQUIREMENT in specs/:
-├── Search codebase for implementation evidence
-├── For each SCENARIO:
-│   ├── Is the GIVEN precondition handled in code?
-│   ├── Is the WHEN action implemented?
-│   ├── Is the THEN outcome produced?
-│   └── Are edge cases covered?
-└── Flag: CRITICAL if requirement missing, WARNING if scenario partially covered
-```
-
-Note: This is static analysis only. Behavioral validation with real execution happens in Step 6.
-
-### Step 4: Check Coherence (Design Match)
-
-Verify design decisions were followed:
+Verify design decisions + generate edge cases:
 
 ```
 FOR EACH DECISION in design.md:
-├── Was the chosen approach actually used?
-├── Were rejected alternatives accidentally implemented?
-├── Do file changes match the "File Changes" table?
-└── Flag: WARNING if deviation found (may be valid improvement)
+├── Was the chosen approach used?
+├── Do file changes match?
+└── Flag: WARNING if deviation found
+
+EDGE CASE GENERATION:
+├── Para cada scenario → generar 3 edge cases
+├── Buscar tests existentes
+└── Flag UNTESTED si no existe test
 ```
 
-### Step 5: Check Testing (Static)
+### Step 4: Check Testing (Static)
 
-Verify test files exist and cover the right scenarios:
+Verify test files exist:
 
 ```
 Search for test files related to the change
 ├── Do tests exist for each spec scenario?
 ├── Do tests cover happy paths?
 ├── Do tests cover edge cases?
-├── Do tests cover error states?
-└── Flag: WARNING if scenarios lack tests, SUGGESTION if coverage could improve
+└── Flag: WARNING if scenarios lack tests
 ```
 
-### Step 5b: Run Tests (Real Execution)
+### Step 5b: Run Tests (Real Execution) ⚡
 
-Detect the project's test runner and execute the tests:
+**EJECUTA los tests — esto es crítico:**
 
 ```
-Detect test runner from:
-├── openspec/config.yaml → rules.verify.test_command (highest priority)
+Detect test runner:
+├── openspec/config.yaml → rules.verify.test_command
 ├── package.json → scripts.test
-├── pyproject.toml / pytest.ini → pytest
-├── Makefile → make test
-└── Fallback: ask orchestrator
+├── pyproject.toml → pytest
+└── Makefile → make test
 
 Execute: {test_command}
 Capture:
@@ -109,68 +140,69 @@ Capture:
 ├── Skipped
 └── Exit code
 
-Flag: CRITICAL if exit code != 0 (any test failed)
-Flag: WARNING if skipped tests relate to changed areas
+**PARALLEL si testCount > 50:**
+if (testCount > 50) {
+  results = await Promise.all([
+    bash("npm test -- --testPathPattern=unit"),
+    bash("npm test -- --testPathPattern=integration")
+  ])
+}
+
+Flag: CRITICAL if exit code != 0
 ```
 
-### Step 5c: Build & Type Check (Real Execution)
-
-Detect and run the build/type-check command:
+### Step 5c: Build & Type Check ⚡
 
 ```
-Detect build command from:
-├── openspec/config.yaml → rules.verify.build_command (highest priority)
-├── package.json → scripts.build → also run tsc --noEmit if tsconfig.json exists
-├── pyproject.toml → python -m build or equivalent
-├── Makefile → make build
-└── Fallback: skip and report as WARNING (not CRITICAL)
+Detect build command:
+├── openspec/config.yaml → rules.verify.build_command
+├── package.json → scripts.build
+└── Fallback: tsc --noEmit
 
 Execute: {build_command}
-Capture:
-├── Exit code
-├── Errors (if any)
-└── Warnings (if significant)
 
-Flag: CRITICAL if build fails (exit code != 0)
-Flag: WARNING if there are type errors even with passing build
+Flag: CRITICAL if build fails
 ```
 
-### Step 5d: Coverage Validation (Real Execution — if threshold configured)
+### Step 5d: Coverage Validation
 
-Run with coverage only if `rules.verify.coverage_threshold` is set in `openspec/config.yaml`:
-
-```
-IF coverage_threshold is configured:
-├── Run: {test_command} --coverage (or equivalent for the test runner)
-├── Parse coverage report
-├── Compare total coverage % against threshold
-├── Flag: WARNING if below threshold (not CRITICAL — coverage alone doesn't block)
-└── Report per-file coverage for changed files only
-
-IF coverage_threshold is NOT configured:
-└── Skip this step, report as "Not configured"
-```
-
-### Step 6: Spec Compliance Matrix (Behavioral Validation)
-
-This is the most important step. Cross-reference EVERY spec scenario against the actual test run results from Step 5b to build behavioral evidence.
-
-For each scenario from the specs, find which test(s) cover it and what the result was:
+Solo si coverage_threshold está configurado:
 
 ```
-FOR EACH REQUIREMENT in specs/:
-  FOR EACH SCENARIO:
-  ├── Find tests that cover this scenario (by name, description, or file path)
-  ├── Look up that test's result from Step 5b output
-  ├── Assign compliance status:
-  │   ├── ✅ COMPLIANT   → test exists AND passed
-  │   ├── ❌ FAILING     → test exists BUT failed (CRITICAL)
-  │   ├── ❌ UNTESTED    → no test found for this scenario (CRITICAL)
-  │   └── ⚠️ PARTIAL    → test exists, passes, but covers only part of the scenario (WARNING)
-  └── Record: requirement, scenario, test file, test name, result
+IF coverage_threshold configured:
+├── Run: {test_command} --coverage
+├── Compare % against threshold
+└── Flag: WARNING if below threshold
+
+IF NOT configured: Skip this step
 ```
 
-A spec scenario is only considered COMPLIANT when there is a test that passed proving the behavior at runtime. Code existing in the codebase is NOT sufficient evidence.
+### Step 6: Spec Compliance Matrix ⚡⚡⚡
+
+**ESTE ES EL STEP MÁS IMPORTANTE:**
+
+Cross-reference cada spec scenario contra resultados reales de tests:
+
+```markdown
+### Spec Compliance Matrix
+
+| Requirement | Scenario | Test | Result |
+|-------------|----------|------|--------|
+| REQ-01: Auth | Happy path | auth.test.ts > login_success | ✅ COMPLIANT |
+| REQ-01: Auth | No token | auth.test.ts > login_no_token | ✅ COMPLIANT |
+| REQ-02: Payments | Success | payments.test.ts > pay_success | ❌ FAILING |
+| REQ-02: Payments | Timeout | (none found) | ❌ UNTESTED |
+| REQ-03: UI | Dark mode | (none found) | ❌ UNTESTED |
+
+### Compliance Summary
+- **Compliant**: {N}/{total} scenarios
+- **Failing**: {N} scenarios (CRITICAL)
+- **Untested**: {N} scenarios (CRITICAL)
+```
+
+**Regla**: Un scenario es COMPLIANT SOLO si:
+1. Existe test para el scenario
+2. El test PASÓ en ejecución
 
 ### Step 7: Persist Verification Report
 
@@ -179,15 +211,36 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/verify-report`
 - type: `architecture`
 
-### Step 8: Return Summary
+## NEW: Verification History
 
-Return to the orchestrator the same content you wrote to `verify-report.md`:
+También persiste historial para tracking:
+
+```
+mem_save({
+  title: "sdd/{change}/verify-history",
+  topic_key: "sdd/{change}/verify-history",
+  type: "config",
+  project: "{project}",
+  content: {
+    date: new Date().toISOString(),
+    verdict: "PASS|PASS WITH WARNINGS|FAIL",
+    testsRun: 47,
+    passed: 45,
+    failed: 2,
+    coverage: 72,
+    compliance: "2/4"
+  }
+})
+```
+
+### Step 8: Return Summary
 
 ```markdown
 ## Verification Report
 
 **Change**: {change-name}
 **Version**: {spec version or N/A}
+**Executed at**: {timestamp}
 
 ---
 
@@ -198,23 +251,24 @@ Return to the orchestrator the same content you wrote to `verify-report.md`:
 | Tasks complete | {N} |
 | Tasks incomplete | {N} |
 
-{List incomplete tasks if any}
-
 ---
 
 ### Build & Tests Execution
 
 **Build**: ✅ Passed / ❌ Failed
 ```
-{build command output or error if failed}
+{build output or error}
 ```
 
 **Tests**: ✅ {N} passed / ❌ {N} failed / ⚠️ {N} skipped
 ```
-{failed test names and errors if any}
+{failed test names and errors}
 ```
 
-**Coverage**: {N}% / threshold: {N}% → ✅ Above threshold / ⚠️ Below threshold / ➖ Not configured
+**Parallel Execution**: ✅ Used / ❌ Not needed
+- Execution time: {N}s
+
+**Coverage**: {N}% / threshold: {N}% → ✅ Above / ⚠️ Below / ➖ Not configured
 
 ---
 
@@ -222,29 +276,18 @@ Return to the orchestrator the same content you wrote to `verify-report.md`:
 
 | Requirement | Scenario | Test | Result |
 |-------------|----------|------|--------|
-| {REQ-01: name} | {Scenario name} | `{test file} > {test name}` | ✅ COMPLIANT |
-| {REQ-01: name} | {Scenario name} | `{test file} > {test name}` | ❌ FAILING |
-| {REQ-02: name} | {Scenario name} | (none found) | ❌ UNTESTED |
-| {REQ-02: name} | {Scenario name} | `{test file} > {test name}` | ⚠️ PARTIAL |
+| {REQ-id} | {name} | `{file} > {test}` | ✅ COMPLIANT |
+| {REQ-id} | {name} | (none found) | ❌ UNTESTED |
 
-**Compliance summary**: {N}/{total} scenarios compliant
+**Compliance**: {N}/{total} scenarios compliant
 
 ---
 
-### Correctness (Static — Structural Evidence)
-| Requirement | Status | Notes |
-|------------|--------|-------|
-| {Req name} | ✅ Implemented | {brief note} |
-| {Req name} | ⚠️ Partial | {what's missing} |
-| {Req name} | ❌ Missing | {not implemented} |
-
----
-
-### Coherence (Design)
-| Decision | Followed? | Notes |
-|----------|-----------|-------|
-| {Decision name} | ✅ Yes | |
-| {Decision name} | ⚠️ Deviated | {how and why} |
+### Edge Cases Found
+| Scenario | Edge Case | Test Coverage |
+|----------|-----------|---------------|
+| REQ-01 | Empty token | ✅ Found |
+| REQ-02 | Timeout | ❌ Untested |
 
 ---
 
@@ -262,22 +305,33 @@ Return to the orchestrator the same content you wrote to `verify-report.md`:
 ---
 
 ### Verdict
-{PASS / PASS WITH WARNINGS / FAIL}
+{**PASS** | **PASS WITH WARNINGS** | **FAIL**}
 
-{One-line summary of overall status}
+{One-line summary}
 ```
+
+## Verdict Definitions
+
+| Verdict | Meaning | Action |
+|---------|---------|--------|
+| **PASS** | All tests pass, all specs compliant | Ready for archive |
+| **PASS WITH WARNINGS** | Tests pass, minor issues | Review warnings, then archive |
+| **FAIL** | CRITICAL issues found | Block archive, fix issues |
+
+## Issues Classification
+
+| Level | Meaning | Action |
+|-------|---------|--------|
+| CRITICAL | Must fix before archive | Block |
+| WARNING | Should fix | Report |
+| SUGGESTION | Nice to have | Report |
 
 ## Rules
 
-- ALWAYS read the actual source code — don't trust summaries
-- ALWAYS execute tests — static analysis alone is not verification
-- A spec scenario is only COMPLIANT when a test that covers it has PASSED
-- Compare against SPECS first (behavioral correctness), DESIGN second (structural correctness)
+- ALWAYS execute tests — static analysis alone is NOT verification
+- A spec scenario is COMPLIANT only when a test EXISTS AND PASSED
+- Compare against SPECS first, DESIGN second
 - Be objective — report what IS, not what should be
-- CRITICAL issues = must fix before archive
-- WARNINGS = should fix but won't block
-- SUGGESTIONS = improvements, not blockers
-- DO NOT fix any issues — only report them. The orchestrator decides what to do.
-- In `openspec` mode, ALWAYS save the report to `openspec/changes/{change-name}/verify-report.md` — this persists the verification for sdd-archive and the audit trail
-- Apply any `rules.verify` from `openspec/config.yaml`
+- DO NOT fix any issues — only report them
+- Use parallel execution for test suites > 50 tests
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
