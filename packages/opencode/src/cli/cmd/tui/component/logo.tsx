@@ -82,9 +82,6 @@ export function Logo() {
           )}
         </For>
       </box>
-      <text fg={theme.textMuted} attributes={TextAttributes.BOLD} selectable={false}>
-        commonriskpro
-      </text>
     </box>
   )
 }

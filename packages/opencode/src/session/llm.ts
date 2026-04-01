@@ -17,6 +17,8 @@ import { Permission } from "@/permission"
 import { Auth } from "@/auth"
 import { Installation } from "@/installation"
 import { DebugRequest } from "./debug-request"
+import { HttpDebugContext } from "./http-debug-context"
+import type { ContextTier } from "./tool-router"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -37,6 +39,8 @@ export namespace LLM {
     toolChoice?: "auto" | "required" | "none"
     /** Pairs debug_request usage log with this assistant message. */
     assistantID?: string
+    /** From offline tool router: when `conversation`, omit heavy `agent.prompt` + SDD skill block. */
+    contextTier?: ContextTier
   }
 
   export type Event = Awaited<ReturnType<typeof stream>>["fullStream"] extends AsyncIterable<infer T> ? T : never
@@ -69,282 +73,297 @@ export namespace LLM {
   export const defaultLayer = layer
 
   export async function stream(input: StreamInput) {
-    const l = log
-      .clone()
-      .tag("providerID", input.model.providerID)
-      .tag("modelID", input.model.id)
-      .tag("sessionID", input.sessionID)
-      .tag("small", (input.small ?? false).toString())
-      .tag("agent", input.agent.name)
-      .tag("mode", input.agent.mode)
-    l.info("stream", {
-      modelID: input.model.id,
-      providerID: input.model.providerID,
-    })
-    const [language, cfg, provider, auth] = await Promise.all([
-      Provider.getLanguage(input.model),
-      Config.get(),
-      Provider.getProvider(input.model.providerID),
-      Auth.get(input.model.providerID),
-    ])
-    // TODO: move this to a proper hook
-    const isOpenaiOauth = provider.id === "openai" && auth?.type === "oauth"
+    return HttpDebugContext.run(input.sessionID, async () => {
+      const l = log
+        .clone()
+        .tag("providerID", input.model.providerID)
+        .tag("modelID", input.model.id)
+        .tag("sessionID", input.sessionID)
+        .tag("small", (input.small ?? false).toString())
+        .tag("agent", input.agent.name)
+        .tag("mode", input.agent.mode)
+      const includeAgentPrompt = input.contextTier !== "conversation" || Flag.OPENCODE_ALWAYS_FULL_AGENT_PROMPT
+      const includeUserSystem =
+        Boolean(input.user.system) && (input.contextTier !== "conversation" || Flag.OPENCODE_ALWAYS_FULL_AGENT_PROMPT)
 
-    const system: string[] = []
-    system.push(
-      [
-        // use agent prompt otherwise provider prompt
-        ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-        // any custom prompt passed into this call
-        ...input.system,
-        // any custom prompt from last user message
-        ...(input.user.system ? [input.user.system] : []),
-      ]
-        .filter((x) => x)
-        .join("\n"),
-    )
-
-    const noGlobalDoc =
-      Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || cfg.experimental?.disable_global_doc_reads === true
-    if (noGlobalDoc) {
-      system.push(
-        "Do not proactively read README.md, CLAUDE.md, or package.json unless the user explicitly asks you to.",
-      )
-    }
-
-    // Inject agent-mode specific skills for SDD agents
-    const agentModeSkills = getAgentModeSkills(input.agent)
-    if (agentModeSkills) {
-      system.push(agentModeSkills)
-    }
-
-    const header = system[0]
-    await Plugin.trigger(
-      "experimental.chat.system.transform",
-      { sessionID: input.sessionID, model: input.model },
-      { system },
-    )
-    // rejoin to maintain 2-part structure for caching if header unchanged
-    if (system.length > 2 && system[0] === header) {
-      const rest = system.slice(1)
-      system.length = 0
-      system.push(header, rest.join("\n"))
-    }
-
-    const variant =
-      !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
-    const base = input.small
-      ? ProviderTransform.smallOptions(input.model)
-      : ProviderTransform.options({
-          model: input.model,
-          sessionID: input.sessionID,
-          providerOptions: provider.options,
-        })
-    const options: Record<string, any> = pipe(
-      base,
-      mergeDeep(input.model.options),
-      mergeDeep(input.agent.options),
-      mergeDeep(variant),
-    )
-    if (isOpenaiOauth) {
-      options.instructions = system.join("\n")
-    }
-
-    const isWorkflow = language instanceof GitLabWorkflowLanguageModel
-    const messages = isOpenaiOauth
-      ? input.messages
-      : isWorkflow
-        ? input.messages
-        : [
-            ...system.map(
-              (x): ModelMessage => ({
-                role: "system",
-                content: x,
-              }),
-            ),
-            ...input.messages,
-          ]
-
-    const params = await Plugin.trigger(
-      "chat.params",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        provider,
-        message: input.user,
-      },
-      {
-        temperature: input.model.capabilities.temperature
-          ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
-          : undefined,
-        topP: input.agent.topP ?? ProviderTransform.topP(input.model),
-        topK: ProviderTransform.topK(input.model),
-        options,
-      },
-    )
-
-    const { headers } = await Plugin.trigger(
-      "chat.headers",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        provider,
-        message: input.user,
-      },
-      {
-        headers: {},
-      },
-    )
-
-    const maxOutputTokens =
-      isOpenaiOauth || provider.id.includes("github-copilot")
-        ? undefined
-        : ProviderTransform.maxOutputTokens(input.model)
-
-    const tools = await resolveTools(input)
-
-    if (DebugRequest.enabled(cfg)) {
-      const toolsBytes = JSON.stringify(tools).length
-      const promptBytes =
-        isOpenaiOauth || isWorkflow
-          ? JSON.stringify(messages).length + system.join("\n").length
-          : JSON.stringify(messages).length
-      const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
-      const threadHasAssistant = input.messages.some((m) => m.role === "assistant")
-      DebugRequest.wire({
-        sessionID: input.sessionID,
-        assistantID: input.assistantID,
-        userID: input.user.id,
-        providerID: input.model.providerID,
+      l.info("stream", {
         modelID: input.model.id,
-        agent: input.agent.name,
-        small: input.small,
-        toolsBytes,
-        promptBytes,
-        systemBytes: system.join("\n").length,
-        initial_tool_tier: tier === "minimal" ? "minimal" : "full",
-        thread_has_assistant: threadHasAssistant,
-        tool_router: !!(Flag.OPENCODE_TOOL_ROUTER || cfg.experimental?.tool_router?.enabled),
+        providerID: input.model.providerID,
+        contextTier: input.contextTier ?? "full",
+        omitOrchestratorPrompt: !includeAgentPrompt,
       })
-    }
+      const [language, cfg, provider, auth] = await Promise.all([
+        Provider.getLanguage(input.model),
+        Config.get(),
+        Provider.getProvider(input.model.providerID),
+        Auth.get(input.model.providerID),
+      ])
+      // TODO: move this to a proper hook
+      const isOpenaiOauth = provider.id === "openai" && auth?.type === "oauth"
 
-    // LiteLLM and some Anthropic proxies require the tools parameter to be present
-    // when message history contains tool calls, even if no tools are being used.
-    // Add a dummy tool that is never called to satisfy this validation.
-    // This is enabled for:
-    // 1. Providers with "litellm" in their ID or API ID (auto-detected)
-    // 2. Providers with explicit "litellmProxy: true" option (opt-in for custom gateways)
-    const isLiteLLMProxy =
-      provider.options?.["litellmProxy"] === true ||
-      input.model.providerID.toLowerCase().includes("litellm") ||
-      input.model.api.id.toLowerCase().includes("litellm")
+      const system: string[] = []
+      system.push(
+        [
+          ...(includeAgentPrompt
+            ? input.agent.prompt
+              ? [input.agent.prompt]
+              : [SystemPrompt.provider(input.model)]
+            : []),
+          ...input.system,
+          ...(includeUserSystem && input.user.system ? [input.user.system] : []),
+        ]
+          .filter((x) => x)
+          .join("\n"),
+      )
 
-    if (isLiteLLMProxy && Object.keys(tools).length === 0 && hasToolCalls(input.messages)) {
-      tools["_noop"] = tool({
-        description:
-          "Placeholder for LiteLLM/Anthropic proxy compatibility - required when message history contains tool calls but no active tools are needed",
-        inputSchema: jsonSchema({ type: "object", properties: {} }),
-        execute: async () => ({ output: "", title: "", metadata: {} }),
-      })
-    }
+      const noGlobalDoc =
+        includeAgentPrompt &&
+        (Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || cfg.experimental?.disable_global_doc_reads === true)
+      if (noGlobalDoc) {
+        system.push(
+          "Do not proactively read README.md, CLAUDE.md, or package.json unless the user explicitly asks you to.",
+        )
+      }
 
-    // Wire up toolExecutor for DWS workflow models so that tool calls
-    // from the workflow service are executed via opencode's tool system
-    // and results sent back over the WebSocket.
-    if (language instanceof GitLabWorkflowLanguageModel) {
-      const workflowModel = language
-      workflowModel.systemPrompt = system.join("\n")
-      workflowModel.toolExecutor = async (toolName, argsJson, _requestID) => {
-        const t = tools[toolName]
-        if (!t || !t.execute) {
-          return { result: "", error: `Unknown tool: ${toolName}` }
-        }
-        try {
-          const result = await t.execute!(JSON.parse(argsJson), {
-            toolCallId: _requestID,
-            messages: input.messages,
-            abortSignal: input.abort,
+      const agentModeSkills = includeAgentPrompt ? getAgentModeSkills(input.agent) : undefined
+      if (agentModeSkills) {
+        system.push(agentModeSkills)
+      }
+
+      const header = system[0]
+      await Plugin.trigger(
+        "experimental.chat.system.transform",
+        {
+          sessionID: input.sessionID,
+          model: input.model,
+          agent: input.agent,
+          small: input.small,
+          contextTier: input.contextTier,
+        },
+        { system },
+      )
+      // rejoin to maintain 2-part structure for caching if header unchanged
+      if (system.length > 2 && system[0] === header) {
+        const rest = system.slice(1)
+        system.length = 0
+        system.push(header, rest.join("\n"))
+      }
+
+      const variant =
+        !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
+      const base = input.small
+        ? ProviderTransform.smallOptions(input.model)
+        : ProviderTransform.options({
+            model: input.model,
+            sessionID: input.sessionID,
+            providerOptions: provider.options,
           })
-          const output = typeof result === "string" ? result : (result?.output ?? JSON.stringify(result))
-          return {
-            result: output,
-            metadata: typeof result === "object" ? result?.metadata : undefined,
-            title: typeof result === "object" ? result?.title : undefined,
+      const options: Record<string, any> = pipe(
+        base,
+        mergeDeep(input.model.options),
+        mergeDeep(input.agent.options),
+        mergeDeep(variant),
+      )
+      if (isOpenaiOauth) {
+        options.instructions = system.join("\n")
+      }
+
+      const isWorkflow = language instanceof GitLabWorkflowLanguageModel
+      const messages = isOpenaiOauth
+        ? input.messages
+        : isWorkflow
+          ? input.messages
+          : [
+              ...system.map(
+                (x): ModelMessage => ({
+                  role: "system",
+                  content: x,
+                }),
+              ),
+              ...input.messages,
+            ]
+
+      const params = await Plugin.trigger(
+        "chat.params",
+        {
+          sessionID: input.sessionID,
+          agent: input.agent,
+          model: input.model,
+          provider,
+          message: input.user,
+        },
+        {
+          temperature: input.model.capabilities.temperature
+            ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
+            : undefined,
+          topP: input.agent.topP ?? ProviderTransform.topP(input.model),
+          topK: ProviderTransform.topK(input.model),
+          options,
+        },
+      )
+
+      const { headers } = await Plugin.trigger(
+        "chat.headers",
+        {
+          sessionID: input.sessionID,
+          agent: input.agent,
+          model: input.model,
+          provider,
+          message: input.user,
+        },
+        {
+          headers: {},
+        },
+      )
+
+      const maxOutputTokens =
+        isOpenaiOauth || provider.id.includes("github-copilot")
+          ? undefined
+          : ProviderTransform.maxOutputTokens(input.model)
+
+      const tools = await resolveTools(input)
+
+      if (DebugRequest.enabled(cfg)) {
+        const toolsBytes = JSON.stringify(tools).length
+        const promptBytes =
+          isOpenaiOauth || isWorkflow
+            ? JSON.stringify(messages).length + system.join("\n").length
+            : JSON.stringify(messages).length
+        const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
+        const threadHasAssistant = input.messages.some((m) => m.role === "assistant")
+        DebugRequest.wire({
+          sessionID: input.sessionID,
+          assistantID: input.assistantID,
+          userID: input.user.id,
+          providerID: input.model.providerID,
+          modelID: input.model.id,
+          agent: input.agent.name,
+          small: input.small,
+          toolsBytes,
+          promptBytes,
+          systemBytes: system.join("\n").length,
+          initial_tool_tier: tier === "minimal" ? "minimal" : "full",
+          thread_has_assistant: threadHasAssistant,
+          tool_router: !!(Flag.OPENCODE_TOOL_ROUTER || cfg.experimental?.tool_router?.enabled),
+        })
+      }
+
+      // LiteLLM and some Anthropic proxies require the tools parameter to be present
+      // when message history contains tool calls, even if no tools are being used.
+      // Add a dummy tool that is never called to satisfy this validation.
+      // This is enabled for:
+      // 1. Providers with "litellm" in their ID or API ID (auto-detected)
+      // 2. Providers with explicit "litellmProxy: true" option (opt-in for custom gateways)
+      const isLiteLLMProxy =
+        provider.options?.["litellmProxy"] === true ||
+        input.model.providerID.toLowerCase().includes("litellm") ||
+        input.model.api.id.toLowerCase().includes("litellm")
+
+      if (isLiteLLMProxy && Object.keys(tools).length === 0 && hasToolCalls(input.messages)) {
+        tools["_noop"] = tool({
+          description:
+            "Placeholder for LiteLLM/Anthropic proxy compatibility - required when message history contains tool calls but no active tools are needed",
+          inputSchema: jsonSchema({ type: "object", properties: {} }),
+          execute: async () => ({ output: "", title: "", metadata: {} }),
+        })
+      }
+
+      // Wire up toolExecutor for DWS workflow models so that tool calls
+      // from the workflow service are executed via opencode's tool system
+      // and results sent back over the WebSocket.
+      if (language instanceof GitLabWorkflowLanguageModel) {
+        const workflowModel = language
+        workflowModel.systemPrompt = system.join("\n")
+        workflowModel.toolExecutor = async (toolName, argsJson, _requestID) => {
+          const t = tools[toolName]
+          if (!t || !t.execute) {
+            return { result: "", error: `Unknown tool: ${toolName}` }
           }
-        } catch (e: any) {
-          return { result: "", error: e.message ?? String(e) }
+          try {
+            const result = await t.execute!(JSON.parse(argsJson), {
+              toolCallId: _requestID,
+              messages: input.messages,
+              abortSignal: input.abort,
+            })
+            const output = typeof result === "string" ? result : (result?.output ?? JSON.stringify(result))
+            return {
+              result: output,
+              metadata: typeof result === "object" ? result?.metadata : undefined,
+              title: typeof result === "object" ? result?.title : undefined,
+            }
+          } catch (e: any) {
+            return { result: "", error: e.message ?? String(e) }
+          }
         }
       }
-    }
 
-    return streamText({
-      onError(error) {
-        l.error("stream error", {
-          error,
-        })
-      },
-      async experimental_repairToolCall(opts) {
-        const tc = opts.toolCall
-        const lower = tc.toolName.toLowerCase()
-        if (lower !== tc.toolName && tools[lower]) {
-          l.info("repairing tool call", {
-            tool: tc.toolName,
-            repaired: lower,
+      return streamText({
+        onError(error) {
+          l.error("stream error", {
+            error,
           })
-          return { ...tc, toolName: lower }
-        }
-        // Bad args or unknown tool: returning null lets the SDK emit tool-error on the original name.
-        return null
-      },
-      temperature: params.temperature,
-      topP: params.topP,
-      topK: params.topK,
-      providerOptions: ProviderTransform.providerOptions(input.model, params.options),
-      activeTools: Object.keys(tools),
-      tools,
-      toolChoice: input.toolChoice,
-      maxOutputTokens,
-      abortSignal: input.abort,
-      headers: {
-        ...(input.model.providerID.startsWith("opencode")
-          ? {
-              "x-opencode-project": Instance.project.id,
-              "x-opencode-session": input.sessionID,
-              "x-opencode-request": input.user.id,
-              "x-opencode-client": Flag.OPENCODE_CLIENT,
-            }
-          : {
-              "User-Agent": `opencode/${Installation.VERSION}`,
-            }),
-        ...input.model.headers,
-        ...headers,
-      },
-      maxRetries: input.retries ?? 0,
-      messages,
-      model: wrapLanguageModel({
-        model: language,
-        middleware: [
-          {
-            specificationVersion: "v3" as const,
-            async transformParams(args) {
-              if (args.type === "stream") {
-                // @ts-expect-error
-                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
-              }
-              return args.params
-            },
-          },
-        ],
-      }),
-      experimental_telemetry: {
-        isEnabled: cfg.experimental?.openTelemetry,
-        metadata: {
-          userId: cfg.username ?? "unknown",
-          sessionId: input.sessionID,
         },
-      },
+        async experimental_repairToolCall(opts) {
+          const tc = opts.toolCall
+          const lower = tc.toolName.toLowerCase()
+          if (lower !== tc.toolName && tools[lower]) {
+            l.info("repairing tool call", {
+              tool: tc.toolName,
+              repaired: lower,
+            })
+            return { ...tc, toolName: lower }
+          }
+          // Bad args or unknown tool: returning null lets the SDK emit tool-error on the original name.
+          return null
+        },
+        temperature: params.temperature,
+        topP: params.topP,
+        topK: params.topK,
+        providerOptions: ProviderTransform.providerOptions(input.model, params.options),
+        activeTools: Object.keys(tools),
+        tools,
+        toolChoice: input.toolChoice,
+        maxOutputTokens,
+        abortSignal: input.abort,
+        headers: {
+          ...(input.model.providerID.startsWith("opencode")
+            ? {
+                "x-opencode-project": Instance.project.id,
+                "x-opencode-session": input.sessionID,
+                "x-opencode-request": input.user.id,
+                "x-opencode-client": Flag.OPENCODE_CLIENT,
+              }
+            : {
+                "User-Agent": `opencode/${Installation.VERSION}`,
+              }),
+          ...input.model.headers,
+          ...headers,
+        },
+        maxRetries: input.retries ?? 0,
+        messages,
+        model: wrapLanguageModel({
+          model: language,
+          middleware: [
+            {
+              specificationVersion: "v3" as const,
+              async transformParams(args) {
+                if (args.type === "stream") {
+                  // @ts-expect-error
+                  args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
+                }
+                return args.params
+              },
+            },
+          ],
+        }),
+        experimental_telemetry: {
+          isEnabled: cfg.experimental?.openTelemetry,
+          metadata: {
+            userId: cfg.username ?? "unknown",
+            sessionId: input.sessionID,
+          },
+        },
+      })
     })
   }
 
@@ -400,10 +419,7 @@ export namespace LLM {
     const skills = sddSkillMap[agent.name]
     if (!skills || skills.length === 0) return undefined
 
-    const lines = [
-      "",
-      "## Relevant Skills for this task:",
-    ]
+    const lines = ["", "## Relevant Skills for this task:"]
     for (const skill of skills) {
       lines.push(`- @skill ${skill}`)
     }

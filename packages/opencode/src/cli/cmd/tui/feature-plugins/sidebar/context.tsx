@@ -1,6 +1,6 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo } from "solid-js"
-import { contextWindowPercent, lastAssistantWithUsage, lastPromptContextTokens } from "@tui/util/session-usage"
+import { contextWindowPercent, lastAssistantWithUsage, lastTurnTokenTotal } from "@tui/util/session-usage"
 
 const id = "internal:sidebar-context"
 
@@ -26,7 +26,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 
     const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     return {
-      tokens: lastPromptContextTokens(list),
+      tokens: lastTurnTokenTotal(list),
       percent: contextWindowPercent(last, model?.limit.context),
     }
   })

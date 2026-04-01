@@ -8,6 +8,14 @@
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
+    "build:cli": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
+    "build:cli:fast": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
     "opencode#test": {
       "dependsOn": ["^build"],
       "outputs": []

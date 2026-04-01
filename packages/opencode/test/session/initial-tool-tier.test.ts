@@ -95,6 +95,24 @@ describe("applyInitialToolTier", () => {
     expect(out).toBe(tools)
   })
 
+  test("minimalAllTurns keeps allowlist after assistant", () => {
+    const tools = {
+      read: dummyTool(),
+      grep: dummyTool(),
+      glob: dummyTool(),
+      skill: dummyTool(),
+      edit: dummyTool(),
+    }
+    const out = applyInitialToolTier({
+      tools,
+      messages: [userMsg("hi"), assistantMsg()],
+      tier: "minimal",
+      includeBash: false,
+      minimalAllTurns: true,
+    })
+    expect(Object.keys(out).sort()).toEqual(["glob", "grep", "read", "skill"])
+  })
+
   test("minimal includes webfetch/websearch when flags", () => {
     const tools = {
       read: dummyTool(),
@@ -124,6 +142,7 @@ describe("applyInitialToolTier", () => {
 
   test("minimalTierPromptHint lists ids", () => {
     expect(minimalTierPromptHint({ includeBash: false })).toContain("read, grep, glob, skill")
+    expect(minimalTierPromptHint({ includeBash: false, allTurns: true })).toContain("every turn")
     expect(minimalTierPromptHint({ includeBash: true })).toContain("bash")
     expect(
       minimalTierPromptHint({

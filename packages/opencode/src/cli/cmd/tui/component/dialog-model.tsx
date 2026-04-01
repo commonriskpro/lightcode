@@ -16,7 +16,11 @@ export function useConnected() {
   )
 }
 
-export function DialogModel(props: { providerID?: string }) {
+export function DialogModel(props: {
+  providerID?: string
+  pick?: (sel: { providerID: string; modelID: string }) => void
+  current?: { providerID: string; modelID: string }
+}) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
@@ -135,6 +139,10 @@ export function DialogModel(props: { providerID?: string }) {
   const title = createMemo(() => provider()?.name ?? "Select model")
 
   function onSelect(providerID: string, modelID: string) {
+    if (props.pick) {
+      props.pick({ providerID, modelID })
+      return
+    }
     local.model.set({ providerID, modelID }, { recent: true })
     if (local.model.variant.list().length > 0) {
       dialog.replace(() => <DialogVariant />)
@@ -157,7 +165,7 @@ export function DialogModel(props: { providerID?: string }) {
         {
           keybind: keybind.all.model_favorite_toggle?.[0],
           title: "Favorite",
-          disabled: !connected(),
+          disabled: !connected() || !!props.pick,
           onTrigger: (option) => {
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
           },
@@ -167,7 +175,7 @@ export function DialogModel(props: { providerID?: string }) {
       flat={true}
       skipFilter={true}
       title={title()}
-      current={local.model.current()}
+      current={props.pick ? props.current : local.model.current()}
     />
   )
 }

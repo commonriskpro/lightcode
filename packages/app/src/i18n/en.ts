@@ -603,6 +603,14 @@ export const dict = {
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Manage servers",
 
+  "titlebar.embed.trigger": "Local embeddings",
+  "titlebar.embed.aria": "Local Hugging Face embedding model status",
+  "titlebar.embed.loading": "Downloading or loading the model from Hugging Face…",
+  "titlebar.embed.ready": "Model loaded; embeddings are active.",
+  "titlebar.embed.error": "Embedding model failed to load or run.",
+  "titlebar.embed.model": "Model",
+  "titlebar.embed.detail": "Offline router uses Transformers.js (ONNX). First use may download weights.",
+
   "session.share.popover.title": "Publish on web",
   "session.share.popover.description.shared":
     "This session is public on the web. It is accessible to anyone with the link.",

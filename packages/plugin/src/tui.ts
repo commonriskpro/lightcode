@@ -323,8 +323,20 @@ export type TuiSlots = {
   register: (plugin: TuiSlotPlugin) => string
 }
 
+/** Global bus only; not yet in generated SDK `Event`. */
+export type TuiRouterEmbedEvent = {
+  type: "router.embed.status"
+  properties: {
+    phase: "idle" | "loading" | "ready" | "error"
+    model?: string
+    message?: string
+  }
+}
+
+export type TuiBusEvent = Event | TuiRouterEmbedEvent
+
 export type TuiEventBus = {
-  on: <Type extends Event["type"]>(type: Type, handler: (event: Extract<Event, { type: Type }>) => void) => () => void
+  on: <Type extends TuiBusEvent["type"]>(type: Type, handler: (event: Extract<TuiBusEvent, { type: Type }>) => void) => () => void
 }
 
 export type TuiDispose = () => void | Promise<void>

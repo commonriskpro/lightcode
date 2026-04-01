@@ -6,7 +6,7 @@ import { SplitBorder } from "@tui/component/border"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "../../context/keybind"
 import { Locale } from "@/util/locale"
-import { contextWindowPercent, lastAssistantWithUsage, lastPromptContextTokens } from "@tui/util/session-usage"
+import { contextWindowPercent, lastAssistantWithUsage, lastTurnTokenTotal } from "@tui/util/session-usage"
 import { useTerminalDimensions } from "@opentui/solid"
 
 export function SubagentFooter() {
@@ -36,7 +36,9 @@ export function SubagentFooter() {
     const last = lastAssistantWithUsage(msg)
     if (!last) return
 
-    const prompt = lastPromptContextTokens(msg)
+    const tokens = lastTurnTokenTotal(msg)
+    if (tokens <= 0) return
+
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     const pct = contextWindowPercent(last, model?.limit.context)
     const pctStr = pct != null ? `${pct}%` : undefined
@@ -48,7 +50,7 @@ export function SubagentFooter() {
     })
 
     return {
-      context: pctStr ? `${Locale.number(prompt)} (${pctStr})` : Locale.number(prompt),
+      context: pctStr ? `${Locale.number(tokens)} (${pctStr})` : Locale.number(tokens),
       cost: cost > 0 ? money.format(cost) : undefined,
     }
   })

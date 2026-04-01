@@ -7201,6 +7201,32 @@
         },
         "required": ["type", "properties"]
       },
+      "Event.router.embed.status": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "router.embed.status"
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "enum": ["idle", "loading", "ready", "error"]
+              },
+              "model": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["phase"]
+          }
+        },
+        "required": ["type", "properties"]
+      },
       "Event.lsp.client.diagnostics": {
         "type": "object",
         "properties": {
@@ -9750,6 +9776,9 @@
           },
           {
             "$ref": "#/components/schemas/Event.global.disposed"
+          },
+          {
+            "$ref": "#/components/schemas/Event.router.embed.status"
           },
           {
             "$ref": "#/components/schemas/Event.lsp.client.diagnostics"

@@ -913,6 +913,7 @@ export namespace TuiPluginRuntime {
   }
 
   async function load(api: Api) {
+    const start = performance.now()
     const cwd = process.cwd()
     const slots = setupSlots(api)
     const next: RuntimeState = {
@@ -928,12 +929,17 @@ export namespace TuiPluginRuntime {
     await Instance.provide({
       directory: cwd,
       fn: async () => {
+        const loadStart = performance.now()
         const config = await TuiConfig.get()
+        log.info("load.config", {
+          duration_ms: Math.round((performance.now() - loadStart) * 100) / 100,
+        })
         const plugins = Flag.OPENCODE_PURE ? [] : (config.plugin ?? [])
         if (Flag.OPENCODE_PURE && config.plugin?.length) {
           log.info("skipping external tui plugins in pure mode", { count: config.plugin.length })
         }
 
+        const internalStart = performance.now()
         for (const item of INTERNAL_TUI_PLUGINS) {
           log.info("loading internal tui plugin", { id: item.id })
           const entry = loadInternalPlugin(item)
@@ -942,15 +948,29 @@ export namespace TuiPluginRuntime {
             addPluginEntry(next, plugin)
           }
         }
+        log.info("load.internal_plugins", {
+          count: INTERNAL_TUI_PLUGINS.length,
+          duration_ms: Math.round((performance.now() - internalStart) * 100) / 100,
+        })
 
+        const externalStart = performance.now()
         const ready = await resolveExternalPlugins(
           plugins,
           () => TuiConfig.waitForDependencies(),
           (item) => config.plugin_meta?.[Config.pluginSpecifier(item)],
         )
+        log.info("load.external_plugins", {
+          count: ready.length,
+          duration_ms: Math.round((performance.now() - externalStart) * 100) / 100,
+        })
+        const touchStart = performance.now()
         await addExternalPluginEntries(next, ready)
+        log.info("load.register_plugins", {
+          duration_ms: Math.round((performance.now() - touchStart) * 100) / 100,
+        })
 
         applyInitialPluginEnabledState(next, config)
+        const activateStart = performance.now()
         for (const plugin of next.plugins) {
           if (!plugin.enabled) continue
           // Keep plugin execution sequential for deterministic side effects:
@@ -959,9 +979,16 @@ export namespace TuiPluginRuntime {
           // and hook chains rely on stable plugin ordering.
           await activatePluginEntry(next, plugin, false)
         }
+        log.info("load.activate_plugins", {
+          count: next.plugins.filter((x) => x.enabled).length,
+          duration_ms: Math.round((performance.now() - activateStart) * 100) / 100,
+        })
       },
     }).catch((error) => {
       fail("failed to load tui plugins", { directory: cwd, error })
+    })
+    log.info("load.complete", {
+      duration_ms: Math.round((performance.now() - start) * 100) / 100,
     })
   }
 }

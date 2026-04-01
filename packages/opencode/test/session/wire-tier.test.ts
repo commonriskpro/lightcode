@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   includeInstructionBodies,
+  instructionMode,
   mergedInstructionBodies,
   routerFiltersFirstTurn,
 } from "../../src/session/wire-tier"
@@ -45,9 +46,15 @@ function assistant() {
 
 describe("includeInstructionBodies", () => {
   test("full tier always includes", () => {
-    const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "full" as const } }
-    expect(includeInstructionBodies(cfg, [user()])).toBe(true)
-    expect(includeInstructionBodies(cfg, [user(), assistant()])).toBe(true)
+    const prev = process.env.OPENCODE_INITIAL_TOOL_TIER
+    delete process.env.OPENCODE_INITIAL_TOOL_TIER
+    try {
+      const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "full" as const } }
+      expect(includeInstructionBodies(cfg, [user()])).toBe(true)
+      expect(includeInstructionBodies(cfg, [user(), assistant()])).toBe(true)
+    } finally {
+      if (prev !== undefined) process.env.OPENCODE_INITIAL_TOOL_TIER = prev
+    }
   })
 
   test("minimal first turn omits", () => {
@@ -94,6 +101,17 @@ describe("mergedInstructionBodies", () => {
     expect(mergedInstructionBodies(cfg, [user()], false)).toBe(true)
   })
 
+  test("minimal_tier_all_turns keeps merged off on T1 even when router filters T1", () => {
+    const cfg = {
+      experimental: {
+        initial_tool_tier: "minimal" as const,
+        minimal_tier_all_turns: true,
+        tool_router: { enabled: true, apply_after_first_assistant: false },
+      },
+    } as Config.Info
+    expect(mergedInstructionBodies(cfg, [user()], false)).toBe(false)
+  })
+
   test("minimal default router defers instructions on T1", () => {
     const cfg = {
       experimental: {
@@ -102,5 +120,19 @@ describe("mergedInstructionBodies", () => {
       },
     } as Config.Info
     expect(mergedInstructionBodies(cfg, [user()], false)).toBe(false)
+  })
+})
+
+describe("instructionMode minimal_tier_all_turns", () => {
+  test("defers even when router would force full on T1", () => {
+    const cfg = {
+      experimental: {
+        initial_tool_tier: "minimal" as const,
+        minimal_tier_all_turns: true,
+        tool_router: { enabled: true, apply_after_first_assistant: false },
+      },
+    } as Config.Info
+    expect(instructionMode(cfg, [user()], false)).toBe("deferred")
+    expect(instructionMode(cfg, [user(), assistant()], false)).toBe("deferred")
   })
 })

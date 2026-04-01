@@ -27,6 +27,8 @@ import { SESSION_RECENT_LIMIT } from "./global-sync/types"
 import { sanitizeProject } from "./global-sync/utils"
 import { formatServerError } from "@/utils/server-errors"
 
+type RouterEmbedPhase = "idle" | "loading" | "ready" | "error"
+
 type GlobalStore = {
   ready: boolean
   error?: InitError
@@ -39,6 +41,11 @@ type GlobalStore = {
   provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
+  router_embed: {
+    phase: RouterEmbedPhase
+    model?: string
+    message?: string
+  }
 }
 
 function createGlobalSync() {
@@ -66,6 +73,7 @@ function createGlobalSync() {
     provider_auth: {},
     config: {},
     reload: undefined,
+    router_embed: { phase: "idle" },
   })
 
   let active = true
@@ -286,6 +294,15 @@ function createGlobalSync() {
     const recent = bootingRoot || Date.now() - bootedAt < 1500
 
     if (directory === "global") {
+      if (event.type === "router.embed.status") {
+        const p = event.properties
+        setGlobalStore("router_embed", {
+          phase: p.phase,
+          model: p.model,
+          message: p.message,
+        })
+        return
+      }
       applyGlobalEvent({
         event,
         project: globalStore.project,

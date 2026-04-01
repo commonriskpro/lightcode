@@ -15,6 +15,7 @@ import { Auth } from "../auth"
 import { Env } from "../env"
 import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
+import { HttpDebugContext } from "@/session/http-debug-context"
 import { iife } from "@/util/iife"
 import { Global } from "../global"
 import path from "path"
@@ -1308,9 +1309,12 @@ export namespace Provider {
           timeout: false,
         })
         if (debugHttp) {
+          const ctx = HttpDebugContext.get()
           Log.create({ service: "debug-request" }).info("debug_request", {
             phase: "http",
             bodyBytes: httpBodyBytes,
+            sessionID: ctx?.sessionID,
+            httpStatus: res.status,
           })
         }
 

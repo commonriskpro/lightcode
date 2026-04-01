@@ -8,6 +8,7 @@ import { MessageV2 } from "./message-v2"
 import { Log } from "../util/log"
 import { SessionRevert } from "./revert"
 import { Session } from "."
+import { Global } from "../global"
 import { Agent } from "../agent/agent"
 import { Provider } from "../provider/provider"
 import { ModelID, ProviderID } from "../provider/schema"
@@ -33,8 +34,8 @@ import { NotFoundError } from "@/storage/db"
 import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
 import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
-import { ToolRouter } from "./tool-router"
-import { mergedInstructionBodies, threadHasAssistant } from "./wire-tier"
+import { ToolRouter, type ContextTier } from "./tool-router"
+import { instructionMode, mergedInstructionBodies, minimalTierAllTurns, threadHasAssistant } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -68,8 +69,18 @@ IMPORTANT:
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
+/**
+ * Estimate token count for a string using a fast character-based heuristic.
+ * ~4 chars per token for English/Spanish text. Good enough for logging.
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0
+  return Math.ceil(text.length / 4)
+}
+
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
+  const trace = process.env.OPENCODE_TRACE_TIMINGS === "1"
 
   const state = Instance.state(
     () => {
@@ -637,7 +648,7 @@ export namespace SessionPrompt {
       const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
       const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
-      const { tools, toolRouterPrompt } = await resolveTools({
+      const { tools, toolRouterPrompt, contextTier } = await resolveTools({
         agent,
         session,
         model,
@@ -687,17 +698,117 @@ export namespace SessionPrompt {
 
       await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-      // Build system prompt (cached when inputs unchanged; see system-prompt-cache.ts)
-      const system = await SystemPromptCache.getParts({
-        agent,
-        model,
-        instructions: mergedInstructionBodies(cfg, msgs, lastUser.format?.type === "json_schema"),
-      })
-      if (toolRouterPrompt) system.push(toolRouterPrompt)
+      // Build system prompt based on context tier from router
       const format = lastUser.format ?? { type: "text" }
+      let system: string[]
+      if (contextTier === "conversation") {
+        // Conversational mode: minimal prompt, no tools, no project context
+        system = [
+          "You are a helpful AI assistant. Respond naturally and conversationally. " +
+            "You do not have access to files, shell, or project tools in this mode. " +
+            "If the user asks you to do something that requires code or file access, let them know they need to ask you to work on their project.",
+        ]
+      } else {
+        // Full or minimal: build the complete system prompt
+        system = await SystemPromptCache.getParts({
+          agent,
+          model,
+          instructions: instructionMode(cfg, msgs, format.type === "json_schema"),
+        })
+        if (toolRouterPrompt) system.push(toolRouterPrompt)
+      }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
       }
+
+      // ── Token accounting: break down what contributes to the prompt size
+      const systemText = system.join("\n\n")
+      const systemTokens = estimateTokens(systemText)
+      const messageCount = msgs.length
+      const assistantMsgs = msgs.filter((m) => m.info.role === "assistant")
+      const userMsgs = msgs.filter((m) => m.info.role === "user")
+      // Derive turn number from message history — the local `step` counter resets
+      // on each prompt() call (new user message), so JSONL always showed step=1.
+      // userMsgs.length = total user messages in thread = actual session turn.
+      const sessionTurn = userMsgs.length
+      const toolParts = msgs.flatMap((m) =>
+        m.parts.filter((p): p is MessageV2.ToolPart => p.type === "tool" && p.state.status === "completed"),
+      )
+      const toolResultTokens = toolParts.reduce((sum, p) => {
+        const output = "output" in p.state ? (p.state.output ?? "") : ""
+        return sum + estimateTokens(output)
+      }, 0)
+      const textParts = msgs.flatMap((m) =>
+        m.parts.filter((p): p is MessageV2.TextPart => p.type === "text" && !p.synthetic && !p.ignored),
+      )
+      const userTextTokens = textParts.reduce((sum, p) => sum + estimateTokens(p.text), 0)
+      const toolCount = Object.keys(tools).length
+      // Safeguard: in conversation mode, tool definitions must be zero regardless of tools object state
+      const toolDefTokens =
+        contextTier === "conversation"
+          ? 0
+          : (() => {
+              let total = 0
+              for (const t of Object.values(tools)) {
+                if (t.description) total += estimateTokens(t.description)
+              }
+              return total
+            })()
+
+      log.info("token_breakdown", {
+        step: sessionTurn,
+        contextTier,
+        system: {
+          tokens: systemTokens,
+          instructionMode: instructionMode(cfg, msgs, format.type === "json_schema"),
+          parts: system.map((s) => s.slice(0, 80).replace(/\n/g, " ")),
+        },
+        messages: {
+          total: messageCount,
+          user: userMsgs.length,
+          assistant: assistantMsgs.length,
+        },
+        userText: {
+          tokens: userTextTokens,
+          partCount: textParts.length,
+        },
+        toolResults: {
+          tokens: toolResultTokens,
+          partCount: toolParts.length,
+        },
+        toolDefs: {
+          tokens: toolDefTokens,
+          count: toolCount,
+          names: Object.keys(tools).sort(),
+        },
+        total: {
+          estimated: systemTokens + userTextTokens + toolResultTokens + toolDefTokens,
+          breakdown: `system=${systemTokens} + userText=${userTextTokens} + toolResults=${toolResultTokens} + toolDefs=${toolDefTokens}`,
+        },
+      })
+
+      // ── Persist token breakdown to JSONL file for post-session analysis
+      // Location: {data}/debug/tokens/{sessionID}.jsonl
+      // Works in both portable (.local-opencode) and XDG modes via Global.Path.data
+      const debugDir = path.join(Global.Path.data, "debug", "tokens")
+      const debugFile = path.join(debugDir, `${sessionID}.jsonl`)
+      const record = {
+        step: sessionTurn,
+        contextTier,
+        system: { tokens: systemTokens, instructionMode: instructionMode(cfg, msgs, format.type === "json_schema") },
+        messages: { total: messageCount, user: userMsgs.length, assistant: assistantMsgs.length },
+        userText: { tokens: userTextTokens, partCount: textParts.length },
+        toolResults: { tokens: toolResultTokens, partCount: toolParts.length },
+        toolDefs: { tokens: toolDefTokens, count: toolCount, names: Object.keys(tools).sort() },
+        total: {
+          estimated: systemTokens + userTextTokens + toolResultTokens + toolDefTokens,
+          breakdown: `system=${systemTokens} + userText=${userTextTokens} + toolResults=${toolResultTokens} + toolDefs=${toolDefTokens}`,
+        },
+        timestamp: new Date().toISOString(),
+      }
+      fs.mkdir(debugDir, { recursive: true })
+        .then(() => fs.appendFile(debugFile, JSON.stringify(record) + "\n"))
+        .catch(() => {})
 
       const result = await processor.process({
         user: lastUser,
@@ -706,6 +817,7 @@ export namespace SessionPrompt {
         abort,
         sessionID,
         assistantID: processor.message.id,
+        contextTier,
         system,
         messages: [
           ...(await MessageV2.toModelMessages(msgs, model)),
@@ -790,8 +902,9 @@ export namespace SessionPrompt {
     /** Skip offline tool router (e.g. JSON schema mode needs full tool surface + StructuredOutput). */
     skipToolRouter?: boolean
     cfg?: Config.Info
-  }): Promise<{ tools: Record<string, AITool>; toolRouterPrompt?: string }> {
+  }): Promise<{ tools: Record<string, AITool>; toolRouterPrompt?: string; contextTier: ContextTier }> {
     using _ = log.time("resolveTools")
+    const start = performance.now()
     const tools: Record<string, AITool> = {}
 
     const context = (args: any, options: ToolExecutionOptions): Tool.Context => ({
@@ -829,10 +942,19 @@ export namespace SessionPrompt {
       },
     })
 
-    for (const item of await ToolRegistry.tools(
+    const regStart = performance.now()
+    const regTools = await ToolRegistry.tools(
       { modelID: ModelID.make(input.model.api.id), providerID: input.model.providerID },
       input.agent,
-    )) {
+    )
+    if (trace) {
+      log.info("resolveTools.registry", {
+        duration_ms: Math.round((performance.now() - regStart) * 100) / 100,
+        count: regTools.length,
+        sessionID: input.session.id,
+      })
+    }
+    for (const item of regTools) {
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
       tools[item.id] = tool({
         id: item.id as any,
@@ -876,8 +998,17 @@ export namespace SessionPrompt {
       })
     }
 
+    const mcpStart = performance.now()
+    const mcpTools = await MCP.tools()
+    if (trace) {
+      log.info("resolveTools.mcp", {
+        duration_ms: Math.round((performance.now() - mcpStart) * 100) / 100,
+        count: Object.keys(mcpTools).length,
+        sessionID: input.session.id,
+      })
+    }
     const mcpIds = new Set<string>()
-    for (const [key, item] of Object.entries(await MCP.tools())) {
+    for (const [key, item] of Object.entries(mcpTools)) {
       mcpIds.add(key)
       const execute = item.execute
       if (!execute) continue
@@ -973,18 +1104,15 @@ export namespace SessionPrompt {
     }
 
     const cfg = input.cfg ?? (await Config.get())
-    const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "full"
+    const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
+    const minimalAllTurns = minimalTierAllTurns(cfg)
     const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
     const bashDenied = Permission.disabled(["bash"], ruleset).has("bash")
-    const includeBash =
-      Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH ||
-      (!bashDenied && input.tools?.bash !== false)
+    const includeBash = Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH || (!bashDenied && input.tools?.bash !== false)
     const webfetchDenied = Permission.disabled(["webfetch"], ruleset).has("webfetch")
     const websearchDenied = Permission.disabled(["websearch"], ruleset).has("websearch")
-    const includeWebfetch =
-      !webfetchDenied && input.tools?.webfetch !== false && Boolean(tools.webfetch)
-    const includeWebsearch =
-      !websearchDenied && input.tools?.websearch !== false && Boolean(tools.websearch)
+    const includeWebfetch = !webfetchDenied && input.tools?.webfetch !== false && Boolean(tools.webfetch)
+    const includeWebsearch = !websearchDenied && input.tools?.websearch !== false && Boolean(tools.websearch)
     const afterTier = applyInitialToolTier({
       tools,
       messages: input.messages,
@@ -992,6 +1120,7 @@ export namespace SessionPrompt {
       includeBash,
       includeWebfetch,
       includeWebsearch,
+      minimalAllTurns,
     })
     const disabled = Permission.disabled(Object.keys(tools), ruleset)
     const allowedToolIds = new Set(
@@ -1001,26 +1130,43 @@ export namespace SessionPrompt {
         return true
       }),
     )
-    const routed = ToolRouter.apply({
+    const routeStart = performance.now()
+    const routed = await ToolRouter.apply({
       tools: afterTier,
       registryTools: tools,
       allowedToolIds,
       messages: input.messages,
       agent: input.agent,
+      model: input.model,
       cfg,
       mcpIds,
       skip: input.skipToolRouter ?? false,
     })
+    if (trace) {
+      log.info("resolveTools.router", {
+        duration_ms: Math.round((performance.now() - routeStart) * 100) / 100,
+        tier: routed.contextTier,
+        selected: Object.keys(routed.tools).length,
+        sessionID: input.session.id,
+      })
+    }
     const inject = cfg.experimental?.tool_router?.inject_prompt !== false
     let toolRouterPrompt = routed.promptHint
-    if (!toolRouterPrompt && inject && tier === "minimal" && !threadHasAssistant(input.messages)) {
+    if (!toolRouterPrompt && inject && tier === "minimal" && (!threadHasAssistant(input.messages) || minimalAllTurns)) {
       toolRouterPrompt = minimalTierPromptHint({
         includeBash,
         includeWebfetch,
         includeWebsearch,
+        allTurns: minimalAllTurns,
       })
     }
-    return { tools: routed.tools, toolRouterPrompt }
+    if (trace) {
+      log.info("resolveTools.complete", {
+        duration_ms: Math.round((performance.now() - start) * 100) / 100,
+        sessionID: input.session.id,
+      })
+    }
+    return { tools: routed.tools, toolRouterPrompt, contextTier: routed.contextTier }
   }
 
   /** @internal Exported for testing */

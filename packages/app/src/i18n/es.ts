@@ -561,6 +561,14 @@ export const dict = {
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrar servidores",
 
+  "titlebar.embed.trigger": "Embeddings locales",
+  "titlebar.embed.aria": "Estado del modelo de embeddings local (Hugging Face)",
+  "titlebar.embed.loading": "Descargando o cargando el modelo desde Hugging Face…",
+  "titlebar.embed.ready": "Modelo cargado; los embeddings están activos.",
+  "titlebar.embed.error": "Error al cargar o ejecutar el modelo de embeddings.",
+  "titlebar.embed.model": "Modelo",
+  "titlebar.embed.detail": "El router offline usa Transformers.js (ONNX). El primer uso puede descargar pesos.",
+
   "session.share.popover.title": "Publicar en web",
   "session.share.popover.description.shared":
     "Esta sesión es pública en la web. Es accesible para cualquiera con el enlace.",

@@ -4,6 +4,9 @@ import { Rpc } from "@/util/rpc"
 import { type rpc } from "./worker"
 import path from "path"
 import { fileURLToPath } from "url"
+import { spawn, spawnSync } from "node:child_process"
+import { Global } from "@/global"
+import { Installation } from "@/installation"
 import { UI } from "@/cli/ui"
 import { Log } from "@/util/log"
 import { errorMessage } from "@/util/error"
@@ -11,7 +14,7 @@ import { withTimeout } from "@/util/timeout"
 import { withNetworkOptions, resolveNetworkOptions } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
 import type { Event } from "@opencode-ai/sdk/v2"
-import type { EventSource } from "./context/sdk"
+import type { EventSource, TuiBusEvent } from "./context/sdk"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
@@ -22,6 +25,48 @@ declare global {
 }
 
 type RpcClient = ReturnType<typeof Rpc.client<typeof rpc>>
+
+
+function traceViewerEnabled() {
+  const v = process.env.OPENCODE_TRACE_VIEWER?.toLowerCase()
+  return v === "true" || v === "1" || v === "on"
+}
+
+function spawnTraceViewerIfNeeded() {
+  if (!traceViewerEnabled()) return
+  const custom = process.env.OPENCODE_TRACE_VIEWER_CMD?.trim()
+  if (custom) {
+    spawn(custom, { shell: true, detached: true, stdio: "ignore" })
+    return
+  }
+  const logName = Installation.isLocal()
+    ? "dev.log"
+    : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log"
+  const logPath = path.join(Global.Path.log, logName)
+  const script = fileURLToPath(new URL("../../../../script/trace-viewer.ts", import.meta.url))
+  const inline = () => {
+    const child = spawn(process.execPath, [script, logPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    child.stdout?.on("data", (d) => process.stderr.write(d))
+    child.stderr?.on("data", (d) => process.stderr.write(d))
+    child.unref()
+  }
+  const q = (x: string) => `'${x.replace(/'/g, "'\\''")}'`
+  if (process.env.TMUX) {
+    const cmd = `${q(process.execPath)} ${q(script)} ${q(logPath)}`
+    const out = spawnSync("tmux", ["split-window", "-h", "-d", cmd], {
+      stdio: "ignore",
+    })
+    if (out.status === 0) return
+    Log.Default.warn("trace viewer tmux split failed, using inline", {
+      status: out.status,
+    })
+    inline()
+    return
+  }
+  inline()
+}
 
 function createWorkerFetch(client: RpcClient): typeof fetch {
   const fn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -43,7 +88,13 @@ function createWorkerFetch(client: RpcClient): typeof fetch {
 
 function createEventSource(client: RpcClient): EventSource {
   return {
-    on: (handler) => client.on<Event>("event", handler),
+    on: (handler) => {
+      // Do not also subscribe to `event`: worker forwards `Bus.subscribeAll` there while
+      // `global.event` mirrors the same publishes via `GlobalBus` — both would duplicate deltas.
+      return client.on<{ directory?: string; payload: TuiBusEvent }>("global.event", (g) => {
+        handler(g.payload)
+      })
+    },
     setWorkspace: (workspaceID) => {
       void client.call("setWorkspace", { workspaceID })
     },
@@ -195,6 +246,8 @@ export const TuiThreadCommand = cmd({
             fetch: createWorkerFetch(client),
             events: createEventSource(client),
           }
+
+      spawnTraceViewerIfNeeded()
 
       setTimeout(() => {
         client.call("checkUpgrade", { directory: cwd }).catch(() => {})

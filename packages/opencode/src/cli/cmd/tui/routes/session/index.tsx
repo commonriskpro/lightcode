@@ -61,6 +61,7 @@ import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { Footer } from "./footer"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -77,6 +78,7 @@ import { Global } from "@/global"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
+import { DialogMeter } from "../../component/dialog-meter"
 import { formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
@@ -496,6 +498,17 @@ export function Session() {
             })
           })
         dialog.clear()
+      },
+    },
+    {
+      title: "Token meter",
+      value: "session.meter",
+      category: "Session",
+      slash: {
+        name: "meter",
+      },
+      onSelect: (dialog) => {
+        dialog.replace(() => <DialogMeter sessionID={route.sessionID} />)
       },
     },
     {
@@ -1161,6 +1174,9 @@ export function Session() {
               </Show>
               <Show when={session()?.parentID}>
                 <SubagentFooter />
+              </Show>
+              <Show when={!session()?.parentID}>
+                <Footer />
               </Show>
               <Prompt
                 visible={!session()?.parentID && permissions().length === 0 && questions().length === 0}

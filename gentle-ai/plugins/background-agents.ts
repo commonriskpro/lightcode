@@ -25,7 +25,6 @@ import { stat } from "node:fs/promises"
 import { type Plugin, type ToolContext, tool } from "@opencode-ai/plugin"
 import type { createOpencodeClient } from "@opencode-ai/sdk"
 import type { Event, Message, Part, TextPart } from "@opencode-ai/sdk"
-import { adjectives, animals, colors, uniqueNamesGenerator } from "unique-names-generator"
 
 // ==========================================
 // INLINED: kdco-primitives/types
@@ -161,12 +160,43 @@ async function getProjectId(projectRoot: string): Promise<string> {
 // ==========================================
 
 function generateReadableId(): string {
-  return uniqueNamesGenerator({
-    dictionaries: [adjectives, colors, animals],
-    separator: "-",
-    length: 3,
-    style: "lowerCase",
-  })
+  const a = [
+    "swift",
+    "silent",
+    "bright",
+    "calm",
+    "bold",
+    "eager",
+    "keen",
+    "steady",
+    "rapid",
+    "sharp",
+  ]
+  const c = [
+    "amber",
+    "azure",
+    "crimson",
+    "indigo",
+    "ivory",
+    "jade",
+    "silver",
+    "gold",
+    "violet",
+    "teal",
+  ]
+  const n = [
+    "falcon",
+    "lynx",
+    "otter",
+    "panda",
+    "raven",
+    "tiger",
+    "wolf",
+    "eagle",
+    "heron",
+    "fox",
+  ]
+  return `${a[crypto.randomInt(a.length)]}-${c[crypto.randomInt(c.length)]}-${n[crypto.randomInt(n.length)]}`
 }
 
 // ==========================================
@@ -1353,6 +1383,7 @@ function formatDelegationContext(
 interface SystemTransformInput {
   agent?: string
   sessionID?: string
+  contextTier?: "conversation" | "minimal" | "full"
 }
 
 export const BackgroundAgents: Plugin = async (ctx) => {
@@ -1385,7 +1416,8 @@ export const BackgroundAgents: Plugin = async (ctx) => {
     // The agent chooses based on whether it needs async background execution or synchronous results.
 
     // Inject delegation rules into system prompt
-    "experimental.chat.system.transform": async (_input: SystemTransformInput, output) => {
+    "experimental.chat.system.transform": async (input: SystemTransformInput, output) => {
+      if (input.contextTier === "conversation") return
       output.system.push(DELEGATION_RULES)
     },
 

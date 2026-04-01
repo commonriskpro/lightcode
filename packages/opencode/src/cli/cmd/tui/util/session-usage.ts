@@ -10,9 +10,8 @@ export function lastAssistantWithUsage(
 }
 
 /**
- * Prompt-side tokens for one turn. Prefer `input + cache.read + cache.write` (matches `Session.getUsage`).
- * If that sum is tiny but `total` is present, fall back to `total - output - reasoning` (some providers
- * under-report `inputTokens` or omit cache fields).
+ * Prompt-side tokens only (input + cache read/write, with `total` fallback). For heuristics / debugging;
+ * **not** what the TUI shows for the context counter — see {@link turnTokenTotal} (matches anomalyco/opencode).
  */
 export function promptTokensForContext(t: AssistantMessage["tokens"]) {
   const c = t.cache
@@ -23,16 +22,31 @@ export function promptTokensForContext(t: AssistantMessage["tokens"]) {
 }
 
 /**
- * Approximate **prompt** size for the last completed assistant turn (system + history + tools).
- * Uses `input + cache.read + cache.write`: `tokens.input` alone is only the **non-cached** slice, so providers
- * with prompt caching can show ~38 while the real footprint is tens of thousands.
+ * Total tokens for one assistant turn — same formula as [anomalyco/opencode](https://github.com/anomalyco/opencode)
+ * TUI (`prompt/index.tsx`, `sidebar/context.tsx`): input + output + reasoning + cache read + cache write.
  */
-export function lastPromptContextTokens(
+export function turnTokenTotal(t: AssistantMessage["tokens"]) {
+  const c = t.cache
+  return t.input + t.output + t.reasoning + (c?.read ?? 0) + (c?.write ?? 0)
+}
+
+/**
+ * Total tokens for the last completed assistant turn (for context display and % of model context limit).
+ * Matches upstream OpenCode TUI; differs from {@link promptTokensForContext} which is prompt-footprint only.
+ */
+export function lastTurnTokenTotal(
   messages: readonly { role: string; tokens?: AssistantMessage["tokens"] }[],
 ) {
   const last = lastAssistantWithUsage(messages)
   if (!last?.tokens) return 0
-  return promptTokensForContext(last.tokens)
+  return turnTokenTotal(last.tokens)
+}
+
+/** @deprecated Use {@link lastTurnTokenTotal} — old name reflected prompt-only counting. */
+export function lastPromptContextTokens(
+  messages: readonly { role: string; tokens?: AssistantMessage["tokens"] }[],
+) {
+  return lastTurnTokenTotal(messages)
 }
 
 /** Sum of token usage across every assistant message (cumulative billing volume, not context size). */
@@ -48,8 +62,8 @@ export function sessionTotalRequestTokens(
   return n
 }
 
-/** Share of model context window used by the last completed request (full prompt including cached). */
+/** Share of model context window (uses same turn total as upstream TUI). */
 export function contextWindowPercent(last: AssistantMessage, contextLimit: number | undefined) {
   if (!contextLimit) return null
-  return Math.round((promptTokensForContext(last.tokens) / contextLimit) * 100)
+  return Math.round((turnTokenTotal(last.tokens) / contextLimit) * 100)
 }

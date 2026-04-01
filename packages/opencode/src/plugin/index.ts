@@ -30,6 +30,14 @@ import {
 
 export namespace Plugin {
   const log = Log.create({ service: "plugin" })
+  const trace = process.env.OPENCODE_TRACE_TIMINGS === "1"
+  const timedHooks = [
+    "chat.",
+    "experimental.chat.",
+    "tool.execute.",
+    "command.execute.before",
+    "shell.env",
+  ]
 
   type State = {
     hooks: Hooks[]
@@ -288,11 +296,22 @@ export namespace Plugin {
         Output = Parameters<Required<Hooks>[Name]>[1],
       >(name: Name, input: Input, output: Output) {
         if (!name) return output
+        const start = performance.now()
         const state = yield* InstanceState.get(cache)
+        let runs = 0
         for (const hook of state.hooks) {
           const fn = hook[name] as any
           if (!fn) continue
+          runs += 1
           yield* Effect.promise(async () => fn(input, output))
+        }
+        const key = String(name)
+        if (trace && timedHooks.some((x) => key.startsWith(x))) {
+          log.info("trigger", {
+            name: key,
+            hooks: runs,
+            duration_ms: Math.round((performance.now() - start) * 100) / 100,
+          })
         }
         return output
       })
@@ -303,7 +322,13 @@ export namespace Plugin {
       })
 
       const init = Effect.fn("Plugin.init")(function* () {
+        const start = performance.now()
         yield* InstanceState.get(cache)
+        if (trace) {
+          log.info("init", {
+            duration_ms: Math.round((performance.now() - start) * 100) / 100,
+          })
+        }
       })
 
       return Service.of({ trigger, list, init })
