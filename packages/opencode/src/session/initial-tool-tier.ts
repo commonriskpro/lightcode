@@ -7,16 +7,24 @@ const SLIM_LEN = 200
 /** First-turn allowlist when `initial_tool_tier` is minimal (spec: read/grep/glob/skill ± bash). */
 export const MINIMAL_IDS = ["read", "grep", "glob", "skill"] as const
 
-/** System line when tier is minimal and the thread has no assistant yet (router runs only after first assistant). */
 export function minimalTierPromptHint(input: {
   includeBash: boolean
   includeWebfetch?: boolean
   includeWebsearch?: boolean
+  /** When true, copy matches `experimental.minimal_tier_all_turns` (always-on minimal tier + router). */
+  allTurns?: boolean
 }) {
   const ids: string[] = [...MINIMAL_IDS]
   if (input.includeBash) ids.push("bash")
   if (input.includeWebfetch) ids.push("webfetch")
   if (input.includeWebsearch) ids.push("websearch")
+  if (input.allTurns) {
+    return [
+      "## Minimal tool tier (every turn)",
+      `Base tools always start as: ${ids.join(", ")}.`,
+      "The offline router merges additional tools from the full registry from your message each turn. Use read/skill to load project instructions when needed.",
+    ].join("\n")
+  }
   return [
     "## Initial tool tier (first turn in this thread)",
     `Only these tools are attached until after the first assistant message: ${ids.join(", ")}.`,
@@ -37,10 +45,12 @@ export function applyInitialToolTier(input: {
   includeBash: boolean
   includeWebfetch?: boolean
   includeWebsearch?: boolean
+  /** When true, keep the minimal allowlist even after an assistant message (router + additive expand tools). */
+  minimalAllTurns?: boolean
 }): Record<string, AITool> {
   if (input.tier !== "minimal") return input.tools
 
-  if (threadHasAssistant(input.messages)) return input.tools
+  if (!input.minimalAllTurns && threadHasAssistant(input.messages)) return input.tools
 
   const allow = new Set<string>(MINIMAL_IDS)
   if (input.includeBash) allow.add("bash")

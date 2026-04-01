@@ -201,6 +201,8 @@ export namespace Config {
 
     const targetVersion = Installation.isLocal() ? "latest" : Installation.VERSION
     if (targetVersion === "latest") {
+      // Self-contained mode should be stable and fast: if deps exist, skip online "latest" churn.
+      if (portableRoot()) return false
       if (!online()) return false
       const stale = await PackageRegistry.isOutdated("@opencode-ai/plugin", depVersion, dir)
       if (!stale) return false
@@ -1091,7 +1093,13 @@ export namespace Config {
             .enum(["full", "minimal"])
             .optional()
             .describe(
-              "First thread turn only (no assistant message yet): minimal uses a small tool allowlist with shorter descriptions and omits merged AGENTS.md/CLAUDE.md/instruction bodies in favor of a short pointer (read/skill); full wire resumes after any assistant message.",
+              "When minimal (default): small tool allowlist + deferred instruction pointer until an assistant message exists — unless minimal_tier_all_turns is true, in which case the allowlist stays minimal every turn and the offline router (use additive: true) expands tools from the registry.",
+            ),
+          minimal_tier_all_turns: z
+            .boolean()
+            .optional()
+            .describe(
+              "When true with initial_tool_tier minimal: never expand to the full tool map after the first assistant message; keep slim tier tools before the router every turn. Also keeps instruction mode deferred (no inlined AGENTS) and disables the first-turn-only full-instruction exception when the router filters turn 1. Pair with experimental.tool_router.additive true.",
             ),
           debug_request: z
             .boolean()
@@ -1113,7 +1121,74 @@ export namespace Config {
                 .describe(
                   "Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md).",
                 ),
-              mode: z.enum(["rules"]).optional().default("rules"),
+              router_only: z
+                .boolean()
+                .optional()
+                .describe(
+                  "When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty tool build falls back to base_tools only, not the full map. Conversation tier uses local intent embed only (hybrid + local_intent_embed).",
+                ),
+              mode: z
+                .enum(["rules", "hybrid"])
+                .optional()
+                .default("rules")
+                .describe(
+                  "rules: keyword router only. hybrid: after rules, augment with either local embeddings (local_embed / local_embed_model) or a remote small LLM (router_model, small_model, getSmallModel).",
+                ),
+              local_embed: z
+                .boolean()
+                .optional()
+                .describe(
+                  "When true with mode hybrid, use offline Transformers.js (@huggingface/transformers) embeddings (default model: Xenova paraphrase multilingual MiniLM). Overrides the remote LLM augment path unless local_embed_model is empty and you rely on this flag alone.",
+                ),
+              local_embed_model: z
+                .string()
+                .optional()
+                .describe(
+                  "Hugging Face id for Transformers.js feature-extraction (e.g. Xenova/paraphrase-multilingual-MiniLM-L12-v2). When set (non-empty), hybrid uses local embeddings instead of the remote LLM. If OPENCODE_TOOL_ROUTER_EMBED_MODEL is set, it wins over this field.",
+                ),
+              local_embed_top_k: z
+                .number()
+                .int()
+                .min(1)
+                .max(24)
+                .optional()
+                .default(4)
+                .describe("Max extra builtin tools to add from embedding similarity."),
+              local_embed_min_score: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .default(0.32)
+                .describe("Minimum cosine similarity (normalized vectors) to attach a candidate tool."),
+              local_intent_embed: z
+                .boolean()
+                .optional()
+                .default(false)
+                .describe(
+                  "When true with mode hybrid and local embeddings: classify intent via embedding similarity to prototype phrases (including a conversation/chit-chat intent), merge tools before keyword rules, then run rule pass and tool augmentation. If the conversation intent wins, no tools are attached and the session uses minimal conversation context.",
+                ),
+              local_intent_min_score: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .default(0.38)
+                .describe("Minimum similarity to accept an intent prototype (typically slightly stricter than local_embed_min_score)."),
+              router_model: z
+                .string()
+                .optional()
+                .describe(
+                  "Optional provider/model for hybrid router only, e.g. openai/gpt-5-nano. Overrides small_model for this call.",
+                ),
+              llm_timeout_ms: z
+                .number()
+                .int()
+                .min(2000)
+                .max(120_000)
+                .optional()
+                .default(12_000)
+                .describe("Timeout for the hybrid router LLM call."),
               apply_after_first_assistant: z
                 .boolean()
                 .optional()
@@ -1131,12 +1206,19 @@ export namespace Config {
                   "When true with initial_tool_tier minimal: start from the tier allowlist, then add tools from rules using full registry definitions (see ToolRouter).",
                 ),
               max_tools: z.number().int().min(1).max(100).optional().default(12),
+              keyword_rules: z
+                .boolean()
+                .optional()
+                .default(false)
+                .describe(
+                  "When false (default): tool intent from local embed only (hybrid + local_embed + local_intent_embed) plus augmentMatchedEmbed — no regex RULES. Set true for legacy regex keyword rules after intent embed.",
+                ),
               no_match_fallback: z
                 .boolean()
                 .optional()
-                .default(true)
+                .default(false)
                 .describe(
-                  "When no keyword rule matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.",
+                  "When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.",
                 ),
               no_match_fallback_tools: z
                 .array(z.string())

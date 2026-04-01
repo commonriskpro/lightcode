@@ -82,6 +82,36 @@ export function Footer() {
                 {mcp()} MCP
               </text>
             </Show>
+            <Show when={sync.data.router_embed.phase !== "idle"}>
+              <text fg={theme.text}>
+                <Switch>
+                  <Match when={sync.data.router_embed.phase === "loading"}>
+                    <span style={{ fg: theme.warning }}>◐ </span>
+                    <span style={{ fg: theme.textMuted }}>embed</span>
+                    <Show when={sync.data.router_embed.model}>
+                      {" "}
+                      <span style={{ fg: theme.textMuted }}>{sync.data.router_embed.model}</span>
+                    </Show>
+                  </Match>
+                  <Match when={sync.data.router_embed.phase === "ready"}>
+                    <span style={{ fg: theme.success }}>✓ </span>
+                    <span style={{ fg: theme.textMuted }}>embed</span>
+                    <Show when={sync.data.router_embed.model}>
+                      {" "}
+                      <span style={{ fg: theme.textMuted }}>{sync.data.router_embed.model}</span>
+                    </Show>
+                  </Match>
+                  <Match when={sync.data.router_embed.phase === "error"}>
+                    <span style={{ fg: theme.error }}>✕ </span>
+                    <span style={{ fg: theme.textMuted }}>embed</span>
+                    <Show when={sync.data.router_embed.message}>
+                      {" "}
+                      <span style={{ fg: theme.error }}>{sync.data.router_embed.message}</span>
+                    </Show>
+                  </Match>
+                </Switch>
+              </text>
+            </Show>
             <text fg={theme.textMuted}>/status</text>
           </Match>
         </Switch>

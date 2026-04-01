@@ -19,6 +19,8 @@ const FILES = [
 
 function globalFiles(skip: boolean) {
   if (skip) return []
+  // If DISABLE_GLOBAL_IMPORTS is set, skip all global files - only use portable/self-contained
+  if (Flag.OPENCODE_DISABLE_GLOBAL_IMPORTS) return []
   const files = []
   if (Flag.OPENCODE_CONFIG_DIR) {
     files.push(path.join(Flag.OPENCODE_CONFIG_DIR, "AGENTS.md"))
@@ -31,6 +33,8 @@ function globalFiles(skip: boolean) {
 }
 
 async function resolveRelative(instruction: string): Promise<string[]> {
+  // If DISABLE_GLOBAL_IMPORTS is set, skip relative instruction resolution
+  if (Flag.OPENCODE_DISABLE_GLOBAL_IMPORTS) return []
   if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
     return Filesystem.globUp(instruction, Instance.directory, Instance.worktree).catch(() => [])
   }
@@ -72,10 +76,22 @@ export namespace InstructionPrompt {
 
   export async function systemPaths() {
     const config = await Config.get()
-    const skipGlobal =
-      Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || config.experimental?.disable_global_doc_reads === true
+    const skipGlobal = Flag.OPENCODE_DISABLE_GLOBAL_DOC_READS || config.experimental?.disable_global_doc_reads === true
     const paths = new Set<string>()
 
+    // Fully self-contained mode: only use portable root, skip project and global files
+    if (Flag.OPENCODE_DISABLE_GLOBAL_IMPORTS) {
+      const portable = portableRoot()
+      if (portable) {
+        const portableInstructionsPath = path.join(portable, "config", "opencode", "AGENTS.md")
+        if (await Filesystem.exists(portableInstructionsPath)) {
+          paths.add(portableInstructionsPath)
+        }
+      }
+      return paths
+    }
+
+    // Normal mode: read from project, global, or config.instructions
     if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
       for (const file of FILES) {
         const matches = await Filesystem.findUp(file, Instance.directory, Instance.worktree)

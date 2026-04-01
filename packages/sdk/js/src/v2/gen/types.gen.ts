@@ -1617,9 +1617,13 @@ export type Config = {
      */
     mcp_timeout?: number
     /**
-     * First thread turn only (no assistant message yet): minimal uses a small tool allowlist with shorter descriptions and omits merged AGENTS.md/CLAUDE.md/instruction bodies in favor of a short pointer (read/skill); full wire resumes after any assistant message.
+     * When minimal (default): small tool allowlist + deferred instruction pointer until an assistant message exists — unless minimal_tier_all_turns is true, in which case the allowlist stays minimal every turn and the offline router (use additive: true) expands tools from the registry.
      */
     initial_tool_tier?: "full" | "minimal"
+    /**
+     * When true with initial_tool_tier minimal: never expand to the full tool map after the first assistant message; keep slim tier tools before the router every turn. Also keeps instruction mode deferred (no inlined AGENTS) and disables the first-turn-only full-instruction exception when the router filters turn 1. Pair with experimental.tool_router.additive true.
+     */
+    minimal_tier_all_turns?: boolean
     /**
      * Same as OPENCODE_DEBUG_REQUEST: log structured wire/usage lines (service=debug-request) for prompt and tool payload sizes.
      */
@@ -1633,9 +1637,48 @@ export type Config = {
        * Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md).
        */
       enabled?: boolean
-      mode?: "rules"
       /**
-       * When true (default), skip router on the first user turn (initial_tool_tier unchanged).
+       * When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty tool build falls back to base_tools only, not the full map. Conversation tier uses local intent embed only (hybrid + local_intent_embed).
+       */
+      router_only?: boolean
+      /**
+       * rules: keyword router only. hybrid: after rules, augment with either local embeddings (local_embed / local_embed_model) or a remote small LLM (router_model, small_model, getSmallModel).
+       */
+      mode?: "rules" | "hybrid"
+      /**
+       * When true with mode hybrid, use offline Transformers.js (@huggingface/transformers) embeddings (default model: Xenova paraphrase multilingual MiniLM). Overrides the remote LLM augment path unless local_embed_model is empty and you rely on this flag alone.
+       */
+      local_embed?: boolean
+      /**
+       * Hugging Face id for Transformers.js feature-extraction (e.g. Xenova/paraphrase-multilingual-MiniLM-L12-v2). When set (non-empty), hybrid uses local embeddings instead of the remote LLM. If OPENCODE_TOOL_ROUTER_EMBED_MODEL is set, it wins over this field.
+       */
+      local_embed_model?: string
+      /**
+       * Max extra builtin tools to add from embedding similarity.
+       */
+      local_embed_top_k?: number
+      /**
+       * Minimum cosine similarity (normalized vectors) to attach a candidate tool.
+       */
+      local_embed_min_score?: number
+      /**
+       * When true with mode hybrid and local embeddings: classify intent via embedding similarity to prototype phrases (including a conversation/chit-chat intent), merge tools before keyword rules, then run rule pass and tool augmentation. If the conversation intent wins, no tools are attached and the session uses minimal conversation context.
+       */
+      local_intent_embed?: boolean
+      /**
+       * Minimum similarity to accept an intent prototype (typically slightly stricter than local_embed_min_score).
+       */
+      local_intent_min_score?: number
+      /**
+       * Optional provider/model for hybrid router only, e.g. openai/gpt-5-nano. Overrides small_model for this call.
+       */
+      router_model?: string
+      /**
+       * Timeout for the hybrid router LLM call.
+       */
+      llm_timeout_ms?: number
+      /**
+       * When true, skip router on the first user turn. Default is false (router active from T1).
        */
       apply_after_first_assistant?: boolean
       /**
@@ -1648,7 +1691,11 @@ export type Config = {
       additive?: boolean
       max_tools?: number
       /**
-       * When no keyword rule matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.
+       * When false (default): tool intent from local embed only (hybrid + local_embed + local_intent_embed) plus augmentMatchedEmbed — no regex RULES. Set true for legacy regex keyword rules after intent embed.
+       */
+      keyword_rules?: boolean
+      /**
+       * When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.
        */
       no_match_fallback?: boolean
       /**
@@ -1660,16 +1707,13 @@ export type Config = {
        */
       mcp_always_include?: boolean
       /**
+       * When true (default) and mcp_always_include is true, only attach MCP tools whose id or description matches a keyword rule. On fallback (no rule matched), all MCP tools are included.
+       */
+      mcp_filter_by_intent?: boolean
+      /**
        * When true (default), append a short system line with offline-router intent hints and the tool ids attached this turn.
        */
       inject_prompt?: boolean
-      /**
-       * Spec §7: retry with full tools on tool-layer error. Schema only until processor wiring lands.
-       */
-      fallback?: {
-        max_expansions_per_turn?: number
-        expand_to?: "full"
-      }
     }
   }
 }

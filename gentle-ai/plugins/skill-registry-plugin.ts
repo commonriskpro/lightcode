@@ -12,6 +12,7 @@ const SkillRegistryPlugin: Plugin = async (ctx) => {
   return {
     "experimental.chat.system.transform": async (input, output) => {
       if (input.small) return
+      if (input.contextTier === "conversation") return
       if (input.agent?.name !== "sdd-orchestrator") return
       const sid = input.sessionID
       if (!sid) return

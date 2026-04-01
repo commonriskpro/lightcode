@@ -61,6 +61,8 @@ export namespace SessionProcessor {
     needsCompaction: boolean
     currentText: MessageV2.TextPart | undefined
     reasoningMap: Record<string, MessageV2.ReasoningPart>
+    /** Counts `finish-step` events within this assistant message (tool-loop steps). */
+    finishStepIndex: number
   }
 
   type StreamEvent = Event
@@ -105,6 +107,7 @@ export namespace SessionProcessor {
           needsCompaction: false,
           currentText: undefined,
           reasoningMap: {},
+          finishStepIndex: 0,
         }
 
         const parse = (e: unknown) =>
@@ -269,16 +272,26 @@ export namespace SessionProcessor {
                 usage: value.usage,
                 metadata: value.providerMetadata,
               })
+              ctx.finishStepIndex += 1
               ctx.assistantMessage.finish = value.finishReason
               ctx.assistantMessage.cost += usage.cost
-              ctx.assistantMessage.tokens = usage.tokens
+              ctx.assistantMessage.tokens = Session.mergeUsageTokens(ctx.assistantMessage.tokens, usage.tokens)
               if (DebugRequest.enabled(yield* config.get())) {
                 DebugRequest.usage({
                   sessionID: ctx.sessionID,
                   assistantID: ctx.assistantMessage.id,
                   finish: value.finishReason,
+                  stepIndex: ctx.finishStepIndex,
+                  cumulativeTokens: ctx.assistantMessage.tokens,
                   tokens: usage.tokens,
                   cost: usage.cost,
+                })
+                log.info("finish_step", {
+                  sessionID: ctx.sessionID,
+                  assistantID: ctx.assistantMessage.id,
+                  stepIndex: ctx.finishStepIndex,
+                  stepTokens: usage.tokens,
+                  cumulativeTokens: ctx.assistantMessage.tokens,
                 })
               }
               yield* session.updatePart({
@@ -314,7 +327,7 @@ export namespace SessionProcessor {
               ).pipe(Effect.ignoreCause({ log: true, message: "session summary failed" }), Effect.forkDetach)
               if (
                 !ctx.assistantMessage.summary &&
-                isOverflow({ cfg: yield* config.get(), tokens: usage.tokens, model: ctx.model })
+                isOverflow({ cfg: yield* config.get(), tokens: ctx.assistantMessage.tokens, model: ctx.model })
               ) {
                 ctx.needsCompaction = true
               }

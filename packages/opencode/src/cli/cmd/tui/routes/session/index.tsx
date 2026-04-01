@@ -61,6 +61,7 @@ import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { Footer } from "./footer"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -1173,6 +1174,9 @@ export function Session() {
               </Show>
               <Show when={session()?.parentID}>
                 <SubagentFooter />
+              </Show>
+              <Show when={!session()?.parentID}>
+                <Footer />
               </Show>
               <Prompt
                 visible={!session()?.parentID && permissions().length === 0 && questions().length === 0}

@@ -302,6 +302,28 @@ export namespace Session {
     }
   }
 
+  /**
+   * Merge token usage from a new `finish-step` into the running assistant message. Each tool loop step is a
+   * separate API call with its own usage; we must **sum** like {@link getUsage} costs are summed — replacing
+   * with the last step only made the TUI show a tiny number (e.g. 244) after a large step (~10k).
+   */
+  export function mergeUsageTokens(
+    prev: MessageV2.Assistant["tokens"],
+    next: MessageV2.Assistant["tokens"],
+  ): MessageV2.Assistant["tokens"] {
+    return {
+      total:
+        prev.total != null || next.total != null ? (prev.total ?? 0) + (next.total ?? 0) : undefined,
+      input: prev.input + next.input,
+      output: prev.output + next.output,
+      reasoning: prev.reasoning + next.reasoning,
+      cache: {
+        read: prev.cache.read + next.cache.read,
+        write: prev.cache.write + next.cache.write,
+      },
+    }
+  }
+
   export class BusyError extends Error {
     constructor(public readonly sessionID: string) {
       super(`Session ${sessionID} is busy`)

@@ -1,5 +1,7 @@
 import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
 
+import { contextWindowPercent, lastAssistantWithUsage, turnTokenTotal } from "@/lib/session-usage"
+
 type Provider = {
   id: string
   name?: string
@@ -34,28 +36,16 @@ type Metrics = {
   context: Context | undefined
 }
 
-const tokenTotal = (msg: AssistantMessage) => {
-  return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
-}
-
-const lastAssistantWithTokens = (messages: Message[]) => {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg.role !== "assistant") continue
-    if (tokenTotal(msg) <= 0) continue
-    return msg
-  }
-}
-
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
   const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
-  const message = lastAssistantWithTokens(messages)
+  const message = lastAssistantWithUsage(messages)
   if (!message) return { totalCost, context: undefined }
 
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
-  const total = tokenTotal(message)
+  const total = turnTokenTotal(message.tokens)
+  const usage = contextWindowPercent(message, limit)
 
   return {
     totalCost,
@@ -72,7 +62,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       cacheRead: message.tokens.cache.read,
       cacheWrite: message.tokens.cache.write,
       total,
-      usage: limit ? Math.round((total / limit) * 100) : null,
+      usage,
     },
   }
 }

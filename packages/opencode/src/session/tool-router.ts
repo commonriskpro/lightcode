@@ -1,8 +1,17 @@
 import type { Tool as AITool } from "ai"
 import type { Config } from "@/config/config"
 import { Flag } from "@/flag/flag"
+import type { Provider } from "@/provider/provider"
 import type { MessageV2 } from "./message-v2"
 import { Log } from "@/util/log"
+import {
+  augmentMatchedEmbed,
+  classifyIntentEmbed,
+  CONVERSATION_INTENT_LABEL,
+  DEFAULT_LOCAL_EMBED_MODEL,
+  ROUTER_INTENT_PROTOTYPES,
+} from "./router-embed"
+import { augmentMatchedTools } from "./router-llm"
 import { threadHasAssistant } from "./wire-tier"
 
 const log = Log.create({ service: "tool-router" })
@@ -23,7 +32,7 @@ function estimateTokens(text: string): number {
  * Tool ids are intersected with **agent + session permission + user toggles** (`allowedToolIds` from `resolveTools`)
  * so the model is never advertised tools that `LLM.resolveTools` would strip.
  *
- * When `apply_after_first_assistant` is true (default), skips until an assistant message exists — unless `additive` is true.
+ * When `apply_after_first_assistant` is `true`, skip narrowing on the first user turn (full tools until an assistant exists). Config default is `false` (router narrows from turn 1). `additive` bypasses the skip branch.
  *
  * **Slim descriptions**: tools matched by rules keep their full description; base-only tools get a
  * one-line description to save tokens. The schema (input parameters) is always sent in full.
@@ -31,6 +40,15 @@ function estimateTokens(text: string): number {
  * **MCP filtering**: when `mcp_filter_by_intent` is true (default), MCP tools are only attached
  * when a rule matches them or when no rule matches at all (fallback). This avoids sending irrelevant
  * MCP tool definitions on every turn.
+ *
+ * **Hybrid mode** (`experimental.tool_router.mode: "hybrid"` or `OPENCODE_TOOL_ROUTER_MODE=hybrid`): optionally
+ * **intent classification** (`local_intent_embed`: embedding similarity vs built-in multilingual prototypes) merges tools
+ * **before** keyword rules (unless `keyword_rules: false`); then augment with **local embeddings** (`local_embed` / `local_embed_model`,
+ * `@huggingface/transformers`, default `Xenova/paraphrase-multilingual-MiniLM-L12-v2`) or a **remote small LLM**
+ * (`router_model`, `small_model`, `Provider.getSmallModel`). Local embed path takes precedence when enabled.
+ * Default `keyword_rules` is **false**: local intent + tool embeddings only. Set `keyword_rules: true` to also apply regex `RULES` (legacy).
+ *
+ * **Conversation tier** (`contextTier: "conversation"`) comes **only** from local intent embed: `hybrid` + `local_embed` + `local_intent_embed`, and `classifyIntentEmbed` must label the message as the built-in **conversation** prototype (see `ROUTER_INTENT_PROTOTYPES`). There are **no** regex/heuristic shortcuts for chit-chat.
  */
 const DEFAULT_BASE = ["read", "task", "skill"]
 
@@ -52,7 +70,11 @@ const SLIM_DESC: Record<string, string> = {
 }
 
 const RULES: { re: RegExp; add: string[]; label: string }[] = [
-  { re: /\b(edit|write|patch|refactor)\b/i, add: ["edit", "write", "grep", "read"], label: "edit/refactor" },
+  {
+    re: /\b(edit|editá|edita|write|patch|refactor)\b/i,
+    add: ["edit", "write", "grep", "read"],
+    label: "edit/refactor",
+  },
   {
     re: /\b(create|add|implement|new file|scaffold|crear|añadir|implementar)\b/i,
     add: ["write", "edit", "grep", "read"],
@@ -106,40 +128,24 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   { re: /\b(skill|load skill)\b/i, add: ["skill", "read"], label: "skill" },
 ]
 
+function embedPhraseFor(
+  input: { tools: Record<string, AITool>; registryTools?: Record<string, AITool> },
+  id: string,
+) {
+  const slim = SLIM_DESC[id]
+  if (slim) return `${id}. ${slim}`
+  const t = input.registryTools?.[id] ?? input.tools[id]
+  const d = typeof t?.description === "string" ? t.description.slice(0, 240) : ""
+  return d ? `${id}. ${d}` : `${id} coding agent tool`
+}
+
 /**
  * Context tier returned by the router to tell prompt.ts how much system context to include.
- * - "conversation": greetings, chit-chat — no tools, minimal prompt (~50 tokens)
+ * - "conversation": local intent embed `conversation` only — no tools, minimal prompt (~50 tokens)
  * - "minimal": simple questions — base tools only, reduced prompt
  * - "full": everything else — full tool set, full system prompt
  */
 export type ContextTier = "conversation" | "minimal" | "full"
-
-/**
- * Conversational keywords — greetings, chit-chat, agent identity questions.
- * These should NOT overlap with tool-related intent.
- * Covers Spanish (rioplatense), English, and Portuguese basics.
- */
-const CONVERSATIONAL_RE =
-  /\b(hi|hello|hey|howdy|hola|buenas|qué tal|como estas|cómo estás|qué onda|que onda|buen día|buenos dias|buenas tardes|buenas noches|good morning|good afternoon|good evening|good night|what'?s up|whats up|yo|che|dale|ok|va bien|todo bien|cómo andás|como andas|cómo vas|como vas|qué hay|que hay|qué pasa|que pasa)\b/i
-
-const CONVERSATIONAL_FULL_RE =
-  /\b(what'?s your name|who are you|what can you do|cómo te llamas|quién sos|cómo te llamás|quién eres|qué podés hacer|qué sabes hacer|qué podés|qué hacés|qué haces|ayudame|ayúdame|help me|can you help|podés ayudarme|me ayudás|gracias|thank you|thanks|cheers|appreciate it|te agradezco|chau|bye|goodbye|see you|nos vemos|hasta luego|adiós|saludos|greetings|jaja|lol|xd|😂|👋|🤖|hello there|hi there)\b/i
-
-/**
- * Detect if the user message is purely conversational (no coding/project intent).
- * Must be short and consist only of conversational phrases — no tool keywords.
- */
-function detectConversational(text: string): boolean {
-  const trimmed = text.trim()
-  // Must be reasonably short (conversational messages are typically short)
-  if (trimmed.length > 300) return false
-  // Check for any tool-related keywords first — if found, NOT conversational
-  for (const r of RULES) {
-    if (r.re.test(text)) return false
-  }
-  // Now check if it matches conversational patterns
-  return CONVERSATIONAL_RE.test(text) || CONVERSATIONAL_FULL_RE.test(text)
-}
 
 function normalizeUserText(raw: string) {
   return raw
@@ -155,6 +161,15 @@ function userText(msgs: MessageV2.WithParts[]) {
   return normalizeUserText(u.parts.map((p) => (p.type === "text" ? p.text : "")).join("\n\n"))
 }
 
+/** Strip prompt-injection wrappers so routing matches the user's real words (multi-step turns). */
+function stripRouterDecorators(raw: string): string {
+  return raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "").trim()
+}
+
+function routerUserText(msgs: MessageV2.WithParts[]) {
+  return stripRouterDecorators(userText(msgs))
+}
+
 function orderIds(base: string[], extra: Set<string>, available: Set<string>, max: number) {
   const out: string[] = []
   for (const id of base) {
@@ -168,6 +183,15 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
   return out
 }
 
+function routerMode(cfg: Config.Info): "rules" | "hybrid" {
+  const e = Flag.OPENCODE_TOOL_ROUTER_MODE
+  if (e === "hybrid") return "hybrid"
+  if (e === "rules") return "rules"
+  const m = cfg.experimental?.tool_router?.mode
+  if (m === "hybrid") return "hybrid"
+  return "rules"
+}
+
 function promptHint(input: {
   ids: string[]
   labels: string[]
@@ -176,7 +200,9 @@ function promptHint(input: {
   allowed?: Set<string>
   availableKeys: Set<string>
 }) {
-  const intent = input.labels.length ? input.labels.join(", ") : "base only (no keyword rule matched)"
+  const intent = input.labels.length
+    ? input.labels.join(", ")
+    : "base only (no intent embed or keyword rule matched)"
   const lines = [
     "## Offline tool router",
     input.additive
@@ -212,6 +238,8 @@ export namespace ToolRouter {
     allowedToolIds?: Set<string>
     messages: MessageV2.WithParts[]
     agent: { name: string; mode: string }
+    /** Session chat model — used to pick a small model via Provider.getSmallModel when hybrid mode has no router_model/small_model. */
+    model?: Provider.Model
     cfg: Config.Info
     mcpIds: Set<string>
     skip: boolean
@@ -225,8 +253,11 @@ export namespace ToolRouter {
     contextTier: ContextTier
   }
 
-  export function apply(input: Input): Result {
+  export async function apply(input: Input): Promise<Result> {
+    const start = performance.now()
+    const ms = () => Math.round((performance.now() - start) * 100) / 100
     const tr = input.cfg.experimental?.tool_router
+    const routerOnly = Flag.OPENCODE_TOOL_ROUTER_ONLY || tr?.router_only === true
     const routerOn = Flag.OPENCODE_TOOL_ROUTER || tr?.enabled
     if (!routerOn || input.skip) {
       const ids = Object.keys(input.tools).sort()
@@ -236,6 +267,7 @@ export namespace ToolRouter {
         selected: ids,
         reason: "router off or skipped",
         tokens: { toolCount: ids.length },
+        duration_ms: ms(),
       })
       return { tools: input.tools, promptHint: hint, contextTier: "full" }
     }
@@ -247,28 +279,49 @@ export namespace ToolRouter {
         selected: ids,
         reason: "compaction agent",
         tokens: { toolCount: ids.length },
+        duration_ms: ms(),
       })
       return { tools: input.tools, promptHint: hint, contextTier: "full" }
     }
 
     const additive = tr?.additive === true
     const hasAssistant = threadHasAssistant(input.messages)
+    const text = routerUserText(input.messages)
 
-    // ── Conversational mode: greetings, chit-chat — no tools, minimal prompt.
-    // Check BEFORE apply_after_first_assistant so T1 "hola" doesn't get full context.
-    const text = userText(input.messages)
-    if (detectConversational(text)) {
-      log.info("tool_router", {
-        tier: "conversation",
-        selected: [],
-        builtin: [],
-        mcp: [],
-        reason: "conversational",
-        userPreview: text.slice(0, 120),
-        hasAssistant,
-        tokens: { toolCount: 0, toolTokens: 0, promptHintTokens: 0 },
+    const mode = routerMode(input.cfg)
+    const trLlm = input.cfg.experimental?.tool_router
+    const useEmbed =
+      trLlm?.local_embed === true || Boolean(trLlm?.local_embed_model && trLlm.local_embed_model.trim().length > 0)
+    const embedModel =
+      process.env.OPENCODE_TOOL_ROUTER_EMBED_MODEL?.trim() ||
+      trLlm?.local_embed_model?.trim() ||
+      DEFAULT_LOCAL_EMBED_MODEL
+    const hybridIntent = mode === "hybrid" && useEmbed && trLlm?.local_intent_embed === true
+
+    let intentHit: Awaited<ReturnType<typeof classifyIntentEmbed>> | undefined
+
+    if (hybridIntent) {
+      intentHit = await classifyIntentEmbed({
+        userText: text,
+        model: embedModel,
+        minScore: trLlm?.local_intent_min_score ?? 0.38,
+        prototypes: ROUTER_INTENT_PROTOTYPES,
       })
-      return { tools: {}, promptHint: undefined, contextTier: "conversation" }
+      if (intentHit?.label === CONVERSATION_INTENT_LABEL) {
+        log.info("tool_router", {
+          tier: "conversation",
+          selected: [],
+          builtin: [],
+          mcp: [],
+          reason: "xenova_conversation",
+          score: intentHit.score,
+          userPreview: text.slice(0, 120),
+          hasAssistant,
+          tokens: { toolCount: 0, toolTokens: 0, promptHintTokens: 0 },
+          duration_ms: ms(),
+        })
+        return { tools: {}, promptHint: undefined, contextTier: "conversation" }
+      }
     }
 
     if (!additive && tr?.apply_after_first_assistant === true && !hasAssistant) {
@@ -280,6 +333,7 @@ export namespace ToolRouter {
         reason: "first turn, apply_after_first_assistant=true",
         userPreview: text.slice(0, 120),
         tokens: { toolCount: ids.length },
+        duration_ms: ms(),
       })
       return { tools: input.tools, promptHint: hint, contextTier: "full" }
     }
@@ -293,31 +347,86 @@ export namespace ToolRouter {
     const mcpAlways = tr?.mcp_always_include !== false
 
     const matched = new Set<string>()
-    const labels: string[] = []
-    for (const r of RULES) {
-      if (!r.re.test(text)) continue
-      labels.push(r.label)
-      for (const id of r.add) matched.add(id)
+    const intentLabels: string[] = []
+
+    const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
+
+    const keywordRules = tr?.keyword_rules === true
+
+    if (hybridIntent && intentHit) {
+      for (const id of intentHit.added) {
+        if (builtinAvailable.has(id)) matched.add(id)
+      }
+      intentLabels.push(`intent:${intentHit.label}`)
     }
 
-    const noMatchFb = tr?.no_match_fallback !== false
+    const ruleLabels: string[] = []
+    if (keywordRules) {
+      for (const r of RULES) {
+        if (!r.re.test(text)) continue
+        ruleLabels.push(r.label)
+        for (const id of r.add) matched.add(id)
+      }
+    }
+
+    const labels = [...intentLabels, ...ruleLabels]
+
+    const noMatchFb = !routerOnly && tr?.no_match_fallback !== false
     const fbTools = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]
-    if (labels.length === 0 && noMatchFb) {
+    if (ruleLabels.length === 0 && intentLabels.length === 0 && noMatchFb) {
       labels.push("fallback/no_match")
       for (const id of fbTools) matched.add(id)
     }
 
-    const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
+    let hybridAugmented = false
+    if (mode === "hybrid") {
+      if (useEmbed) {
+        const aug = await augmentMatchedEmbed({
+          userText: text,
+          matched,
+          allowedBuiltin: builtinAvailable,
+          model: embedModel,
+          topK: trLlm?.local_embed_top_k ?? 4,
+          minScore: trLlm?.local_embed_min_score ?? 0.32,
+          phraseFor: (id) => embedPhraseFor(input, id),
+        })
+        if (aug?.added.length) {
+          hybridAugmented = true
+          for (const id of aug.added) matched.add(id)
+          labels.push(aug.note ? `embed:${aug.note.slice(0, 100)}` : "embed/extra")
+        }
+      } else {
+        const aug = await augmentMatchedTools({
+          cfg: input.cfg,
+          sessionModel: input.model,
+          userText: text,
+          matched,
+          allowedBuiltin: builtinAvailable,
+          timeoutMs: trLlm?.llm_timeout_ms ?? 12_000,
+        })
+        if (aug?.added.length) {
+          hybridAugmented = true
+          for (const id of aug.added) matched.add(id)
+          labels.push(aug.note ? `llm:${aug.note.slice(0, 80)}` : "llm/extra")
+        }
+      }
+    }
+
+    const hadRouterSignal = intentLabels.length > 0 || ruleLabels.length > 0 || hybridAugmented
     const fromRules = orderIds(base, matched, builtinAvailable, max)
     // Additive: keep every tool from the tier-limited map (e.g. minimal + bash for sdd-init), then rule matches — otherwise rule orderIds can drop bash.
     const ordered = additive ? [...new Set([...Object.keys(input.tools), ...fromRules])].slice(0, max) : fromRules
 
-    // Tools matched by rules keep full descriptions; base-only tools get slim descriptions.
+    // Tools matched by rules (or embed-only path: everything in `matched`) keep full descriptions; base-only tools get slim.
     const ruleMatched = new Set<string>()
-    for (const r of RULES) {
-      if (r.re.test(text)) {
-        for (const id of r.add) ruleMatched.add(id)
+    if (keywordRules) {
+      for (const r of RULES) {
+        if (r.re.test(text)) {
+          for (const id of r.add) ruleMatched.add(id)
+        }
       }
+    } else {
+      for (const id of matched) ruleMatched.add(id)
     }
 
     const out: Record<string, AITool> = {}
@@ -337,7 +446,7 @@ export namespace ToolRouter {
     // otherwise they are only included on fallback (no rule matched) or when mcp_always_include is true.
     const mcpFilter = tr?.mcp_filter_by_intent !== false
     const rulesMatched = labels.length > 0 && labels[0] !== "fallback/no_match"
-    if (mcpAlways) {
+    if (mcpAlways && (!routerOnly || hadRouterSignal)) {
       for (const id of input.mcpIds) {
         const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
         if (!t) continue
@@ -354,6 +463,34 @@ export namespace ToolRouter {
     }
 
     if (Object.keys(out).length === 0 && Object.keys(input.tools).length > 0) {
+      if (routerOnly) {
+        const baseOnly: Record<string, AITool> = {}
+        for (const id of base) {
+          const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
+          if (!t) continue
+          if (!ruleMatched.has(id) && SLIM_DESC[id] && t.description !== SLIM_DESC[id]) {
+            baseOnly[id] = { ...t, description: SLIM_DESC[id] }
+          } else {
+            baseOnly[id] = t
+          }
+        }
+        if (Object.keys(baseOnly).length > 0) {
+          const injectEarly = tr?.inject_prompt !== false
+          const ids = Object.keys(baseOnly).sort()
+          const hint = injectEarly ? promptHint({ ids, labels, additive, matched, allowed, availableKeys }) : undefined
+          log.info("tool_router", {
+            tier: "minimal",
+            selected: ids,
+            reason: "router_only_base_only",
+            labels,
+            userPreview: text.slice(0, 120),
+            hasAssistant,
+            tokens: { toolCount: ids.length },
+            duration_ms: ms(),
+          })
+          return { tools: baseOnly, promptHint: hint, contextTier: "minimal" }
+        }
+      }
       const ids = Object.keys(input.tools).sort()
       const hint = `## Offline tool router\nMode: empty passthrough.\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
       log.warn("tool_router_empty_passthrough")
@@ -380,7 +517,7 @@ export namespace ToolRouter {
       selected: ids.sort(),
       builtin: fromRules.sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
-      reason: additive ? "additive" : "rules",
+      reason: additive ? "additive" : mode === "hybrid" ? "hybrid" : "rules",
       labels,
       userPreview: text.slice(0, 120),
       hasAssistant,
@@ -390,6 +527,7 @@ export namespace ToolRouter {
         promptHintTokens,
         total: toolTokens + promptHintTokens,
       },
+      duration_ms: ms(),
     })
 
     return { tools: out, promptHint: hint, contextTier: labels.length === 0 ? "minimal" : "full" }

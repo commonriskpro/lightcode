@@ -2,10 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   // Router offline aditivo: tier minimal en T1 + reglas añaden tools desde el registro completo; max_tools 100.
   // wire-tier: packages/opencode/src/session/wire-tier.ts
-  "plugin": [
-    "../gentle-ai/plugins/skill-registry-plugin.ts",
-    "../gentle-ai/plugins/background-agents.ts",
-  ],
+  "plugin": ["../gentle-ai/plugins/skill-registry-plugin.ts", "../gentle-ai/plugins/background-agents.ts"],
   "default_agent": "build",
   "skills": {
     "paths": ["gentle-ai/skills"],
@@ -118,23 +115,29 @@
   },
   "experimental": {
     "initial_tool_tier": "minimal",
+    // Tier mínimo + router en todos los turnos (sin abrir el mapa completo tras el 1.er assistant). Requiere additive.
+    "minimal_tier_all_turns": true,
     // true → logs debug-request (toolsBytes, systemBytes, promptBytes)
-    "debug_request": false,
+    "debug_request": true,
     "tool_router": {
       "enabled": true,
-      "mode": "rules",
+      // router_only: sin no_match glob-grep; MCP solo con señal embed/intent. Charla: tier conversation vía Xenova (ROUTER_INTENT_PROTOTYPES). Ver tool-router.ts
+      "router_only": true,
+      "no_match_fallback": false,
+      // hybrid + Xenova: intención (prototipos) + similitud tool↔mensaje; sin reglas regex ni LLM remoto del router.
+      "mode": "hybrid",
+      "keyword_rules": false,
+      "local_embed": true,
+      "local_intent_embed": true,
+      "local_embed_model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+      "local_embed_top_k": 4,
+      "local_embed_min_score": 0.32,
       "additive": true,
-      "apply_after_first_assistant": true,
+      "apply_after_first_assistant": false,
       "inject_prompt": true,
       "base_tools": ["read", "task", "skill", "grep", "glob"],
       "max_tools": 100,
-      "no_match_fallback": true,
-      "no_match_fallback_tools": ["glob", "grep", "read", "task"],
       "mcp_always_include": true,
-      "fallback": {
-        "max_expansions_per_turn": 1,
-        "expand_to": "full"
-      }
     },
   },
 }

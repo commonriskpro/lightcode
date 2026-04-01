@@ -10,10 +10,37 @@ const __filename = fileURLToPath(import.meta.url)
 const scriptPath = fs.realpathSync(__filename)
 const scriptDir = path.dirname(scriptPath)
 
+function homeSafe() {
+  const env = process.env.HOME?.trim()
+  if (env && path.isAbsolute(env) && fs.existsSync(env)) return env
+  const dir = os.homedir()
+  if (dir && path.isAbsolute(dir) && fs.existsSync(dir)) return dir
+  return dir || env || ""
+}
+
+function stateSafe(home) {
+  const env = process.env.XDG_STATE_HOME?.trim()
+  if (env && path.isAbsolute(env) && fs.existsSync(env)) return env
+  return path.join(home, ".local/state")
+}
+
+function okExec(p) {
+  if (!fs.existsSync(p)) return false
+  if (os.platform() === "win32") return true
+  try {
+    fs.accessSync(p, fs.constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function loadForkEnv(repoRoot) {
   const fp = path.join(repoRoot, "fork.opencode.env")
   if (!fs.existsSync(fp)) return
   if (process.env.OPENCODE_SKIP_FORK_ENV === "1") return
+  const home = homeSafe()
+  const state = stateSafe(home)
   const text = fs.readFileSync(fp, "utf8")
   for (const line of text.split(/\r?\n/)) {
     const t = line.trim()
@@ -22,7 +49,8 @@ function loadForkEnv(repoRoot) {
     if (eq === -1) continue
     const key = t.slice(0, eq).trim()
     if (!key || key.startsWith("#")) continue
-    if (process.env[key] !== undefined) continue
+    // Router embed path: fork file is source of truth so IDE/shell env cannot block a stale value.
+    if (process.env[key] !== undefined && key !== "OPENCODE_ROUTER_EMBED_NODE") continue
     let val = t.slice(eq + 1).trim()
     if (!val) continue
     if (
@@ -32,15 +60,120 @@ function loadForkEnv(repoRoot) {
       val = val.slice(1, -1)
     }
     val = val.replace(/\$\{REPO_ROOT\}/g, repoRoot).replace(/__REPO_ROOT__/g, repoRoot)
+    val = val.replace(/\$\{HOME\}/g, home).replace(/\$HOME\b/g, home)
+    val = val.replace(/\$\{XDG_STATE_HOME\}/g, state)
+    if (key === "OPENCODE_ROUTER_EMBED_NODE" && !okExec(val)) {
+      delete process.env.OPENCODE_ROUTER_EMBED_NODE
+      continue
+    }
     process.env[key] = val
   }
 }
 
 loadForkEnv(path.resolve(scriptDir, "..", ".."))
 
+/** Native libs for onnxruntime-node (used by @huggingface/transformers). The compiled CLI loads .node from a temp dir; dylibs must resolve via DYLD / LD_LIBRARY_PATH. */
+function onnxLibName(name) {
+  if (!name.includes("onnxruntime")) return false
+  return name.endsWith(".dylib") || name.endsWith(".so") || /\.so\./.test(name)
+}
+
+function findOnnxRuntimeLibDir(startDir) {
+  const plat = os.platform()
+  if (plat !== "darwin" && plat !== "linux") return
+  const a = os.arch()
+  const archDir = a === "arm64" ? "arm64" : a === "x64" ? "x64" : ""
+  if (!archDir) return
+  const ortPlat = plat === "darwin" ? "darwin" : "linux"
+  let dir = startDir
+  for (let i = 0; i < 14; i++) {
+    const nm = path.join(dir, "node_modules")
+    const bases = []
+    const direct = path.join(nm, "onnxruntime-node", "bin")
+    if (fs.existsSync(direct)) bases.push(direct)
+    const hfNested = path.join(nm, "@huggingface", "transformers", "node_modules", "onnxruntime-node", "bin")
+    if (fs.existsSync(hfNested)) bases.push(hfNested)
+    const bun = path.join(nm, ".bun")
+    if (fs.existsSync(bun)) {
+      for (const entry of fs.readdirSync(bun)) {
+        if (!entry.startsWith("onnxruntime-node@")) continue
+        const b = path.join(bun, entry, "node_modules", "onnxruntime-node", "bin")
+        if (fs.existsSync(b)) bases.push(b)
+      }
+    }
+    for (const binRoot of bases) {
+      for (const napi of ["napi-v6", "napi-v3", "napi-v4"]) {
+        const cand = path.join(binRoot, napi, ortPlat, archDir)
+        if (!fs.existsSync(cand)) continue
+        if (fs.readdirSync(cand).some(onnxLibName)) return cand
+      }
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+}
+
+function syncOnnxLibs(src, portableRoot) {
+  const key = `${os.platform()}-${os.arch()}`
+  const dest = path.join(portableRoot, "cache", "onnxruntime-libs", key)
+  fs.mkdirSync(dest, { recursive: true })
+  for (const name of fs.readdirSync(src)) {
+    if (!onnxLibName(name)) continue
+    const from = path.join(src, name)
+    const to = path.join(dest, name)
+    let copy = true
+    if (fs.existsSync(to)) {
+      copy = fs.statSync(from).mtimeMs > fs.statSync(to).mtimeMs
+    }
+    if (copy) fs.copyFileSync(from, to)
+  }
+  return dest
+}
+
+function onnxLibDirForSpawn() {
+  if (process.env.OPENCODE_SKIP_ONNX_LIB_PATH === "1") return
+  const src = findOnnxRuntimeLibDir(scriptDir)
+  if (!src) return
+  const portable = process.env.OPENCODE_PORTABLE_ROOT?.trim()
+  if (portable) return syncOnnxLibs(src, path.resolve(portable))
+  return src
+}
+
+function injectPortableEmbedNode(env) {
+  if (env.OPENCODE_ROUTER_EMBED_NODE?.trim()) return
+  if (!env.OPENCODE_PORTABLE_ROOT?.trim()) return
+  const base = path.basename(process.execPath)
+  if (!/^node(\.exe)?$/i.test(base)) return
+  if (!fs.existsSync(process.execPath)) return
+  if (os.platform() !== "win32") {
+    try {
+      fs.accessSync(process.execPath, fs.constants.X_OK)
+    } catch {
+      return
+    }
+  }
+  // Do not pin a /nix/store/... path: GC removes it; child Bun should resolve via PATH or HM profile (router-embed-ipc).
+  if (process.execPath.startsWith("/nix/store/")) return
+  env.OPENCODE_ROUTER_EMBED_NODE = process.execPath
+}
+
 function run(target) {
+  const env = { ...process.env }
+  injectPortableEmbedNode(env)
+  const lib = onnxLibDirForSpawn()
+  if (lib) {
+    if (os.platform() === "darwin") {
+      const prev = env.DYLD_FALLBACK_LIBRARY_PATH || ""
+      env.DYLD_FALLBACK_LIBRARY_PATH = [lib, prev].filter(Boolean).join(path.delimiter)
+    } else if (os.platform() === "linux") {
+      const prev = env.LD_LIBRARY_PATH || ""
+      env.LD_LIBRARY_PATH = [lib, prev].filter(Boolean).join(":")
+    }
+  }
   const result = childProcess.spawnSync(target, process.argv.slice(2), {
     stdio: "inherit",
+    env,
   })
   if (result.error) {
     console.error(result.error.message)

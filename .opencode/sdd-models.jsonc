@@ -1,11 +1,17 @@
 {
-  "active": "balanced",
+  "active": "premium",
   "profiles": {
     "balanced": {
-      "sdd-apply": "opencode/mimo-v2-pro-free",
-      "sdd-archive": "opencode/minimax-m2.5-free"
+      "sdd-apply": "opencode/minimax-m2.5-free",
+      "sdd-archive": "opencode/minimax-m2.5-free",
+      "sdd-init": "opencode/minimax-m2.5-free"
     },
     "quality": {},
-    "economy": {}
+    "economy": {},
+    "premium": {
+      "sdd-apply": "openai/gpt-5-codex",
+      "sdd-archive": "opencode/minimax-m2.5-free",
+      "sdd-init": "opencode/nemotron-3-super-free"
+    }
   }
 }

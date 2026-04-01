@@ -35,7 +35,7 @@ import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
 import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
 import { ToolRouter, type ContextTier } from "./tool-router"
-import { instructionMode, mergedInstructionBodies, threadHasAssistant } from "./wire-tier"
+import { instructionMode, mergedInstructionBodies, minimalTierAllTurns, threadHasAssistant } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -80,6 +80,7 @@ function estimateTokens(text: string): number {
 
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
+  const trace = process.env.OPENCODE_TRACE_TIMINGS === "1"
 
   const state = Instance.state(
     () => {
@@ -816,6 +817,7 @@ export namespace SessionPrompt {
         abort,
         sessionID,
         assistantID: processor.message.id,
+        contextTier,
         system,
         messages: [
           ...(await MessageV2.toModelMessages(msgs, model)),
@@ -902,6 +904,7 @@ export namespace SessionPrompt {
     cfg?: Config.Info
   }): Promise<{ tools: Record<string, AITool>; toolRouterPrompt?: string; contextTier: ContextTier }> {
     using _ = log.time("resolveTools")
+    const start = performance.now()
     const tools: Record<string, AITool> = {}
 
     const context = (args: any, options: ToolExecutionOptions): Tool.Context => ({
@@ -939,10 +942,19 @@ export namespace SessionPrompt {
       },
     })
 
-    for (const item of await ToolRegistry.tools(
+    const regStart = performance.now()
+    const regTools = await ToolRegistry.tools(
       { modelID: ModelID.make(input.model.api.id), providerID: input.model.providerID },
       input.agent,
-    )) {
+    )
+    if (trace) {
+      log.info("resolveTools.registry", {
+        duration_ms: Math.round((performance.now() - regStart) * 100) / 100,
+        count: regTools.length,
+        sessionID: input.session.id,
+      })
+    }
+    for (const item of regTools) {
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
       tools[item.id] = tool({
         id: item.id as any,
@@ -986,8 +998,17 @@ export namespace SessionPrompt {
       })
     }
 
+    const mcpStart = performance.now()
+    const mcpTools = await MCP.tools()
+    if (trace) {
+      log.info("resolveTools.mcp", {
+        duration_ms: Math.round((performance.now() - mcpStart) * 100) / 100,
+        count: Object.keys(mcpTools).length,
+        sessionID: input.session.id,
+      })
+    }
     const mcpIds = new Set<string>()
-    for (const [key, item] of Object.entries(await MCP.tools())) {
+    for (const [key, item] of Object.entries(mcpTools)) {
       mcpIds.add(key)
       const execute = item.execute
       if (!execute) continue
@@ -1084,6 +1105,7 @@ export namespace SessionPrompt {
 
     const cfg = input.cfg ?? (await Config.get())
     const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
+    const minimalAllTurns = minimalTierAllTurns(cfg)
     const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
     const bashDenied = Permission.disabled(["bash"], ruleset).has("bash")
     const includeBash = Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH || (!bashDenied && input.tools?.bash !== false)
@@ -1098,6 +1120,7 @@ export namespace SessionPrompt {
       includeBash,
       includeWebfetch,
       includeWebsearch,
+      minimalAllTurns,
     })
     const disabled = Permission.disabled(Object.keys(tools), ruleset)
     const allowedToolIds = new Set(
@@ -1107,23 +1130,40 @@ export namespace SessionPrompt {
         return true
       }),
     )
-    const routed = ToolRouter.apply({
+    const routeStart = performance.now()
+    const routed = await ToolRouter.apply({
       tools: afterTier,
       registryTools: tools,
       allowedToolIds,
       messages: input.messages,
       agent: input.agent,
+      model: input.model,
       cfg,
       mcpIds,
       skip: input.skipToolRouter ?? false,
     })
+    if (trace) {
+      log.info("resolveTools.router", {
+        duration_ms: Math.round((performance.now() - routeStart) * 100) / 100,
+        tier: routed.contextTier,
+        selected: Object.keys(routed.tools).length,
+        sessionID: input.session.id,
+      })
+    }
     const inject = cfg.experimental?.tool_router?.inject_prompt !== false
     let toolRouterPrompt = routed.promptHint
-    if (!toolRouterPrompt && inject && tier === "minimal" && !threadHasAssistant(input.messages)) {
+    if (!toolRouterPrompt && inject && tier === "minimal" && (!threadHasAssistant(input.messages) || minimalAllTurns)) {
       toolRouterPrompt = minimalTierPromptHint({
         includeBash,
         includeWebfetch,
         includeWebsearch,
+        allTurns: minimalAllTurns,
+      })
+    }
+    if (trace) {
+      log.info("resolveTools.complete", {
+        duration_ms: Math.round((performance.now() - start) * 100) / 100,
+        sessionID: input.session.id,
       })
     }
     return { tools: routed.tools, toolRouterPrompt, contextTier: routed.contextTier }

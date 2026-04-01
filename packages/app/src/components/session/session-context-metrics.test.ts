@@ -38,7 +38,7 @@ const user = (id: string) => {
 }
 
 describe("getSessionContextMetrics", () => {
-  test("computes totals and usage from latest assistant with tokens", () => {
+  test("computes totals and usage from latest assistant with output tokens (OpenCode TUI rule)", () => {
     const messages = [
       user("u1"),
       assistant("a1", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0.5),
@@ -65,6 +65,29 @@ describe("getSessionContextMetrics", () => {
     expect(metrics.context?.usage).toBe(50)
     expect(metrics.context?.providerLabel).toBe("OpenAI")
     expect(metrics.context?.modelLabel).toBe("GPT-4.1")
+  })
+
+  test("ignores assistant turns with no output tokens (matches OpenCode TUI lastAssistantWithUsage)", () => {
+    const messages = [
+      user("u1"),
+      assistant("a1", { input: 450, output: 0, reasoning: 0, read: 0, write: 0 }, 0),
+    ]
+    const providers = [
+      {
+        id: "openai",
+        name: "OpenAI",
+        models: {
+          "gpt-4.1": {
+            name: "GPT-4.1",
+            limit: { context: 128000 },
+          },
+        },
+      },
+    ]
+
+    const metrics = getSessionContextMetrics(messages, providers)
+
+    expect(metrics.context).toBeUndefined()
   })
 
   test("preserves fallback labels and null usage when model metadata is missing", () => {

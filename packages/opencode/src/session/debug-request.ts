@@ -34,6 +34,10 @@ export namespace DebugRequest {
     sessionID: string
     assistantID: string
     finish: string
+    /** 1-based index of this `finish-step` within the assistant message. */
+    stepIndex?: number
+    /** Running sum on the assistant message after merging this step (fixes multi-step replace bug). */
+    cumulativeTokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
     tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
     cost: number
   }) {

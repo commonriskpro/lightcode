@@ -245,6 +245,8 @@ export interface Hooks {
       agent?: { name: string; mode?: string }
       /** When true, skip heavy system injections (titles, small completions). */
       small?: boolean
+      /** From offline router; `conversation` means core omitted heavy `agent.prompt`. */
+      contextTier?: "conversation" | "minimal" | "full"
     },
     output: {
       system: string[]

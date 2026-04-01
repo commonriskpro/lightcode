@@ -81,11 +81,25 @@ export namespace Flag {
   export const OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH = truthy("OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH")
   /** Log wire/usage analytics; also configurable as experimental.debug_request. */
   export const OPENCODE_DEBUG_REQUEST = truthy("OPENCODE_DEBUG_REQUEST")
+  /** When set, always send the full `agent.prompt` and per-message `user.system` even if the offline router chose `contextTier: conversation`. */
+  export const OPENCODE_ALWAYS_FULL_AGENT_PROMPT = truthy("OPENCODE_ALWAYS_FULL_AGENT_PROMPT")
   /** Skip global instruction paths (~/.config/.../AGENTS.md, OPENCODE_CONFIG_DIR/AGENTS.md, ~/.claude/CLAUDE.md) and append a system line discouraging proactive README/CLAUDE.md/package.json reads. */
   export const OPENCODE_DISABLE_GLOBAL_DOC_READS = truthy("OPENCODE_DISABLE_GLOBAL_DOC_READS")
+  /** Disable ALL global file imports — no ~/.config/opencode/AGENTS.md, no ~/.claude/CLAUDE.md, no OPENCODE_CONFIG_DIR/AGENTS.md. Only use the portable/self-contained directory. */
+  export const OPENCODE_DISABLE_GLOBAL_IMPORTS = truthy("OPENCODE_DISABLE_GLOBAL_IMPORTS")
   /** Enable offline tool router; merges with experimental.tool_router.enabled. */
   export declare const OPENCODE_TOOL_ROUTER: boolean
+  /** Same as experimental.tool_router.router_only: no no_match tool bundle, strict MCP; conversation tier is local intent embed only (local_intent_embed). */
+  export declare const OPENCODE_TOOL_ROUTER_ONLY: boolean
+  /** `rules` (default) or `hybrid` (keyword rules + small LLM for extra tools). Same as experimental.tool_router.mode. */
+  export declare const OPENCODE_TOOL_ROUTER_MODE: "rules" | "hybrid" | undefined
+  /** Optional: HF id for offline router embeddings (e.g. Xenova/paraphrase-multilingual-MiniLM-L12-v2). Overrides experimental.tool_router.local_embed_model when set. */
+  export const OPENCODE_TOOL_ROUTER_EMBED_MODEL = process.env["OPENCODE_TOOL_ROUTER_EMBED_MODEL"]
+  /** Optional: filesystem cache dir for @huggingface/transformers (router embed). Prefer under OPENCODE_PORTABLE_ROOT for autocontenido. */
+  export const OPENCODE_TRANSFORMERS_CACHE = process.env["OPENCODE_TRANSFORMERS_CACHE"]
   export declare const OPENCODE_INITIAL_TOOL_TIER: "minimal" | "full" | undefined
+  /** With `initial_tool_tier: minimal`, keep the small tool allowlist + deferred instructions every turn; router + additive supply the rest. */
+  export declare const OPENCODE_MINIMAL_TIER_ALL_TURNS: boolean
 
   function number(key: string) {
     const value = process.env[key]
@@ -169,11 +183,37 @@ Object.defineProperty(Flag, "OPENCODE_TOOL_ROUTER", {
   configurable: false,
 })
 
+Object.defineProperty(Flag, "OPENCODE_TOOL_ROUTER_ONLY", {
+  get() {
+    return truthy("OPENCODE_TOOL_ROUTER_ONLY")
+  },
+  enumerable: true,
+  configurable: false,
+})
+
+Object.defineProperty(Flag, "OPENCODE_TOOL_ROUTER_MODE", {
+  get() {
+    const v = process.env["OPENCODE_TOOL_ROUTER_MODE"]?.toLowerCase()
+    if (v === "hybrid" || v === "rules") return v
+    return undefined
+  },
+  enumerable: true,
+  configurable: false,
+})
+
 Object.defineProperty(Flag, "OPENCODE_INITIAL_TOOL_TIER", {
   get() {
     const v = process.env["OPENCODE_INITIAL_TOOL_TIER"]?.toLowerCase()
     if (v === "minimal" || v === "full") return v
     return undefined
+  },
+  enumerable: true,
+  configurable: false,
+})
+
+Object.defineProperty(Flag, "OPENCODE_MINIMAL_TIER_ALL_TURNS", {
+  get() {
+    return truthy("OPENCODE_MINIMAL_TIER_ALL_TURNS")
   },
   enumerable: true,
   configurable: false,

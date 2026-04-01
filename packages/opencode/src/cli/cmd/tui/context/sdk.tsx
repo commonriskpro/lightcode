@@ -1,10 +1,17 @@
 import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2"
+import type { TuiBusEvent } from "@opencode-ai/plugin/tui"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
 
+export type { TuiBusEvent }
+
+type TuiEventMap = {
+  [K in TuiBusEvent["type"]]: Extract<TuiBusEvent, { type: K }>
+}
+
 export type EventSource = {
-  on: (handler: (event: Event) => void) => () => void
+  on: (handler: (event: TuiBusEvent) => void) => () => void
   setWorkspace?: (workspaceID?: string) => void
 }
 
@@ -34,11 +41,9 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     let sdk = createSDK()
 
-    const emitter = createGlobalEmitter<{
-      [key in Event["type"]]: Extract<Event, { type: key }>
-    }>()
+    const emitter = createGlobalEmitter<TuiEventMap>()
 
-    let queue: Event[] = []
+    let queue: TuiBusEvent[] = []
     let timer: Timer | undefined
     let last = 0
 
@@ -56,7 +61,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       })
     }
 
-    const handleEvent = (event: Event) => {
+    const handleEvent = (event: TuiBusEvent) => {
       queue.push(event)
       const elapsed = Date.now() - last
 
@@ -74,19 +79,25 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       sse?.abort()
       const ctrl = new AbortController()
       sse = ctrl
-      ;(async () => {
+      const loop = async (fn: () => Promise<void>) => {
         while (true) {
           if (abort.signal.aborted || ctrl.signal.aborted) break
-          const events = await sdk.event.subscribe({}, { signal: ctrl.signal })
-
-          for await (const event of events.stream) {
-            if (ctrl.signal.aborted) break
-            handleEvent(event)
-          }
-
+          await fn()
           if (timer) clearTimeout(timer)
           if (queue.length > 0) flush()
         }
+      }
+      // Only `global.event`: every `Bus.publish` also emits `GlobalBus` (see bus/index.ts),
+      // so subscribing to both `event` and `global.event` duplicates every message (e.g. double deltas).
+      // `global.event` still covers GlobalBus-only emits (dispose, upgrade) that skip `Bus`.
+      ;(async () => {
+        await loop(async () => {
+          const res = await sdk.global.event({ signal: ctrl.signal })
+          for await (const row of res.stream) {
+            if (ctrl.signal.aborted) break
+            handleEvent(row.payload as TuiBusEvent)
+          }
+        })
       })().catch(() => {})
     }
 

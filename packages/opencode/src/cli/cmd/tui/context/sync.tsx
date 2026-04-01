@@ -33,6 +33,7 @@ import type { Workspace } from "@opencode-ai/sdk/v2"
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
   init: () => {
+    const log = Log.create({ service: "tui.sync" })
     const [store, setStore] = createStore<{
       status: "loading" | "partial" | "complete"
       provider: Provider[]
@@ -75,6 +76,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       vcs: VcsInfo | undefined
       path: Path
       workspaceList: Workspace[]
+      router_embed: {
+        phase: "idle" | "loading" | "ready" | "error"
+        model?: string
+        message?: string
+      }
     }>({
       provider_next: {
         all: [],
@@ -103,6 +109,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       vcs: undefined,
       path: { state: "", config: "", worktree: "", directory: "" },
       workspaceList: [],
+      router_embed: { phase: "idle" },
     })
 
     const sdk = useSDK()
@@ -345,6 +352,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           break
         }
 
+        case "router.embed.status": {
+          setStore("router_embed", {
+            phase: event.properties.phase,
+            model: event.properties.model,
+            message: event.properties.message,
+          })
+          break
+        }
+
         case "vcs.branch.updated": {
           setStore("vcs", { branch: event.properties.branch })
           break
@@ -356,7 +372,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const args = useArgs()
 
     async function bootstrap() {
-      console.log("bootstrapping")
+      const startMs = performance.now()
+      log.info("bootstrap.start")
       const start = Date.now() - 30 * 24 * 60 * 60 * 1000
       const sessionListPromise = sdk.client.session
         .list({ start: start })
@@ -375,8 +392,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         ...(args.continue ? [sessionListPromise] : []),
       ]
 
+      const blockMs = performance.now()
       await Promise.all(blockingRequests)
         .then(() => {
+          log.info("bootstrap.blocking.ready", {
+            duration_ms: Math.round((performance.now() - blockMs) * 100) / 100,
+          })
           const providersResponse = providersPromise.then((x) => x.data!)
           const providerListResponse = providerListPromise.then((x) => x.data!)
           const agentsResponse = agentsPromise.then((x) => x.data ?? [])
@@ -409,6 +430,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         .then(() => {
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
+          const bgMs = performance.now()
           Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
             sdk.client.command.list().then((x) => setStore("command", reconcile(x.data ?? []))),
@@ -425,6 +447,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             syncWorkspaces(),
           ]).then(() => {
             setStore("status", "complete")
+            log.info("bootstrap.background.ready", {
+              duration_ms: Math.round((performance.now() - bgMs) * 100) / 100,
+            })
+            log.info("bootstrap.complete", {
+              duration_ms: Math.round((performance.now() - startMs) * 100) / 100,
+            })
           })
         })
         .catch(async (e) => {

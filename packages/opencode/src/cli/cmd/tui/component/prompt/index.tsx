@@ -26,8 +26,9 @@ import { Clipboard } from "../../util/clipboard"
 import type { FilePart } from "@opencode-ai/sdk/v2"
 import { TuiEvent } from "../../event"
 import { iife } from "@/util/iife"
+import { Log } from "@/util/log"
 import { Locale } from "@/util/locale"
-import { contextWindowPercent, lastAssistantWithUsage, lastPromptContextTokens } from "@tui/util/session-usage"
+import { contextWindowPercent, lastAssistantWithUsage, lastTurnTokenTotal } from "@tui/util/session-usage"
 import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
@@ -143,13 +144,15 @@ export function Prompt(props: PromptProps) {
     const last = lastAssistantWithUsage(msg)
     if (!last) return
 
-    const prompt = lastPromptContextTokens(msg)
+    const tokens = lastTurnTokenTotal(msg)
+    if (tokens <= 0) return
+
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     const pct = contextWindowPercent(last, model?.limit.context)
     const pctStr = pct != null ? `${pct}%` : undefined
     const cost = msg.reduce((sum, item) => sum + (item.role === "assistant" ? item.cost : 0), 0)
     return {
-      context: pctStr ? `${Locale.number(prompt)} (${pctStr})` : Locale.number(prompt),
+      context: pctStr ? `${Locale.number(tokens)} (${pctStr})` : Locale.number(tokens),
       cost: cost > 0 ? money.format(cost) : undefined,
     }
   })
@@ -698,7 +701,11 @@ export function Prompt(props: PromptProps) {
             ...nonTextParts.map(assign),
           ],
         })
-        .catch(() => {})
+        .catch((err) => {
+          Log.Default.error("prompt.submit.failed", {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
     }
     history.append({
       ...store.prompt,

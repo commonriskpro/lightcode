@@ -17,7 +17,7 @@
 - `src/session/prompt.ts` — `resolveTools`, `SystemPromptCache.getParts`
 - `src/session/system-prompt-cache.ts` — cache TTL de partes del system prompt
 - `src/session/debug-request.ts` — logs `phase=wire` / `phase=usage` (`llm.ts`, `processor.ts`)
-- `src/cli/cmd/tui/util/session-usage.ts` — lectura de contexto en TUI (prompt del último turno: input + caché, `total` como respaldo)
+- `src/cli/cmd/tui/util/session-usage.ts` — contador de contexto en TUI alineado con [anomalyco/opencode](https://github.com/anomalyco/opencode): total del último turno `input + output + reasoning + cache.read + cache.write`; `promptTokensForContext` es solo huella de prompt (debug/heurísticas)
 - `src/config/config.ts` — esquema Zod
 - `src/flag/flag.ts` — `OPENCODE_INITIAL_TOOL_TIER`, `OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH`, `OPENCODE_DEBUG_REQUEST`, `OPENCODE_TOOL_ROUTER`
 
