@@ -399,6 +399,7 @@ Regenerar SDK JS si aplica: `./packages/sdk/js/script/build.ts` (véase `AGENTS.
 
 ## Documentación adicional
 
+- **Inicio rápido autocontenido (Linux y Windows / WSL):** [docs/INICIO-RAPIDO-AUTOCONTENIDO-WIN-LINUX.md](docs/INICIO-RAPIDO-AUTOCONTENIDO-WIN-LINUX.md) — pasos detallados para `OPENCODE_PORTABLE_ROOT`, build y arranque fuera de macOS.
 - **Guía 5W** (resumen ejecutivo): [sección al inicio de este README](#guía-5w-qué-por-qué-cómo-cuándo-dónde); copia corta en `docs/LIGHTCODE-GUIA-5W.md` (redirige al README).
 - Especificación router offline: `packages/opencode/docs/spec-offline-tool-router.md`
 - Índice implementación: `packages/opencode/docs/offline-tool-router-implementation.md`
