@@ -68,6 +68,15 @@ export type EventGlobalDisposed = {
   }
 }
 
+export type EventRouterEmbedStatus = {
+  type: "router.embed.status"
+  properties: {
+    phase: "idle" | "loading" | "ready" | "error"
+    model?: string
+    message?: string
+  }
+}
+
 export type EventLspClientDiagnostics = {
   type: "lsp.client.diagnostics"
   properties: {
@@ -970,6 +979,7 @@ export type Event =
   | EventServerInstanceDisposed
   | EventServerConnected
   | EventGlobalDisposed
+  | EventRouterEmbedStatus
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta

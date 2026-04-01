@@ -295,7 +295,7 @@ function createGlobalSync() {
 
     if (directory === "global") {
       if (event.type === "router.embed.status") {
-        const p = event.properties as { phase: RouterEmbedPhase; model?: string; message?: string }
+        const p = event.properties
         setGlobalStore("router_embed", {
           phase: p.phase,
           model: p.model,

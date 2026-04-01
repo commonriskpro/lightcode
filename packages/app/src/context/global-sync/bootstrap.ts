@@ -19,6 +19,8 @@ import type { State, VcsCache } from "./types"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 
+type RouterEmbedPhase = "idle" | "loading" | "ready" | "error"
+
 type GlobalStore = {
   ready: boolean
   path: Path
@@ -30,6 +32,11 @@ type GlobalStore = {
   provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
+  router_embed: {
+    phase: RouterEmbedPhase
+    model?: string
+    message?: string
+  }
 }
 
 function waitForPaint() {
