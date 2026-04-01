@@ -1,7 +1,6 @@
 import path from "path"
 import { createEffect, createMemo, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { sortBy } from "remeda"
 import { useLocal } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { useDialog } from "@tui/ui/dialog"
@@ -23,7 +22,7 @@ import {
   saveSddModelsAgentModel,
   type SddModelsData,
 } from "@tui/util/sdd-models-file"
-import { isSddBuiltinProfile } from "@tui/util/sdd-models-default"
+import { isSddBuiltinProfile, sddAgentProfileRank } from "@tui/util/sdd-models-default"
 import type { Agent } from "@opencode-ai/sdk/v2"
 
 type MainRow = { kind: "profile" } | { kind: "agent"; name: string }
@@ -198,12 +197,15 @@ export function DialogSddModels() {
       })
   })
 
-  const agents = createMemo(() =>
-    sortBy(
-      sync.data.agent.filter((a) => a.name.startsWith("sdd-")),
-      (a) => a.name,
-    ),
-  )
+  const agents = createMemo(() => {
+    const list = sync.data.agent.filter((a) => a.name.startsWith("sdd-"))
+    return [...list].sort((a, b) => {
+      const ra = sddAgentProfileRank(a.name)
+      const rb = sddAgentProfileRank(b.name)
+      if (ra !== rb) return ra - rb
+      return a.name.localeCompare(b.name)
+    })
+  })
 
   const options = createMemo(() => {
     const d = store.data
@@ -243,7 +245,7 @@ export function DialogSddModels() {
       }
     >
       <DialogSelect<MainRow>
-        title="SDD model profiles"
+        title="Profile"
         flat={true}
         skipFilter={true}
         options={options()}

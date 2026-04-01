@@ -11,7 +11,7 @@ Este documento describe el **sistema de perfiles de modelos para agentes `sdd-*`
 | `.opencode/sdd-models.jsonc` | `active` + `profiles.<nombre>.<agente> = "proveedor/modelo"` |
 | `OPENCODE_SDD_MODEL_PROFILE` | Opcional: fuerza el nombre de perfil (prioridad sobre `active` en el JSON) |
 | Servidor (`config.ts`) | `applySddModelsOverlay`: merge del overlay sobre `agent.*` al cargar config |
-| TUI `/sdd-models` | Diálogo integrado: perfiles, agentes, mismo selector que `/models` |
+| TUI `/profile` | Diálogo integrado: perfiles, agentes, mismo selector que `/models` |
 | Autocompletado `/` | Si un slash está en la app y en comandos del proyecto, **solo se muestra la entrada de la app** (evita duplicados y mantiene un Enter para abrir el diálogo) |
 
 ---
@@ -37,12 +37,12 @@ Los perfiles que **creas tú** (p. ej. desde **+ New profile** o editando el JSO
 
 ---
 
-## TUI: comando `/sdd-models`
+## TUI: comando `/profile`
 
 ### Cómo abrirlo
 
-- Escribir **`/sdd-models`** y confirmar (el registro en la **app** con `slash` hace que el primer Enter pueda ejecutar `command.trigger` y abrir el diálogo; el comando del proyecto `.opencode/commands/sdd-models.md` sigue existiendo para headless/documentación, pero **no duplica** la fila gracias al deduplicado en el autocompletado).
-- Paleta de comandos (**Ctrl+P**): **SDD model profiles** (no depende del `slash`; abre el mismo diálogo).
+- Escribir **`/profile`** y confirmar (el registro en la **app** con `slash` hace que el primer Enter pueda ejecutar `command.trigger` y abrir el diálogo; el comando del proyecto `.opencode/commands/profile.md` sigue existiendo para headless/documentación, pero **no duplica** la fila gracias al deduplicado en el autocompletado).
+- Paleta de comandos (**Ctrl+P**): **Profile** (no depende del `slash`; abre el mismo diálogo).
 
 ### Pantalla principal
 
@@ -79,7 +79,7 @@ El diálogo arranca con datos por defecto en memoria y sincroniza con disco en u
 
 ## Autocompletado: deduplicación app vs proyecto
 
-En `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, al mezclar `command.slashes()` con `sync.data.command`, **no** se añade un comando del servidor si su `name` coincide con el nombre de un slash ya registrado por la app. Así `/sdd-models` aparece **una sola vez** y conserva el comportamiento del **`onSelect`** de la app (abrir diálogo al elegir la sugerencia).
+En `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, al mezclar `command.slashes()` con `sync.data.command`, **no** se añade un comando del servidor si su `name` coincide con el nombre de un slash ya registrado por la app. Así `/profile` aparece **una sola vez** y conserva el comportamiento del **`onSelect`** de la app (abrir diálogo al elegir la sugerencia).
 
 ---
 
@@ -103,10 +103,10 @@ Comentario de ejemplo en `fork.opencode.env`.
 | Plantilla por defecto + built-in names | `packages/opencode/src/cli/cmd/tui/util/sdd-models-default.ts` |
 | Diálogo principal y subdiálogos | `packages/opencode/src/cli/cmd/tui/component/dialog-sdd-models.tsx` |
 | Selector de modelo en modo `pick` | `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx` |
-| Slash `/sdd-models` → diálogo | `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` |
+| Slash `/profile` → diálogo | `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` |
 | Registro paleta + slash | `packages/opencode/src/cli/cmd/tui/app.tsx` |
 | Deduplicación `/` | `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx` |
-| Comando proyecto (headless / descripción) | `.opencode/commands/sdd-models.md` |
+| Comando proyecto (headless / descripción) | `.opencode/commands/profile.md` |
 
 ---
 

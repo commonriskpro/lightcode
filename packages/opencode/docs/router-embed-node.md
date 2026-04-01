@@ -28,6 +28,32 @@ Ese subproceso **debe poder ejecutar** un intérprete `node` real con `tsx` y de
 - Si `OPENCODE_ROUTER_EMBED_NODE` está definida pero **el fichero no existe o no es ejecutable**, se **ignora** y se prueban fallbacks.
 - Orden típico: variable de entorno (si válida) → rutas fijas (Homebrew, `/usr/bin`, perfiles Nix/Home Manager bajo `$HOME`) → **`command -v node`** con el `env` actual → **`sh -lc 'command -v node'`** (perfil tipo login).
 - El **spawn** del worker usa un `env` donde se **elimina** una `OPENCODE_ROUTER_EMBED_NODE` inválida y se **fija** la ruta resuelta cuando es absoluta.
+- Si el IPC no puede levantar el worker (`router_embed_root_missing`, `router_embed_worker_missing`, `router_embed_ipc_no_child`), el router ahora:
+  - expone el **motivo real** en `router.embed.status` (TUI/footer),
+  - y aplica **fallback in-process** automáticamente para no perder embeddings locales en Linux.
+
+## Error típico en Linux: `router_embed_ipc_no_child`
+
+Ese texto en la barra inferior significa "el proceso Bun no consiguió arrancar el worker Node". No indica que Xenova o el modelo estén rotos; indica fallo de arranque del subproceso.
+
+Causas comunes:
+
+1. Se está ejecutando un binario fuera del repo (sin `script/router-embed-worker.ts` resoluble por `workerTarget()`).
+2. `OPENCODE_DISABLE_PROJECT_CONFIG=1` y la sesión no activa el router híbrido local.
+3. `node` no está disponible/ejecutable para el worker.
+
+Diagnóstico rápido (desde la raíz del repo):
+
+```bash
+./scripts/opencode-isolated.sh
+bun scripts/check-router-embed-node.ts
+```
+
+Si sigue apareciendo en TUI, revisar logs de `router-embed`:
+
+- `router_embed_root_missing:*`
+- `router_embed_worker_missing:*`
+- `router_embed_ipc_spawn`
 
 ## Ruta fija en `fork.opencode.env` (recomendado en este fork)
 

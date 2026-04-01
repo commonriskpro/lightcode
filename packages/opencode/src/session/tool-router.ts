@@ -52,7 +52,7 @@ function estimateTokens(text: string): number {
  */
 const DEFAULT_BASE = ["read", "task", "skill"]
 
-/** Short descriptions for base tools that are available but not the focus of the current turn. */
+/** Short descriptions for base tools when not rule-matched (keeps tool list tokens small). */
 const SLIM_DESC: Record<string, string> = {
   read: "Read a file or directory.",
   task: "Delegate a task to a subagent.",
@@ -67,6 +67,26 @@ const SLIM_DESC: Record<string, string> = {
   todowrite: "Manage the todo list.",
   question: "Ask the user a question.",
   codesearch: "Search the codebase.",
+}
+
+/**
+ * Richer lines **only** for `augmentMatchedEmbed` (Xenova): synonyms + ES gloss so multilingual
+ * similarity matches real user phrasing. Not used for on-wire tool descriptions.
+ */
+const EMBED_PHRASE: Record<string, string> = {
+  read: "Read a file or directory. Open file contents. Leer archivo o carpeta. Ver fichero.",
+  task: "Delegate a task to a subagent. Spawn agent. Delegar subtarea. Otro agente.",
+  skill: "Load a named skill. Activate skill by name. Cargar skill.",
+  glob: "Find files by glob pattern. List matching paths. Buscar archivos por patrón. Listar rutas.",
+  grep: "Search file contents with regex. Ripgrep text in repo. Buscar texto en código. Patrón en archivos.",
+  bash: "Run a shell command. Terminal script. Ejecutar comando consola. Correr script.",
+  edit: "Edit a file. Apply patch to source. Modificar código. Cambiar implementación.",
+  write: "Write or overwrite a file. Create new file. Escribir archivo. Crear fichero nuevo.",
+  webfetch: "Fetch a URL. Download HTTP page. Descargar página web. GET url.",
+  websearch: "Search the web. Look up online. Búsqueda en internet. Documentación online.",
+  todowrite: "Manage the todo list. Track tasks. Lista de tareas. Pendientes.",
+  question: "Ask the user a question. Clarify choice. Preguntar al usuario. Elegir opción.",
+  codesearch: "Search the codebase semantically. Find code by meaning. Búsqueda semántica en repo.",
 }
 
 const RULES: { re: RegExp; add: string[]; label: string }[] = [
@@ -132,8 +152,8 @@ function embedPhraseFor(
   input: { tools: Record<string, AITool>; registryTools?: Record<string, AITool> },
   id: string,
 ) {
-  const slim = SLIM_DESC[id]
-  if (slim) return `${id}. ${slim}`
+  const builtin = EMBED_PHRASE[id] ?? SLIM_DESC[id]
+  if (builtin) return `${id}. ${builtin}`
   const t = input.registryTools?.[id] ?? input.tools[id]
   const d = typeof t?.description === "string" ? t.description.slice(0, 240) : ""
   return d ? `${id}. ${d}` : `${id} coding agent tool`
@@ -343,7 +363,8 @@ export namespace ToolRouter {
     const allowed = input.allowedToolIds
     const available = new Set([...availableKeys].filter((id) => (allowed ? allowed.has(id) : true)))
     const base = tr?.base_tools?.length ? tr.base_tools : DEFAULT_BASE
-    const max = tr?.max_tools ?? 12
+    const autoPick = trLlm?.auto_tool_selection === true
+    const max = autoPick ? (trLlm?.max_tools_cap ?? 100) : (tr?.max_tools ?? 12)
     const mcpAlways = tr?.mcp_always_include !== false
 
     const matched = new Set<string>()
@@ -388,12 +409,28 @@ export namespace ToolRouter {
           model: embedModel,
           topK: trLlm?.local_embed_top_k ?? 4,
           minScore: trLlm?.local_embed_min_score ?? 0.32,
+          auto: autoPick
+            ? {
+                enabled: true,
+                ratio: trLlm?.auto_score_ratio ?? 0.88,
+                tokenBudget: trLlm?.auto_token_budget ?? 1_200,
+                maxCap: trLlm?.max_tools_cap ?? 100,
+              }
+            : undefined,
           phraseFor: (id) => embedPhraseFor(input, id),
         })
         if (aug?.added.length) {
           hybridAugmented = true
           for (const id of aug.added) matched.add(id)
           labels.push(aug.note ? `embed:${aug.note.slice(0, 100)}` : "embed/extra")
+        }
+        if (autoPick) {
+          log.info("router_embed_auto_policy", {
+            added: aug?.added.length ?? 0,
+            ratio: trLlm?.auto_score_ratio ?? 0.88,
+            token_budget: trLlm?.auto_token_budget ?? 1_200,
+            max_cap: trLlm?.max_tools_cap ?? 100,
+          })
         }
       } else {
         const aug = await augmentMatchedTools({

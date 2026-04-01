@@ -509,11 +509,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "SDD model profiles",
+      title: "Profile",
       value: "sdd.models",
       category: "Agent",
       slash: {
-        name: "sdd-models",
+        name: "profile",
       },
       onSelect: () => {
         dialog.replace(() => <DialogSddModels />)

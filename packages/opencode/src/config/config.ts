@@ -1154,6 +1154,42 @@ export namespace Config {
                 .optional()
                 .default(4)
                 .describe("Max extra builtin tools to add from embedding similarity."),
+              auto_tool_selection: z
+                .boolean()
+                .optional()
+                .default(false)
+                .describe(
+                  "When true with hybrid + local embeddings: pick extra tools using automatic score ratio + token budget (A+C) instead of fixed local_embed_top_k.",
+                ),
+              auto_score_ratio: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .default(0.88)
+                .describe(
+                  "Automatic tool selection ratio vs best score (A): keep candidates with score >= best * ratio before budget trim.",
+                ),
+              auto_token_budget: z
+                .number()
+                .int()
+                .min(64)
+                .max(20_000)
+                .optional()
+                .default(1_200)
+                .describe(
+                  "Approx token budget for embed-selected extra tools (C). The router estimates tokens from per-tool embed phrase length.",
+                ),
+              max_tools_cap: z
+                .number()
+                .int()
+                .min(1)
+                .max(200)
+                .optional()
+                .default(100)
+                .describe(
+                  "Hard safety cap for final routed tool count when automatic tool selection is enabled.",
+                ),
               local_embed_min_score: z
                 .number()
                 .min(0)

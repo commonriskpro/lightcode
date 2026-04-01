@@ -23,6 +23,12 @@ type Req =
       model: string
       topK: number
       minScore: number
+      auto?: {
+        enabled: boolean
+        ratio: number
+        tokenBudget: number
+        maxCap: number
+      }
       phrases: Record<string, string>
     } }
 
@@ -48,6 +54,7 @@ for await (const line of rl) {
         model: p.model,
         topK: p.topK,
         minScore: p.minScore,
+        auto: p.auto,
         phraseFor: (tid) => p.phrases[tid] ?? "",
       })
       process.stdout.write(JSON.stringify({ id: req.id, ok: true, result: r === undefined ? null : r }) + "\n")

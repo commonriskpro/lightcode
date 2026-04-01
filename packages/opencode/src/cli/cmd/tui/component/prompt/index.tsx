@@ -664,7 +664,7 @@ export function Prompt(props: PromptProps) {
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
       const cmdName = command.slice(1)
 
-      if (cmdName === "sdd-models") {
+      if (cmdName === "profile") {
         dialog.replace(() => <DialogSddModels />)
       } else {
         sdk.client.session.command({

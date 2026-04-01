@@ -17,6 +17,7 @@ let buf = ""
 let child: ChildProcess | null = null
 let tail: Promise<void> = Promise.resolve()
 let firstRpc = true
+let lastSpawnErr: string | undefined
 
 function modelFromPayload(payload: unknown): string | undefined {
   if (payload && typeof payload === "object" && "model" in payload) {
@@ -187,6 +188,7 @@ function ensureChild(): ChildProcess | null {
   const target = workerTarget()
   if (!existsSync(target.root)) {
     const err = new Error(`router_embed_root_missing:${target.root}`)
+    lastSpawnErr = String(err)
     log.warn("router_embed_ipc_spawn", { message: String(err) })
     for (const [, q] of pending) q.reject(err)
     pending.clear()
@@ -194,6 +196,7 @@ function ensureChild(): ChildProcess | null {
   }
   if (!existsSync(target.worker)) {
     const err = new Error(`router_embed_worker_missing:${target.worker}`)
+    lastSpawnErr = String(err)
     log.warn("router_embed_ipc_spawn", { message: String(err) })
     for (const [, q] of pending) q.reject(err)
     pending.clear()
@@ -230,6 +233,7 @@ function ensureChild(): ChildProcess | null {
 
   c.on("error", (e) => {
     log.warn("router_embed_ipc_spawn", { message: String(e) })
+    lastSpawnErr = String(e)
     child = null
     for (const [, q] of pending) q.reject(e)
     pending.clear()
@@ -237,12 +241,14 @@ function ensureChild(): ChildProcess | null {
 
   c.on("exit", (code, signal) => {
     log.info("router_embed_ipc_exit", { code, signal })
+    lastSpawnErr = `router_embed_ipc_exit:${code}`
     child = null
     const err = new Error(`router_embed_ipc_exit:${code}`)
     for (const [, q] of pending) q.reject(err)
     pending.clear()
   })
 
+  lastSpawnErr = undefined
   child = c
   return c
 }
@@ -263,9 +269,10 @@ async function rpc(method: string, payload: unknown): Promise<unknown> {
     if (firstRpc) emitRouterEmbedStatus({ phase: "loading", model: m })
     const c = ensureChild()
     if (!c?.stdin) {
-      log.warn("router_embed_ipc_no_child")
-      emitRouterEmbedStatus({ phase: "error", model: m, message: "router_embed_ipc_no_child" })
-      throw new Error("router_embed_ipc_no_child")
+      const msg = lastSpawnErr || "router_embed_ipc_no_child"
+      log.warn("router_embed_ipc_no_child", { message: msg })
+      emitRouterEmbedStatus({ phase: "error", model: m, message: msg })
+      throw new Error(msg)
     }
     const id = nextId++
     try {
@@ -332,6 +339,12 @@ export async function augmentMatchedEmbed(input: {
   model: string
   topK: number
   minScore: number
+  auto?: {
+    enabled: boolean
+    ratio: number
+    tokenBudget: number
+    maxCap: number
+  }
   phraseFor: (id: string) => string
 }) {
   const candidates = [...input.allowedBuiltin].filter((id) => !input.matched.has(id))
@@ -348,6 +361,7 @@ export async function augmentMatchedEmbed(input: {
       model: input.model,
       topK: input.topK,
       minScore: input.minScore,
+      auto: input.auto,
       phrases,
     })) as { added: string[]; note?: string } | null
     if (raw === null) return undefined

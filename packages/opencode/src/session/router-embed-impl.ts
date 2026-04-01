@@ -237,7 +237,11 @@ export const BUILTIN_INTENT_PROTOTYPES: IntentPrototype[] = [
 /** Label returned by classifyIntentEmbed when chit-chat wins over work intents. */
 export const CONVERSATION_INTENT_LABEL = "conversation"
 
-/** Multilingual greetings / thanks / small talk — competes with other intents via same embedding pass. */
+/**
+ * Chit-chat / small talk — competes with work intents via same embedding pass.
+ * The Xenova model’s tokenizer vocabulary is fixed; **adding more `phrases` here** is how we widen
+ * coverage for paraphrases (ES/EN colloquial, typos, regional variants) without changing the model.
+ */
 export const CONVERSATION_INTENT_PROTOTYPE: IntentPrototype = {
   label: CONVERSATION_INTENT_LABEL,
   add: [],
@@ -266,6 +270,47 @@ export const CONVERSATION_INTENT_PROTOTYPE: IntentPrototype = {
     "saludos nos vemos chau bye",
     "thanks appreciate it cheers",
     "buen día buenas tardes solo saludar",
+    // ES coloquial — sin tarea de código (evita pagar tools + AGENTS cuando solo es charla / desahogo)
+    "ya no aguanto más",
+    "no aguanto más",
+    "no puedo más",
+    "estoy hecho polvo",
+    "estoy re cansado",
+    "quiero dormir",
+    "solo charlar nada de código",
+    "solo conversación sin proyecto",
+    "necesito descansar",
+    "qué pesado todo",
+    // EN same vibe
+    "i cant take it anymore",
+    "so tired need sleep",
+    "just venting not coding",
+    // ES — más coloquial / regional (sin pedir cambios en el repo)
+    "solo hablar un rato",
+    "solo desahogo",
+    "charla sin código",
+    "sin tarea técnica hoy",
+    "ni me hables de código",
+    "estoy reventado",
+    "estoy re muerto",
+    "qué sueño tengo",
+    "me quiero ir a dormir",
+    "solo compañía no proyecto",
+    "necesito descansar la cabeza",
+    "hablemos de otra cosa",
+    "no es sobre el código",
+    "ya no aguanto mas",
+    "no aguanto mas",
+    "no doy más",
+    "estoy al límite",
+    // LATAM / informal
+    "qué estrés con todo",
+    "qué paja todo",
+    "solo charlar nada de laburo",
+    // EN casual
+    "brain fried no code today",
+    "just need to talk not debug",
+    "talk about something else not the repo",
   ],
 }
 
@@ -334,6 +379,12 @@ export async function augmentMatchedEmbed(input: {
   model: string
   topK: number
   minScore: number
+  auto?: {
+    enabled: boolean
+    ratio: number
+    tokenBudget: number
+    maxCap: number
+  }
   phraseFor: (id: string) => string
 }): Promise<{ added: string[]; note?: string } | undefined> {
   const candidates = [...input.allowedBuiltin].filter((id) => !input.matched.has(id))
@@ -353,10 +404,7 @@ export async function augmentMatchedEmbed(input: {
       scored.push({ id, score })
     }
     scored.sort((a, b) => b.score - a.score)
-    const picked = scored
-      .filter((x) => x.score >= input.minScore)
-      .slice(0, input.topK)
-      .map((x) => x.id)
+    const picked = pickTools(scored, input)
     if (picked.length === 0) {
       log.info("router_embed", { added: [], top: scored.slice(0, 3) })
       return undefined
@@ -371,4 +419,38 @@ export async function augmentMatchedEmbed(input: {
     log.warn("router_embed_failed", { message: String(e) })
     return undefined
   }
+}
+
+function tok(text: string) {
+  if (!text) return 0
+  return Math.ceil(text.length / 4)
+}
+
+export function pickTools(
+  scored: { id: string; score: number }[],
+  input: {
+    minScore: number
+    topK: number
+    auto?: { enabled: boolean; ratio: number; tokenBudget: number; maxCap: number }
+    phraseFor: (id: string) => string
+  },
+) {
+  const kept = scored.filter((x) => x.score >= input.minScore)
+  if (!input.auto?.enabled) return kept.slice(0, input.topK).map((x) => x.id)
+  if (kept.length === 0) return []
+  const best = kept[0]?.score ?? 0
+  const cutoff = Math.max(input.minScore, best * input.auto.ratio)
+  const ratioKept = kept.filter((x) => x.score >= cutoff)
+  const pool = ratioKept.length ? ratioKept : kept.slice(0, 1)
+  const out: string[] = []
+  let used = 0
+  for (const row of pool) {
+    if (out.length >= input.auto.maxCap) break
+    const next = tok(input.phraseFor(row.id)) + 6
+    if (out.length > 0 && used + next > input.auto.tokenBudget) break
+    out.push(row.id)
+    used += next
+  }
+  if (out.length === 0 && pool[0]) out.push(pool[0].id)
+  return out
 }

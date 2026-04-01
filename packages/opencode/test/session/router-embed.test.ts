@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { augmentMatchedEmbed, CONVERSATION_INTENT_PROTOTYPE, DEFAULT_LOCAL_EMBED_MODEL } from "../../src/session/router-embed"
+import { pickTools } from "../../src/session/router-embed-impl"
 
 describe("conversation intent prototypes", () => {
   test("includes short anchors for single-token greetings", () => {
@@ -27,5 +28,36 @@ describe("augmentMatchedEmbed", () => {
       phraseFor: (id) => id,
     })
     expect(out).toBeUndefined()
+  })
+})
+
+describe("pickTools auto A+C", () => {
+  test("keeps candidates near best score then trims by token budget", () => {
+    const scored = [
+      { id: "a", score: 0.95 },
+      { id: "b", score: 0.92 },
+      { id: "c", score: 0.80 },
+    ]
+    const out = pickTools(scored, {
+      minScore: 0.3,
+      topK: 4,
+      auto: { enabled: true, ratio: 0.9, tokenBudget: 20, maxCap: 100 },
+      phraseFor: (id) => (id === "a" ? "x".repeat(30) : "short"),
+    })
+    expect(out).toEqual(["a"])
+  })
+
+  test("falls back to topK when auto is disabled", () => {
+    const scored = [
+      { id: "a", score: 0.8 },
+      { id: "b", score: 0.79 },
+      { id: "c", score: 0.78 },
+    ]
+    const out = pickTools(scored, {
+      minScore: 0.75,
+      topK: 2,
+      phraseFor: () => "x",
+    })
+    expect(out).toEqual(["a", "b"])
   })
 })

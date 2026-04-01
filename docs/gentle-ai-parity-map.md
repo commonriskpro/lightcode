@@ -54,7 +54,7 @@ En este fork el código SDD + assets viven sobre todo en `gentle-ai/`, `.opencod
 
 **Qué es:** Modelo distinto por fase (ej. potente en diseño, rápido en implementación).
 
-**En el fork:** OpenCode ya soporta **`model` por agente**; el task/subagente usa `agent.model` si existe. Hay guía **[multi-mode-sdd.md](./multi-mode-sdd.md)** y TUI/overlay en **[sdd-models-tui-guide.md](./sdd-models-tui-guide.md)** (`/sdd-models`). Lo que sigue siendo **manual por repo** es rellenar cada `sdd-*` en `.opencode/opencode.jsonc` con los IDs reales de tus proveedores.
+**En el fork:** OpenCode ya soporta **`model` por agente**; el task/subagente usa `agent.model` si existe. Hay guía **[multi-mode-sdd.md](./multi-mode-sdd.md)** y TUI/overlay en **[sdd-models-tui-guide.md](./sdd-models-tui-guide.md)** (`/profile`). Lo que sigue siendo **manual por repo** es rellenar cada `sdd-*` en `.opencode/opencode.jsonc` con los IDs reales de tus proveedores.
 
 **Para acercarte:** Copiar el fragmento de `opencode.jsonc` de la guía y ajustar modelos; verificar en una delegación que el subagente no hereda siempre el modelo del padre.
 
@@ -170,7 +170,7 @@ En tu fork eso ya está **modelado**: agentes + prompts + `gentle-ai/AGENTS.md` 
 - Cada entrada en `agent` puede tener `"model": "proveedor/modelo"`. Los subagentes SDD pueden llevar cada uno su modelo. El plugin **BackgroundAgents** lee ese `model` al delegar.
 - Hasta que **no** añadas `"model"` a cada `sdd-*` en **tu** `.opencode/opencode.jsonc`, esos agentes **heredan** el modelo por defecto de la sesión.
 
-Para activarlo: **[multi-mode-sdd.md](./multi-mode-sdd.md)** y, si usáis la TUI, **[sdd-models-tui-guide.md](./sdd-models-tui-guide.md)** — rellenar `"model"` por `sdd-*` con **tus** IDs reales.
+Para activarlo: **[multi-mode-sdd.md](./multi-mode-sdd.md)** y, si usáis la TUI, **[sdd-models-tui-guide.md](./sdd-models-tui-guide.md)** (`/profile`) — rellenar `"model"` por `sdd-*` con **tus** IDs reales.
 
 ### F — ¿Lo necesitamos realmente?
 
