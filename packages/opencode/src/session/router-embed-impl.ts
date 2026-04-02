@@ -1,5 +1,14 @@
 import { Log } from "../util/log"
 import { emitRouterEmbedStatus } from "./router-embed-status"
+import type { ExactMatchFlags } from "./router-exact-match"
+import {
+  applyCalibration,
+  applyIntentGating,
+  applyPerToolMin,
+  dedupeWebPair,
+  effectiveAutoRatio,
+  twoPassConsistency,
+} from "./router-exact-match"
 
 const log = Log.create({ service: "router-embed" })
 
@@ -373,11 +382,19 @@ export async function augmentMatchedEmbed(input: {
   model: string
   topK: number
   minScore: number
+  intentLabel?: string
+  exactMatch?: ExactMatchFlags
   auto?: {
     enabled: boolean
     ratio: number
     tokenBudget: number
     maxCap: number
+  }
+  rerank?: {
+    enabled: boolean
+    candidates: number
+    semanticWeight: number
+    lexicalWeight: number
   }
   phraseFor: (id: string) => string
 }): Promise<{ added: string[]; note?: string } | undefined> {
@@ -397,17 +414,76 @@ export async function augmentMatchedEmbed(input: {
     scored.push({ id, score })
   }
   scored.sort((a, b) => b.score - a.score)
-  const picked = pickTools(scored, input)
+  const ranked = rerank(scored, input)
+  const picked = pickTools(ranked, {
+    ...input,
+    userText: input.userText,
+    intentLabel: input.intentLabel,
+    exactMatch: input.exactMatch,
+  })
   if (picked.length === 0) {
-    log.info("router_embed", { added: [], top: scored.slice(0, 3) })
+    log.info("router_embed", { added: [], top: ranked.slice(0, 3) })
     return undefined
   }
   const note = picked.map((id) => {
-    const s = scored.find((x) => x.id === id)?.score ?? 0
+    const s = ranked.find((x) => x.id === id)?.score ?? 0
     return `${id}:${s.toFixed(2)}`
   })
-  log.info("router_embed", { added: picked, top: scored.slice(0, 5) })
+  log.info("router_embed", { added: picked, top: ranked.slice(0, 5) })
   return { added: picked, note: note.join(",") }
+}
+
+function norm(text: string) {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+}
+
+function toks(text: string) {
+  return norm(text)
+    .split(/[^a-z0-9]+/g)
+    .filter((x) => x.length >= 2)
+}
+
+function lexical(a: string, b: string) {
+  const sa = new Set(toks(a))
+  const sb = new Set(toks(b))
+  if (sa.size === 0 || sb.size === 0) return 0
+  let hit = 0
+  for (const x of sa) {
+    if (sb.has(x)) hit++
+  }
+  return hit / Math.sqrt(sa.size * sb.size)
+}
+
+function rerank(
+  scored: { id: string; score: number }[],
+  input: {
+    userText: string
+    phraseFor: (id: string) => string
+    rerank?: {
+      enabled: boolean
+      candidates: number
+      semanticWeight: number
+      lexicalWeight: number
+    }
+  },
+) {
+  if (!input.rerank?.enabled) return scored
+  const n = Math.max(1, input.rerank.candidates)
+  const a = input.rerank.semanticWeight
+  const b = input.rerank.lexicalWeight
+  const base = scored.slice(0, n)
+  const rest = scored.slice(n)
+  const top = base[0]?.score ?? 0
+  const merged = base.map((row) => {
+    const sem = top > 0 ? row.score / top : row.score
+    const lex = lexical(input.userText, input.phraseFor(row.id))
+    return { id: row.id, score: a * sem + b * lex }
+  })
+  merged.sort((x, y) => y.score - x.score)
+  return [...merged, ...rest]
 }
 
 function tok(text: string) {
@@ -422,15 +498,27 @@ export function pickTools(
     topK: number
     auto?: { enabled: boolean; ratio: number; tokenBudget: number; maxCap: number }
     phraseFor: (id: string) => string
+    userText?: string
+    intentLabel?: string
+    exactMatch?: ExactMatchFlags
   },
 ) {
-  const kept = scored.filter((x) => x.score >= input.minScore)
+  let s = scored.map((x) => ({ ...x }))
+  const u = input.userText ?? ""
+  if (input.exactMatch?.intent_gating) s = applyIntentGating(s, input.intentLabel, u)
+  if (input.exactMatch?.calibration) s = applyCalibration(s)
+  const kept = input.exactMatch?.per_tool_min
+    ? applyPerToolMin(s, input.minScore)
+    : s.filter((x) => x.score >= input.minScore)
   if (!input.auto?.enabled) return kept.slice(0, input.topK).map((x) => x.id)
   if (kept.length === 0) return []
   const best = kept[0]?.score ?? 0
-  const cutoff = Math.max(input.minScore, best * input.auto.ratio)
+  const baseR = input.auto.ratio
+  const r = effectiveAutoRatio(baseR, u, input.intentLabel, input.exactMatch)
+  const cutoff = Math.max(input.minScore, best * r)
   const ratioKept = kept.filter((x) => x.score >= cutoff)
   const pool = ratioKept.length ? ratioKept : kept.slice(0, 1)
+  const scoreMap = new Map(kept.map((x) => [x.id, x.score]))
   const out: string[] = []
   let used = 0
   for (const row of pool) {
@@ -441,5 +529,8 @@ export function pickTools(
     used += next
   }
   if (out.length === 0 && pool[0]) out.push(pool[0].id)
-  return out
+  let fin = out
+  if (input.exactMatch?.redundancy) fin = dedupeWebPair(fin, scoreMap, u)
+  if (input.exactMatch?.two_pass) fin = twoPassConsistency(fin, u)
+  return fin
 }

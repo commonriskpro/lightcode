@@ -80,7 +80,8 @@ const EMBED_PHRASE: Record<string, string> = {
   grep: "Search file contents with regex. Ripgrep text in repo. Buscar texto en código. Patrón en archivos.",
   bash: "Run a shell command. Terminal script. Ejecutar comando consola. Correr script.",
   edit: "Edit a file. Apply patch to source. Modificar código. Cambiar implementación.",
-  write: "Write or overwrite a file. Create new file. Escribir archivo. Crear fichero nuevo.",
+  write:
+    "Write or overwrite a file. Create new file. Save results to markdown. Escribir archivo. Guardar en .md. Crear fichero nuevo.",
   webfetch: "Fetch a URL. Download HTTP page. Descargar página web. GET url.",
   websearch: "Search the web. Look up online. Búsqueda en internet. Documentación online.",
   todowrite: "Manage the todo list. Track tasks. Lista de tareas. Pendientes.",
@@ -352,21 +353,6 @@ export namespace ToolRouter {
         minScore: trLlm?.local_intent_min_score ?? 0.38,
         prototypes: ROUTER_INTENT_PROTOTYPES,
       })
-      if (intentHit?.label === CONVERSATION_INTENT_LABEL) {
-        log.info("tool_router", {
-          tier: "conversation",
-          selected: [],
-          builtin: [],
-          mcp: [],
-          reason: "xenova_conversation",
-          score: intentHit.score,
-          userPreview: text.slice(0, 120),
-          hasAssistant,
-          tokens: { toolCount: 0, toolTokens: 0, promptHintTokens: 0 },
-          duration_ms: ms(),
-        })
-        return { tools: {}, promptHint: undefined, contextTier: "conversation" }
-      }
     }
 
     if (!additive && tr?.apply_after_first_assistant === true && !hasAssistant) {
@@ -387,15 +373,8 @@ export namespace ToolRouter {
     const availableKeys = new Set(Object.keys(additive ? full : input.tools))
     const allowed = input.allowedToolIds
     const available = new Set([...availableKeys].filter((id) => (allowed ? allowed.has(id) : true)))
-    const base = tr?.base_tools?.length ? tr.base_tools : DEFAULT_BASE
     const autoPick = trLlm?.auto_tool_selection === true
     const max = autoPick ? (trLlm?.max_tools_cap ?? 100) : (tr?.max_tools ?? 12)
-    const mcpAlways = tr?.mcp_always_include !== false
-    const stickyList =
-      (tr?.sticky_previous_turn_tools !== false ? input.stickyToolIds : undefined)?.filter((id) =>
-        input.allowedToolIds ? input.allowedToolIds.has(id) : true,
-      ) ?? []
-    const stickySet = new Set(stickyList)
 
     const matched = new Set<string>()
     const intentLabels: string[] = []
@@ -430,12 +409,22 @@ export namespace ToolRouter {
       model: embedModel,
       topK: trLlm?.local_embed_top_k ?? 4,
       minScore: trLlm?.local_embed_min_score ?? 0.32,
+      intentLabel: intentHit?.label,
+      exactMatch: trLlm?.exact_match,
       auto: autoPick
         ? {
             enabled: true,
             ratio: trLlm?.auto_score_ratio ?? 0.88,
             tokenBudget: trLlm?.auto_token_budget ?? 1_200,
             maxCap: trLlm?.max_tools_cap ?? 100,
+          }
+        : undefined,
+      rerank: trLlm?.rerank === true
+        ? {
+            enabled: true,
+            candidates: trLlm?.rerank_candidates ?? 8,
+            semanticWeight: trLlm?.rerank_semantic_weight ?? 0.7,
+            lexicalWeight: trLlm?.rerank_lexical_weight ?? 0.3,
           }
         : undefined,
       phraseFor: (id) => embedPhraseFor(input, id),
@@ -455,10 +444,9 @@ export namespace ToolRouter {
     }
 
     const hadRouterSignal = intentLabels.length > 0 || ruleLabels.length > 0 || hybridAugmented
-    // Xenova is the direct decision engine: rank/order by embed-selected ids.
-    // Keep base tools only if explicitly configured and xenova produced no match.
+    // Xenova is the direct decision engine: rank/order only by embed-selected ids.
     const fromEmbed = orderMatched(matched, builtinAvailable, max)
-    const ordered = fromEmbed.length > 0 ? fromEmbed : orderIds(base, new Set(), builtinAvailable, max)
+    const ordered = fromEmbed
 
     // Tools matched by rules (or embed-only path: everything in `matched`) keep full descriptions; base-only tools get slim.
     const ruleMatched = new Set<string>()
@@ -484,53 +472,23 @@ export namespace ToolRouter {
       }
     }
 
-    // MCP tools: filter by intent when mcp_filter_by_intent is true (default).
-    // MCP tools whose id is matched by a rule are included;
-    // otherwise they are only included on fallback (no rule matched) or when mcp_always_include is true.
-    const mcpFilter = tr?.mcp_filter_by_intent !== false
-    const rulesMatched = matched.size > 0
-    if (mcpAlways && (!routerOnly || hadRouterSignal)) {
-      for (const id of input.mcpIds) {
-        const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
-        if (!t) continue
-        if (mcpFilter && rulesMatched && !matched.has(id)) {
-          // Rule matched but this MCP tool was not in any rule — skip it.
-          continue
-        }
-        if (!mcpFilter && SLIM_DESC[id] && t.description !== SLIM_DESC[id]) {
-          out[id] = { ...t, description: SLIM_DESC[id] }
-        } else {
-          out[id] = t
-        }
-      }
-    }
-
-    // Carry-over from previous turn: keep tool defs aligned with prompt cache (sticky ids are cheap to retain).
-    if (stickyList.length > 0) {
-      for (const id of stickyList) {
-        if (out[id]) continue
-        const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
-        if (!t) continue
-        out[id] = t
-      }
-      if (Object.keys(out).length > max) {
-        out = trimToolMap(out, max, stickySet)
-      }
-    }
-
     if (Object.keys(out).length === 0) {
       const hint = tr?.inject_prompt !== false ? promptHint({ ids: [], labels, additive, matched, allowed, availableKeys }) : undefined
       log.info("tool_router", {
-        tier: "minimal",
+        tier: intentHit?.label === CONVERSATION_INTENT_LABEL ? "conversation" : "minimal",
         selected: [],
-        reason: "xenova_no_match",
+        reason: intentHit?.label === CONVERSATION_INTENT_LABEL ? "xenova_conversation_no_tool_match" : "xenova_no_match",
         labels,
         userPreview: text.slice(0, 120),
         hasAssistant,
         tokens: { toolCount: 0, toolTokens: 0, promptHintTokens: hint ? estimateTokens(hint) : 0 },
         duration_ms: ms(),
       })
-      return { tools: {}, promptHint: hint, contextTier: "minimal" }
+      return {
+        tools: {},
+        promptHint: hint,
+        contextTier: intentHit?.label === CONVERSATION_INTENT_LABEL ? "conversation" : "minimal",
+      }
     }
 
     const inject = tr?.inject_prompt !== false
@@ -549,10 +507,10 @@ export namespace ToolRouter {
     const promptHintTokens = hint ? estimateTokens(hint) : 0
 
     log.info("tool_router", {
-      tier: labels.length === 0 ? "minimal" : "full",
+      tier: "full",
       selected: ids.sort(),
       builtin: ordered.slice().sort(),
-      mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
+      mcp: [...input.mcpIds].filter((id) => out[id]).sort(),
       reason: additive ? "additive" : "xenova",
       labels,
       userPreview: text.slice(0, 120),
@@ -566,6 +524,6 @@ export namespace ToolRouter {
       duration_ms: ms(),
     })
 
-    return { tools: out, promptHint: hint, contextTier: labels.length === 0 ? "minimal" : "full" }
+    return { tools: out, promptHint: hint, contextTier: "full" }
   }
 }

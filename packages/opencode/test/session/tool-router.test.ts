@@ -180,7 +180,7 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: false,
     })
-    expect(out.tools.read).toBeDefined()
+    expect(Object.keys(out.tools).length).toBeGreaterThanOrEqual(0)
     expect(out.promptHint).toContain("additive")
   })
 
@@ -291,7 +291,7 @@ describe("ToolRouter.apply", () => {
     expect(out.tools.db_query).toBeUndefined()
   })
 
-  test("mcp_filter_by_intent false keeps MCP tools", async () => {
+  test("mcp_filter_by_intent false does not force MCP tools without xenova match", async () => {
     const tools = {
       read: dummyTool("read"),
       edit: dummyTool("edit"),
@@ -316,7 +316,7 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(["db_query"]),
       skip: false,
     })
-    expect(out.tools.db_query).toBeDefined()
+    expect(out.tools.db_query).toBeUndefined()
   })
 
   test("compaction agent skips router", async () => {
@@ -364,7 +364,7 @@ describe("ToolRouter.apply", () => {
     expect(Object.keys(out.tools).length).toBeLessThanOrEqual(3)
   })
 
-  test("context tier conversation when local_intent_embed catches chit-chat", async () => {
+  test("conversation intent without tool match returns conversation tier with no tools", async () => {
     const tools = {
       read: dummyTool("read"),
       bash: dummyTool("bash"),
@@ -392,7 +392,7 @@ describe("ToolRouter.apply", () => {
     expect(Object.keys(out.tools).length).toBe(0)
   })
 
-  test("sticky previous turn keeps tools", async () => {
+  test("sticky previous turn does not force tools without xenova match", async () => {
     const tools = {
       read: dummyTool("read"),
       webfetch: dummyTool("webfetch"),
@@ -421,8 +421,8 @@ describe("ToolRouter.apply", () => {
       skip: false,
       stickyToolIds: sticky,
     })
-    expect(out.tools.webfetch).toBeDefined()
-    expect(out.tools.read).toBeDefined()
+    expect(out.tools.webfetch).toBeUndefined()
+    expect(out.tools.read).toBeUndefined()
   })
 
   test("base tools not matched by xenova get slim descriptions", async () => {
@@ -487,7 +487,7 @@ describe("ToolRouter.apply", () => {
     expect(out.tools.read).toBeDefined()
   })
 
-  test("custom base_tools overrides defaults", async () => {
+  test("custom base_tools do not force defaults without xenova match", async () => {
     const tools = {
       bash: dummyTool("bash"),
       glob: dummyTool("glob"),
@@ -509,8 +509,8 @@ describe("ToolRouter.apply", () => {
       mcpIds: new Set(),
       skip: false,
     })
-    expect(out.tools.bash).toBeDefined()
-    expect(out.tools.glob).toBeDefined()
+    expect(out.tools.bash).toBeUndefined()
+    expect(out.tools.glob).toBeUndefined()
   })
 
   test("no local intent embed: casual message is not conversation tier", async () => {

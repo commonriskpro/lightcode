@@ -23,11 +23,19 @@ type Req =
       model: string
       topK: number
       minScore: number
+      intentLabel?: string
+      exactMatch?: Record<string, boolean | undefined>
       auto?: {
         enabled: boolean
         ratio: number
         tokenBudget: number
         maxCap: number
+      }
+      rerank?: {
+        enabled: boolean
+        candidates: number
+        semanticWeight: number
+        lexicalWeight: number
       }
       phrases: Record<string, string>
     } }
@@ -54,7 +62,10 @@ for await (const line of rl) {
         model: p.model,
         topK: p.topK,
         minScore: p.minScore,
+        intentLabel: p.intentLabel,
+        exactMatch: p.exactMatch,
         auto: p.auto,
+        rerank: p.rerank,
         phraseFor: (tid) => p.phrases[tid] ?? "",
       })
       process.stdout.write(JSON.stringify({ id: req.id, ok: true, result: r === undefined ? null : r }) + "\n")

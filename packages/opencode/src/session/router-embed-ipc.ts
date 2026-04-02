@@ -339,11 +339,19 @@ export async function augmentMatchedEmbed(input: {
   model: string
   topK: number
   minScore: number
+  intentLabel?: string
+  exactMatch?: import("./router-exact-match").ExactMatchFlags
   auto?: {
     enabled: boolean
     ratio: number
     tokenBudget: number
     maxCap: number
+  }
+  rerank?: {
+    enabled: boolean
+    candidates: number
+    semanticWeight: number
+    lexicalWeight: number
   }
   phraseFor: (id: string) => string
 }) {
@@ -361,7 +369,10 @@ export async function augmentMatchedEmbed(input: {
       model: input.model,
       topK: input.topK,
       minScore: input.minScore,
+      intentLabel: input.intentLabel,
+      exactMatch: input.exactMatch,
       auto: input.auto,
+      rerank: input.rerank,
       phrases,
     })) as { added: string[]; note?: string } | null
     if (raw === null) return undefined

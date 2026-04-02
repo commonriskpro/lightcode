@@ -219,7 +219,7 @@
       "additive": false,
       "apply_after_first_assistant": false,
       "inject_prompt": true,
-      "base_tools": ["read", "webfetch", "websearch"],
+      "base_tools": ["read"],
       "max_tools": 100,
       "mcp_always_include": false,
     },

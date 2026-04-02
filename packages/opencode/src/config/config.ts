@@ -1207,6 +1207,46 @@ export namespace Config {
                 .optional()
                 .default(0.32)
                 .describe("Minimum cosine similarity (normalized vectors) to attach a candidate tool."),
+              rerank: z
+                .boolean()
+                .optional()
+                .default(false)
+                .describe(
+                  "When true with local embeddings: re-rank top semantic candidates using a hybrid semantic+lexical score before final tool pick.",
+                ),
+              rerank_candidates: z
+                .number()
+                .int()
+                .min(1)
+                .max(32)
+                .optional()
+                .default(8)
+                .describe("How many top semantic candidates are considered for hybrid reranking."),
+              rerank_semantic_weight: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .default(0.7)
+                .describe("Weight of normalized semantic score in reranking."),
+              rerank_lexical_weight: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .default(0.3)
+                .describe("Weight of lexical overlap score in reranking."),
+              exact_match: z
+                .object({
+                  dynamic_ratio: z.boolean().optional().describe("Adaptive ratio vs best score (simple vs composite intent)."),
+                  per_tool_min: z.boolean().optional().describe("Stricter minimum scores for destructive or costly tools."),
+                  intent_gating: z.boolean().optional().describe("Soften edit/bash when web intent wins without strong local evidence."),
+                  redundancy: z.boolean().optional().describe("Drop near-duplicate web tools when evidence is weak."),
+                  calibration: z.boolean().optional().describe("Map embed scores through a sigmoid before thresholds."),
+                  two_pass: z.boolean().optional().describe("Second pass: drop bash without run-like cues in the prompt."),
+                })
+                .optional()
+                .describe("Optional exact-match-oriented filters on embed-ranked tools (no fixed top-k cap)."),
               local_intent_embed: z
                 .boolean()
                 .optional()
