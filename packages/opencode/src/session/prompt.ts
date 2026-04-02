@@ -34,7 +34,7 @@ import { NotFoundError } from "@/storage/db"
 import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
 import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
-import { ToolRouter, type ContextTier } from "./tool-router"
+import { ToolRouter, stickyToolIdsFromMessages, type ContextTier } from "./tool-router"
 import { instructionMode, mergedInstructionBodies, minimalTierAllTurns, threadHasAssistant } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
@@ -76,6 +76,36 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 function estimateTokens(text: string): number {
   if (!text) return 0
   return Math.ceil(text.length / 4)
+}
+
+function compactAgentPrompt(agent: Agent.Info) {
+  const opts = agent.options as Record<string, unknown> | undefined
+  const strategy = opts?.compact_strategy === "smart" || opts?.compact_strategy === "explicit"
+    ? (opts.compact_strategy as "smart" | "explicit")
+    : "smart"
+  const explicit = typeof opts?.compact_prompt === "string" ? opts.compact_prompt.trim() : ""
+  if (strategy === "explicit" && explicit) return explicit.slice(0, 500)
+  const raw = agent.prompt?.trim()
+  if (!raw) return
+  const text = raw
+    .replace(/\{file:[^}]+\}/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!text) return
+  return text.slice(0, 320)
+}
+
+function minimalEnv() {
+  const project = Instance.project
+  return [
+    "<env>",
+    `  Working directory: ${Instance.directory}`,
+    `  Workspace root folder: ${Instance.worktree}`,
+    `  Is directory a git repo: ${project.vcs === "git" ? "yes" : "no"}`,
+    `  Platform: ${process.platform}`,
+    `  Today's date: ${new Date().toDateString()}`,
+    "</env>",
+  ].join("\n")
 }
 
 export namespace SessionPrompt {
@@ -708,6 +738,13 @@ export namespace SessionPrompt {
             "You do not have access to files, shell, or project tools in this mode. " +
             "If the user asks you to do something that requires code or file access, let them know they need to ask you to work on their project.",
         ]
+        if (cfg.experimental?.always_include_env) {
+          if (cfg.experimental?.always_include_env_minimal !== false) system.push(minimalEnv())
+          else system.push(...(await SystemPrompt.environment(model)))
+        }
+        const hint = compactAgentPrompt(agent)
+        if (hint) system.push(`Agent guidance (compact): ${hint}`)
+        if (agent.description?.trim()) system.push(`Agent role: ${agent.description.trim().slice(0, 180)}`)
       } else {
         // Full or minimal: build the complete system prompt
         system = await SystemPromptCache.getParts({
@@ -809,6 +846,9 @@ export namespace SessionPrompt {
       fs.mkdir(debugDir, { recursive: true })
         .then(() => fs.appendFile(debugFile, JSON.stringify(record) + "\n"))
         .catch(() => {})
+
+      processor.message.toolRouterActiveIds = Object.keys(tools).sort()
+      await Session.updateMessage(processor.message)
 
       const result = await processor.process({
         user: lastUser,
@@ -1131,6 +1171,10 @@ export namespace SessionPrompt {
       }),
     )
     const routeStart = performance.now()
+    const stickyToolIds =
+      cfg.experimental?.tool_router?.sticky_previous_turn_tools === false
+        ? undefined
+        : stickyToolIdsFromMessages(input.messages)
     const routed = await ToolRouter.apply({
       tools: afterTier,
       registryTools: tools,
@@ -1141,6 +1185,7 @@ export namespace SessionPrompt {
       cfg,
       mcpIds,
       skip: input.skipToolRouter ?? false,
+      stickyToolIds,
     })
     if (trace) {
       log.info("resolveTools.router", {

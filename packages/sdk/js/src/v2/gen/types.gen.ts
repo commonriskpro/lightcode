@@ -605,6 +605,7 @@ export type AssistantMessage = {
   structured?: unknown
   variant?: string
   finish?: string
+  toolRouterActiveIds?: Array<string>
 }
 
 export type Message = UserMessage | AssistantMessage
@@ -1615,6 +1616,14 @@ export type Config = {
      */
     openTelemetry?: boolean
     /**
+     * When true, inject environment metadata in all context tiers, including conversation mode.
+     */
+    always_include_env?: boolean
+    /**
+     * When always_include_env is true: use compact env block (cwd/root/git/platform/date) instead of full environment payload.
+     */
+    always_include_env_minimal?: boolean
+    /**
      * Tools that should only be available to primary agents.
      */
     primary_tools?: Array<string>
@@ -1642,6 +1651,10 @@ export type Config = {
      * Same as OPENCODE_DISABLE_GLOBAL_DOC_READS: no global instruction file merge from config home paths, and discourage proactive reads of README.md, CLAUDE.md, package.json.
      */
     disable_global_doc_reads?: boolean
+    /**
+     * Rewrite assistant text that looks like pseudo-XML tool calls (<tool_call>, <function=name>) into real tool-call stream parts. auto: enable for lmstudio provider only; off: never; on: always.
+     */
+    repair_pseudo_xml_tool_calls?: "auto" | "on" | "off"
     tool_router?: {
       /**
        * Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md).
@@ -1667,6 +1680,22 @@ export type Config = {
        * Max extra builtin tools to add from embedding similarity.
        */
       local_embed_top_k?: number
+      /**
+       * When true with hybrid + local embeddings: pick extra tools using automatic score ratio + token budget (A+C) instead of fixed local_embed_top_k.
+       */
+      auto_tool_selection?: boolean
+      /**
+       * Automatic tool selection ratio vs best score (A): keep candidates with score >= best * ratio before budget trim.
+       */
+      auto_score_ratio?: number
+      /**
+       * Approx token budget for embed-selected extra tools (C). The router estimates tokens from per-tool embed phrase length.
+       */
+      auto_token_budget?: number
+      /**
+       * Hard safety cap for final routed tool count when automatic tool selection is enabled.
+       */
+      max_tools_cap?: number
       /**
        * Minimum cosine similarity (normalized vectors) to attach a candidate tool.
        */
@@ -1724,6 +1753,10 @@ export type Config = {
        * When true (default), append a short system line with offline-router intent hints and the tool ids attached this turn.
        */
       inject_prompt?: boolean
+      /**
+       * When true (default), merge tool ids from the previous assistant message into the current router output so tools are not dropped between turns; tool defs often hit prompt cache, so cost is low.
+       */
+      sticky_previous_turn_tools?: boolean
     }
   }
 }

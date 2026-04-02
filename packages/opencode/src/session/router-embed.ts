@@ -26,15 +26,6 @@ function useIpc() {
   )
 }
 
-function shouldFallback(err: unknown) {
-  const msg = String(err)
-  return (
-    msg.includes("router_embed_ipc_no_child") ||
-    msg.includes("router_embed_root_missing") ||
-    msg.includes("router_embed_worker_missing")
-  )
-}
-
 export async function classifyIntentEmbed(
   input: Parameters<typeof classifyIntentEmbedImpl>[0],
 ): ReturnType<typeof classifyIntentEmbedImpl> {
@@ -42,8 +33,8 @@ export async function classifyIntentEmbed(
     try {
       return await ipc.classifyIntentEmbed(input)
     } catch (err) {
-      if (!shouldFallback(err)) throw err
-      log.warn("router_embed_ipc_fallback_inprocess", { method: "classifyIntentEmbed", message: String(err) })
+      log.error("router_embed_ipc_failed", { method: "classifyIntentEmbed", message: String(err) })
+      throw err
     }
   }
   return classifyIntentEmbedImpl(input)
@@ -56,8 +47,8 @@ export async function augmentMatchedEmbed(
     try {
       return await ipc.augmentMatchedEmbed(input)
     } catch (err) {
-      if (!shouldFallback(err)) throw err
-      log.warn("router_embed_ipc_fallback_inprocess", { method: "augmentMatchedEmbed", message: String(err) })
+      log.error("router_embed_ipc_failed", { method: "augmentMatchedEmbed", message: String(err) })
+      throw err
     }
   }
   return augmentMatchedEmbedImpl(input)

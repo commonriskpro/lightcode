@@ -1078,6 +1078,16 @@ export namespace Config {
             .boolean()
             .optional()
             .describe("Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)"),
+          always_include_env: z
+            .boolean()
+            .optional()
+            .describe("When true, inject environment metadata in all context tiers, including conversation mode."),
+          always_include_env_minimal: z
+            .boolean()
+            .optional()
+            .describe(
+              "When always_include_env is true: use compact env block (cwd/root/git/platform/date) instead of full environment payload.",
+            ),
           primary_tools: z
             .array(z.string())
             .optional()
@@ -1278,6 +1288,13 @@ export namespace Config {
                 .default(true)
                 .describe(
                   "When true (default), append a short system line with offline-router intent hints and the tool ids attached this turn.",
+                ),
+              sticky_previous_turn_tools: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe(
+                  "When true (default), merge tool ids from the previous assistant message into the current router output so tools are not dropped between turns; tool defs often hit prompt cache, so cost is low.",
                 ),
             })
             .optional(),

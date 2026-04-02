@@ -444,6 +444,8 @@ export namespace MessageV2 {
     structured: z.any().optional(),
     variant: z.string().optional(),
     finish: z.string().optional(),
+    /** Tool ids attached to the last model request (offline router output); next turn merges these so definitions stay aligned with prompt cache. */
+    toolRouterActiveIds: z.array(z.string()).optional(),
   }).meta({
     ref: "AssistantMessage",
   })

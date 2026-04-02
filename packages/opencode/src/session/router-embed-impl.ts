@@ -345,31 +345,25 @@ export async function classifyIntentEmbed(input: {
 }): Promise<{ label: string; score: number; added: string[] } | undefined> {
   const trimmed = input.userText.trim()
   if (trimmed.length < 2) return undefined
-
-  try {
-    const pipe = await getPipe(input.model)
-    const userVec = await embed(pipe, trimmed)
-    let best: { label: string; score: number; add: string[] } | undefined
-    for (const p of input.prototypes) {
-      let maxPhrase = -1
-      for (const phrase of p.phrases) {
-        const v = await vecForPhrase(pipe, input.model, p.label, phrase)
-        const s = dot(userVec, v)
-        if (s > maxPhrase) maxPhrase = s
-      }
-      if (maxPhrase < 0) continue
-      if (!best || maxPhrase > best.score) best = { label: p.label, score: maxPhrase, add: p.add }
+  const pipe = await getPipe(input.model)
+  const userVec = await embed(pipe, trimmed)
+  let best: { label: string; score: number; add: string[] } | undefined
+  for (const p of input.prototypes) {
+    let maxPhrase = -1
+    for (const phrase of p.phrases) {
+      const v = await vecForPhrase(pipe, input.model, p.label, phrase)
+      const s = dot(userVec, v)
+      if (s > maxPhrase) maxPhrase = s
     }
-    if (!best || best.score < input.minScore) {
-      log.info("router_intent_embed", { hit: false, top: best?.score })
-      return undefined
-    }
-    log.info("router_intent_embed", { hit: true, label: best.label, score: best.score.toFixed(3) })
-    return { label: best.label, score: best.score, added: best.add }
-  } catch (e) {
-    log.warn("router_intent_embed_failed", { message: String(e) })
+    if (maxPhrase < 0) continue
+    if (!best || maxPhrase > best.score) best = { label: p.label, score: maxPhrase, add: p.add }
+  }
+  if (!best || best.score < input.minScore) {
+    log.info("router_intent_embed", { hit: false, top: best?.score })
     return undefined
   }
+  log.info("router_intent_embed", { hit: true, label: best.label, score: best.score.toFixed(3) })
+  return { label: best.label, score: best.score, added: best.add }
 }
 
 export async function augmentMatchedEmbed(input: {
@@ -393,32 +387,27 @@ export async function augmentMatchedEmbed(input: {
     return undefined
   }
 
-  try {
-    const pipe = await getPipe(input.model)
-    const userVec = await embed(pipe, input.userText)
-    const scored: { id: string; score: number }[] = []
-    for (const id of candidates) {
-      const phrase = input.phraseFor(id)
-      const tvec = await toolVector(pipe, input.model, id, phrase)
-      const score = dot(userVec, tvec)
-      scored.push({ id, score })
-    }
-    scored.sort((a, b) => b.score - a.score)
-    const picked = pickTools(scored, input)
-    if (picked.length === 0) {
-      log.info("router_embed", { added: [], top: scored.slice(0, 3) })
-      return undefined
-    }
-    const note = picked.map((id) => {
-      const s = scored.find((x) => x.id === id)?.score ?? 0
-      return `${id}:${s.toFixed(2)}`
-    })
-    log.info("router_embed", { added: picked, top: scored.slice(0, 5) })
-    return { added: picked, note: note.join(",") }
-  } catch (e) {
-    log.warn("router_embed_failed", { message: String(e) })
+  const pipe = await getPipe(input.model)
+  const userVec = await embed(pipe, input.userText)
+  const scored: { id: string; score: number }[] = []
+  for (const id of candidates) {
+    const phrase = input.phraseFor(id)
+    const tvec = await toolVector(pipe, input.model, id, phrase)
+    const score = dot(userVec, tvec)
+    scored.push({ id, score })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  const picked = pickTools(scored, input)
+  if (picked.length === 0) {
+    log.info("router_embed", { added: [], top: scored.slice(0, 3) })
     return undefined
   }
+  const note = picked.map((id) => {
+    const s = scored.find((x) => x.id === id)?.score ?? 0
+    return `${id}:${s.toFixed(2)}`
+  })
+  log.info("router_embed", { added: picked, top: scored.slice(0, 5) })
+  return { added: picked, note: note.join(",") }
 }
 
 function tok(text: string) {

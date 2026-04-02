@@ -11,7 +11,6 @@ import {
   DEFAULT_LOCAL_EMBED_MODEL,
   ROUTER_INTENT_PROTOTYPES,
 } from "./router-embed"
-import { augmentMatchedTools } from "./router-llm"
 import { threadHasAssistant } from "./wire-tier"
 
 const log = Log.create({ service: "tool-router" })
@@ -137,6 +136,11 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     label: "web/url",
   },
   {
+    re: /\b(screenshots?|fotos?|im[aá]genes?|miniaturas?|thumbnails?|photos?|pics?|capturas?|mostrar\s+(?:unas?\s+)?(?:fotos?|im[aá]genes?|capturas?))\b/i,
+    add: ["webfetch", "websearch", "read"],
+    label: "web/screenshot-media",
+  },
+  {
     re: /\b(http|curl|fetch|url|website|web\s+search|internet|navegador|wikipedia|búsqueda\s+web|en\s+internet|investigar\s+sobre|investigaci[oó]n\s+sobre|investigaci[oó]n\s+de|investigues\s+sobre|investigue\s+sobre|buscar\s+informaci[oó]n\s+sobre|buscar\s+informaci[oó]n\s+de|busca\s+informaci[oó]n\s+sobre|busca\s+informaci[oó]n\s+de|informaci[oó]n\s+sobre|producto\s+externo|software\s+externo|herramienta\s+externa|documentaci[oó]n\s+pública|documentaci[oó]n\s+oficial|mercado\s+externo|research\s+(on|about|into)|look\s+up\s+online|third[- ]party|external\s+(product|software|tool|vendor))\b/i,
     add: ["webfetch", "websearch", "read"],
     label: "web/research",
@@ -203,13 +207,36 @@ function orderIds(base: string[], extra: Set<string>, available: Set<string>, ma
   return out
 }
 
-function routerMode(cfg: Config.Info): "rules" | "hybrid" {
-  const e = Flag.OPENCODE_TOOL_ROUTER_MODE
-  if (e === "hybrid") return "hybrid"
-  if (e === "rules") return "rules"
-  const m = cfg.experimental?.tool_router?.mode
-  if (m === "hybrid") return "hybrid"
-  return "rules"
+function orderMatched(matched: Set<string>, available: Set<string>, max: number) {
+  const out: string[] = []
+  for (const id of matched) {
+    if (out.length >= max) break
+    if (available.has(id) && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/** Last completed assistant message may store which tool ids were sent to the model; carry them forward for cache-aligned tool defs. */
+export function stickyToolIdsFromMessages(messages: MessageV2.WithParts[]): string[] | undefined {
+  const last = messages.findLast((m) => m.info.role === "assistant")
+  if (!last || last.info.role !== "assistant") return
+  const ids = last.info.toolRouterActiveIds
+  if (!ids?.length) return
+  return ids
+}
+
+function trimToolMap(out: Record<string, AITool>, max: number, sticky: Set<string>) {
+  const keys = Object.keys(out)
+  if (keys.length <= max) return out
+  const stickyKeys = keys.filter((k) => sticky.has(k))
+  const rest = keys.filter((k) => !sticky.has(k))
+  const restKeep = rest.slice(0, Math.max(0, max - stickyKeys.length))
+  const keep = new Set([...stickyKeys, ...restKeep])
+  const next: Record<string, AITool> = {}
+  for (const id of keys) {
+    if (keep.has(id)) next[id] = out[id]!
+  }
+  return next
 }
 
 function promptHint(input: {
@@ -220,15 +247,13 @@ function promptHint(input: {
   allowed?: Set<string>
   availableKeys: Set<string>
 }) {
-  const intent = input.labels.length
-    ? input.labels.join(", ")
-    : "base only (no intent embed or keyword rule matched)"
+  const intent = input.labels.length ? input.labels.join(", ") : "no xenova intent/tool match"
   const lines = [
     "## Offline tool router",
     input.additive
       ? "Mode: additive (minimal tier + rule matches merged from full registry)."
       : "Mode: subtractive (subset of attached tools).",
-    `Intent from the last user message (keyword rules): ${intent}.`,
+    `Intent from the last user message (xenova): ${intent}.`,
     `Tools attached for this request: ${input.ids.sort().join(", ")}.`,
     "Use only these tools; if something is missing, say so and suggest rephrasing the request.",
   ]
@@ -263,6 +288,8 @@ export namespace ToolRouter {
     cfg: Config.Info
     mcpIds: Set<string>
     skip: boolean
+    /** Tool ids from the previous assistant message (`toolRouterActiveIds`); merged so the model does not lose tools between turns. */
+    stickyToolIds?: string[]
   }
 
   export type Result = {
@@ -308,15 +335,13 @@ export namespace ToolRouter {
     const hasAssistant = threadHasAssistant(input.messages)
     const text = routerUserText(input.messages)
 
-    const mode = routerMode(input.cfg)
     const trLlm = input.cfg.experimental?.tool_router
-    const useEmbed =
-      trLlm?.local_embed === true || Boolean(trLlm?.local_embed_model && trLlm.local_embed_model.trim().length > 0)
+    const useEmbed = true
     const embedModel =
       process.env.OPENCODE_TOOL_ROUTER_EMBED_MODEL?.trim() ||
       trLlm?.local_embed_model?.trim() ||
       DEFAULT_LOCAL_EMBED_MODEL
-    const hybridIntent = mode === "hybrid" && useEmbed && trLlm?.local_intent_embed === true
+    const hybridIntent = trLlm?.local_intent_embed === true
 
     let intentHit: Awaited<ReturnType<typeof classifyIntentEmbed>> | undefined
 
@@ -366,13 +391,18 @@ export namespace ToolRouter {
     const autoPick = trLlm?.auto_tool_selection === true
     const max = autoPick ? (trLlm?.max_tools_cap ?? 100) : (tr?.max_tools ?? 12)
     const mcpAlways = tr?.mcp_always_include !== false
+    const stickyList =
+      (tr?.sticky_previous_turn_tools !== false ? input.stickyToolIds : undefined)?.filter((id) =>
+        input.allowedToolIds ? input.allowedToolIds.has(id) : true,
+      ) ?? []
+    const stickySet = new Set(stickyList)
 
     const matched = new Set<string>()
     const intentLabels: string[] = []
 
     const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
 
-    const keywordRules = tr?.keyword_rules === true
+    const keywordRules = false
 
     if (hybridIntent && intentHit) {
       for (const id of intentHit.added) {
@@ -392,67 +422,43 @@ export namespace ToolRouter {
 
     const labels = [...intentLabels, ...ruleLabels]
 
-    const noMatchFb = !routerOnly && tr?.no_match_fallback !== false
-    const fbTools = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]
-    if (ruleLabels.length === 0 && intentLabels.length === 0 && noMatchFb) {
-      labels.push("fallback/no_match")
-      for (const id of fbTools) matched.add(id)
-    }
-
     let hybridAugmented = false
-    if (mode === "hybrid") {
-      if (useEmbed) {
-        const aug = await augmentMatchedEmbed({
-          userText: text,
-          matched,
-          allowedBuiltin: builtinAvailable,
-          model: embedModel,
-          topK: trLlm?.local_embed_top_k ?? 4,
-          minScore: trLlm?.local_embed_min_score ?? 0.32,
-          auto: autoPick
-            ? {
-                enabled: true,
-                ratio: trLlm?.auto_score_ratio ?? 0.88,
-                tokenBudget: trLlm?.auto_token_budget ?? 1_200,
-                maxCap: trLlm?.max_tools_cap ?? 100,
-              }
-            : undefined,
-          phraseFor: (id) => embedPhraseFor(input, id),
-        })
-        if (aug?.added.length) {
-          hybridAugmented = true
-          for (const id of aug.added) matched.add(id)
-          labels.push(aug.note ? `embed:${aug.note.slice(0, 100)}` : "embed/extra")
-        }
-        if (autoPick) {
-          log.info("router_embed_auto_policy", {
-            added: aug?.added.length ?? 0,
+    const aug = await augmentMatchedEmbed({
+      userText: text,
+      matched,
+      allowedBuiltin: builtinAvailable,
+      model: embedModel,
+      topK: trLlm?.local_embed_top_k ?? 4,
+      minScore: trLlm?.local_embed_min_score ?? 0.32,
+      auto: autoPick
+        ? {
+            enabled: true,
             ratio: trLlm?.auto_score_ratio ?? 0.88,
-            token_budget: trLlm?.auto_token_budget ?? 1_200,
-            max_cap: trLlm?.max_tools_cap ?? 100,
-          })
-        }
-      } else {
-        const aug = await augmentMatchedTools({
-          cfg: input.cfg,
-          sessionModel: input.model,
-          userText: text,
-          matched,
-          allowedBuiltin: builtinAvailable,
-          timeoutMs: trLlm?.llm_timeout_ms ?? 12_000,
-        })
-        if (aug?.added.length) {
-          hybridAugmented = true
-          for (const id of aug.added) matched.add(id)
-          labels.push(aug.note ? `llm:${aug.note.slice(0, 80)}` : "llm/extra")
-        }
-      }
+            tokenBudget: trLlm?.auto_token_budget ?? 1_200,
+            maxCap: trLlm?.max_tools_cap ?? 100,
+          }
+        : undefined,
+      phraseFor: (id) => embedPhraseFor(input, id),
+    })
+    if (aug?.added.length) {
+      hybridAugmented = true
+      for (const id of aug.added) matched.add(id)
+      labels.push(aug.note ? `embed:${aug.note.slice(0, 100)}` : "embed/extra")
+    }
+    if (autoPick) {
+      log.info("router_embed_auto_policy", {
+        added: aug?.added.length ?? 0,
+        ratio: trLlm?.auto_score_ratio ?? 0.88,
+        token_budget: trLlm?.auto_token_budget ?? 1_200,
+        max_cap: trLlm?.max_tools_cap ?? 100,
+      })
     }
 
     const hadRouterSignal = intentLabels.length > 0 || ruleLabels.length > 0 || hybridAugmented
-    const fromRules = orderIds(base, matched, builtinAvailable, max)
-    // Additive: keep every tool from the tier-limited map (e.g. minimal + bash for sdd-init), then rule matches — otherwise rule orderIds can drop bash.
-    const ordered = additive ? [...new Set([...Object.keys(input.tools), ...fromRules])].slice(0, max) : fromRules
+    // Xenova is the direct decision engine: rank/order by embed-selected ids.
+    // Keep base tools only if explicitly configured and xenova produced no match.
+    const fromEmbed = orderMatched(matched, builtinAvailable, max)
+    const ordered = fromEmbed.length > 0 ? fromEmbed : orderIds(base, new Set(), builtinAvailable, max)
 
     // Tools matched by rules (or embed-only path: everything in `matched`) keep full descriptions; base-only tools get slim.
     const ruleMatched = new Set<string>()
@@ -466,7 +472,7 @@ export namespace ToolRouter {
       for (const id of matched) ruleMatched.add(id)
     }
 
-    const out: Record<string, AITool> = {}
+    let out: Record<string, AITool> = {}
     for (const id of ordered) {
       const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
       if (!t) continue
@@ -482,7 +488,7 @@ export namespace ToolRouter {
     // MCP tools whose id is matched by a rule are included;
     // otherwise they are only included on fallback (no rule matched) or when mcp_always_include is true.
     const mcpFilter = tr?.mcp_filter_by_intent !== false
-    const rulesMatched = labels.length > 0 && labels[0] !== "fallback/no_match"
+    const rulesMatched = matched.size > 0
     if (mcpAlways && (!routerOnly || hadRouterSignal)) {
       for (const id of input.mcpIds) {
         const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
@@ -499,39 +505,32 @@ export namespace ToolRouter {
       }
     }
 
-    if (Object.keys(out).length === 0 && Object.keys(input.tools).length > 0) {
-      if (routerOnly) {
-        const baseOnly: Record<string, AITool> = {}
-        for (const id of base) {
-          const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
-          if (!t) continue
-          if (!ruleMatched.has(id) && SLIM_DESC[id] && t.description !== SLIM_DESC[id]) {
-            baseOnly[id] = { ...t, description: SLIM_DESC[id] }
-          } else {
-            baseOnly[id] = t
-          }
-        }
-        if (Object.keys(baseOnly).length > 0) {
-          const injectEarly = tr?.inject_prompt !== false
-          const ids = Object.keys(baseOnly).sort()
-          const hint = injectEarly ? promptHint({ ids, labels, additive, matched, allowed, availableKeys }) : undefined
-          log.info("tool_router", {
-            tier: "minimal",
-            selected: ids,
-            reason: "router_only_base_only",
-            labels,
-            userPreview: text.slice(0, 120),
-            hasAssistant,
-            tokens: { toolCount: ids.length },
-            duration_ms: ms(),
-          })
-          return { tools: baseOnly, promptHint: hint, contextTier: "minimal" }
-        }
+    // Carry-over from previous turn: keep tool defs aligned with prompt cache (sticky ids are cheap to retain).
+    if (stickyList.length > 0) {
+      for (const id of stickyList) {
+        if (out[id]) continue
+        const t = additive ? (input.tools[id] ?? input.registryTools?.[id]) : input.tools[id]
+        if (!t) continue
+        out[id] = t
       }
-      const ids = Object.keys(input.tools).sort()
-      const hint = `## Offline tool router\nMode: empty passthrough.\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
-      log.warn("tool_router_empty_passthrough")
-      return { tools: input.tools, promptHint: hint, contextTier: "full" }
+      if (Object.keys(out).length > max) {
+        out = trimToolMap(out, max, stickySet)
+      }
+    }
+
+    if (Object.keys(out).length === 0) {
+      const hint = tr?.inject_prompt !== false ? promptHint({ ids: [], labels, additive, matched, allowed, availableKeys }) : undefined
+      log.info("tool_router", {
+        tier: "minimal",
+        selected: [],
+        reason: "xenova_no_match",
+        labels,
+        userPreview: text.slice(0, 120),
+        hasAssistant,
+        tokens: { toolCount: 0, toolTokens: 0, promptHintTokens: hint ? estimateTokens(hint) : 0 },
+        duration_ms: ms(),
+      })
+      return { tools: {}, promptHint: hint, contextTier: "minimal" }
     }
 
     const inject = tr?.inject_prompt !== false
@@ -552,9 +551,9 @@ export namespace ToolRouter {
     log.info("tool_router", {
       tier: labels.length === 0 ? "minimal" : "full",
       selected: ids.sort(),
-      builtin: fromRules.sort(),
+      builtin: ordered.slice().sort(),
       mcp: mcpAlways ? [...input.mcpIds].filter((id) => out[id]).sort() : [],
-      reason: additive ? "additive" : mode === "hybrid" ? "hybrid" : "rules",
+      reason: additive ? "additive" : "xenova",
       labels,
       userPreview: text.slice(0, 120),
       hasAssistant,

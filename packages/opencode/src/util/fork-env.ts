@@ -18,18 +18,27 @@ export function repoRootFromExecPath(): string | undefined {
   }
 }
 
+function repoRootFromForkFile(): string | undefined {
+  let dir = process.cwd()
+  for (let i = 0; i < 32; i++) {
+    if (existsSync(path.join(dir, "fork.opencode.env"))) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) return
+    dir = parent
+  }
+  return
+}
+
 function repoRootForForkEnv(): string | undefined {
   const ex = process.env.OPENCODE_REPO_ROOT
   if (ex) return path.resolve(ex)
   const fromExec = repoRootFromExecPath()
   if (fromExec) return fromExec
   try {
-    const cwd = process.cwd()
-    if (existsSync(path.join(cwd, "fork.opencode.env"))) return cwd
+    return repoRootFromForkFile()
   } catch {
     return
   }
-  return
 }
 
 function homeSafe() {

@@ -93,6 +93,7 @@
     "@opencode-ai/sdk": "workspace:*",
     "bash-language-server": "5.6.0",
     "opencode-ai": "0.0.0-dev-202603291941",
+    "opencode-lmstudio": "0.3.0",
     "typescript": "catalog:",
     "yaml-language-server": "1.21.0"
   },

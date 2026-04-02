@@ -82,7 +82,11 @@ export namespace LLM {
         .tag("small", (input.small ?? false).toString())
         .tag("agent", input.agent.name)
         .tag("mode", input.agent.mode)
-      const includeAgentPrompt = input.contextTier !== "conversation" || Flag.OPENCODE_ALWAYS_FULL_AGENT_PROMPT
+      const deferHeavy =
+        !Flag.OPENCODE_ALWAYS_FULL_AGENT_PROMPT &&
+        input.contextTier !== "full" &&
+        Boolean((input.agent.options as Record<string, unknown> | undefined)?.defer_heavy_prompt)
+      const includeAgentPrompt = !deferHeavy && (input.contextTier !== "conversation" || Flag.OPENCODE_ALWAYS_FULL_AGENT_PROMPT)
       const includeUserSystem =
         Boolean(input.user.system) && (input.contextTier !== "conversation" || Flag.OPENCODE_ALWAYS_FULL_AGENT_PROMPT)
 
@@ -306,6 +310,11 @@ export namespace LLM {
         async experimental_repairToolCall(opts) {
           const tc = opts.toolCall
           const lower = tc.toolName.toLowerCase()
+          // Prompts say "delegate"; native tool is `task`. BackgroundAgents plugin registers `delegate` when enabled — keep that name if present.
+          if (lower === "delegate" && tools.task && !tools.delegate) {
+            l.info("repairing tool call", { tool: tc.toolName, repaired: "task" })
+            return { ...tc, toolName: "task" }
+          }
           if (lower !== tc.toolName && tools[lower]) {
             l.info("repairing tool call", {
               tool: tc.toolName,

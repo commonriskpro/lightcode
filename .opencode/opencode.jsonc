@@ -1,8 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // Router offline aditivo: tier minimal en T1 + reglas añaden tools desde el registro completo; max_tools 100.
+  // Tier minimal + tool_router (hybrid/Xenova). additive=false: no arrastrar el mapa completo por defecto.
   // wire-tier: packages/opencode/src/session/wire-tier.ts
-  "plugin": ["../gentle-ai/plugins/skill-registry-plugin.ts", "../gentle-ai/plugins/background-agents.ts"],
+  "plugin": [
+    "../gentle-ai/plugins/skill-registry-plugin.ts",
+    "../gentle-ai/plugins/background-agents.ts",
+    "opencode-lmstudio@latest",
+  ],
   "default_agent": "build",
   "skills": {
     "paths": ["gentle-ai/skills"],
@@ -10,6 +14,14 @@
   "provider": {
     "opencode": {
       "options": {},
+    },
+    // LM Studio en red local (servidor OpenAI-compatible en :1234)
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LM Studio (LAN)",
+      "options": {
+        "baseURL": "http://192.168.1.183:1234/v1",
+      },
     },
   },
   "permission": {
@@ -37,12 +49,30 @@
   "tools": {
     "github-triage": false,
     "github-pr-search": false,
+    "delegate": false,
+    "delegation_read": false,
+    "delegation_list": false,
   },
   "agent": {
+    // compact_strategy explicit|smart + compact_prompt: guía corta uniforme (Role/Goal/Use/Guardrails).
+    // defer_heavy_prompt (sdd-*): en tier no-full omite el prompt largo; carga con read/skill cuando haga falta.
+    "build": {
+      "mode": "primary",
+      "prompt": "When delegation helps, use the task tool and prefer agent \"explore\" for repository exploration and information gathering. Do not emit textual <invoke name=\"delegate\"> blocks.",
+      "options": {
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: Primary coding assistant for this workspace.\nGoal: Solve the user request end-to-end with minimal tool/context cost.\nUse: Prefer direct tools first; delegate with task->explore only when broader investigation is needed.\nGuardrails: Do not invent capabilities; if tools are missing, state it and propose the minimal next action.",
+      },
+    },
     "sdd-orchestrator": {
       "mode": "primary",
       "description": "Agent Teams Orchestrator - coordinates sub-agents, never does work inline",
       "prompt": "{file:../gentle-ai/AGENTS.md}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD coordinator; orchestrates work across sdd-* subagents.\nGoal: Convert user intent into propose/spec/design/tasks/apply/verify/archive flow.\nUse: Delegate via task to sdd-* agents; keep orchestration state and handoffs clear.\nGuardrails: Do not implement inline unless explicitly required; load heavy SDD docs only when needed.",
+      },
       "permission": {
         "task": {
           "*": "deny",
@@ -63,81 +93,135 @@
       "hidden": true,
       "description": "Bootstrap SDD context and project configuration",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-init.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-init) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-init; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-explore": {
       "mode": "subagent",
       "hidden": true,
       "description": "Investigate codebase and think through ideas",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-explore.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-explore) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-explore; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-propose": {
       "mode": "subagent",
       "hidden": true,
       "description": "Create change proposals from explorations",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-propose.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-propose) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-propose; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-spec": {
       "mode": "subagent",
       "hidden": true,
       "description": "Write detailed specifications from proposals",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-spec.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-spec) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-spec; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-design": {
       "mode": "subagent",
       "hidden": true,
       "description": "Create technical design from proposals",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-design.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-design) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-design; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-tasks": {
       "mode": "subagent",
       "hidden": true,
       "description": "Break down specs and designs into implementation tasks",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-tasks.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-tasks) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-tasks; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-apply": {
       "mode": "subagent",
       "hidden": true,
       "description": "Implement code changes from task definitions",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-apply.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-apply) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-apply; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-verify": {
       "mode": "subagent",
       "hidden": true,
       "description": "Validate implementation against specs",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-verify.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-verify) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-verify; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
     "sdd-archive": {
       "mode": "subagent",
       "hidden": true,
       "description": "Archive completed change artifacts",
       "prompt": "{file:../packages/opencode/src/agent/prompt/sdd-archive.txt}",
+      "options": {
+        "defer_heavy_prompt": true,
+        "compact_strategy": "explicit",
+        "compact_prompt": "Role: SDD subagent (sdd-archive) specialized for one phase.\nGoal: Complete only this phase output with high signal and low token usage.\nUse: Execute phase-specific actions; read referenced heavy docs/files only on demand.\nGuardrails: Stay in scope for sdd-archive; avoid cross-phase drift and unnecessary tool calls.",
+      },
     },
   },
   "experimental": {
     "initial_tool_tier": "minimal",
-    // Tier mínimo + router en todos los turnos (sin abrir el mapa completo tras el 1.er assistant). Requiere additive.
+    // Tier mínimo + router en todos los turnos (sin abrir el mapa completo tras el 1.er assistant).
     "minimal_tier_all_turns": true,
     // true → logs debug-request (toolsBytes, systemBytes, promptBytes)
     "debug_request": true,
+    // Env en conversation tier: A=siempre incluir; C=flag para apagar rápido. minimal=true → bloque corto (cwd/root/git/platform/fecha).
+    "always_include_env": true,
+    "always_include_env_minimal": true,
     "tool_router": {
       "enabled": true,
       // router_only: sin no_match glob-grep; MCP solo con señal embed/intent. Charla: tier conversation vía Xenova (ROUTER_INTENT_PROTOTYPES). Ver tool-router.ts
+      // base_tools: si solo ["read"], un turno sin regla/embed → solo read; el modelo puede intentar webfetch y falla. Incluye web* para URLs/imágenes/páginas.
       "router_only": true,
       "no_match_fallback": false,
       // hybrid + Xenova: intención (prototipos) + similitud tool↔mensaje; sin reglas regex ni LLM remoto del router.
       "mode": "hybrid",
-      "keyword_rules": false,
+      "keyword_rules": true,
       "local_embed": true,
       "local_intent_embed": true,
       "local_embed_model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+      // Auto A+C: ratio sobre mejor score + presupuesto de tokens (si auto_tool_selection=true, top_k queda como fallback).
+      "auto_tool_selection": true,
+      "auto_score_ratio": 0.84,
+      "auto_token_budget": 1600,
+      "max_tools_cap": 100,
       "local_embed_top_k": 4,
-      "local_embed_min_score": 0.32,
-      "additive": true,
+      "local_embed_min_score": 0.26,
+      "additive": false,
       "apply_after_first_assistant": false,
       "inject_prompt": true,
-      "base_tools": ["read", "task", "skill", "grep", "glob"],
+      "base_tools": ["read", "webfetch", "websearch"],
       "max_tools": 100,
-      "mcp_always_include": true,
+      "mcp_always_include": false,
     },
   },
 }

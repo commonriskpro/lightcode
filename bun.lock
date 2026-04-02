@@ -11,6 +11,7 @@
         "@opencode-ai/sdk": "workspace:*",
         "bash-language-server": "5.6.0",
         "opencode-ai": "0.0.0-dev-202603291941",
+        "opencode-lmstudio": "0.3.0",
         "typescript": "catalog:",
         "yaml-language-server": "1.21.0",
       },
@@ -3887,6 +3888,8 @@
     "opencode-linux-x64-baseline-musl": ["opencode-linux-x64-baseline-musl@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "x64" }, "sha512-9p5ZMDjRUQravAPmVQd6a3waYCx/8uA+dUqwInVvLbvbge7Wc1zRdzReI4P7lfIvQbRYrKs0wujwgmoWZ5zfdg=="],
 
     "opencode-linux-x64-musl": ["opencode-linux-x64-musl@0.0.0-dev-202603291941", "", { "os": "linux", "cpu": "x64" }, "sha512-jxMc/xy0T9pWUBh3/G1RWXUiEWUdJm10Hgzm2oSF6O2ztazY7aaiO+Uo1C0EySJbSVQKcXxhaRKW/hQCjKndAw=="],
+
+    "opencode-lmstudio": ["opencode-lmstudio@0.3.0", "", { "dependencies": { "@opencode-ai/plugin": "^1.0.166" } }, "sha512-02jMGle3NBU3DeXDFlLqAvqbhZuREPhLoHf4Tp1lA63ZILhCXICLUc1Fk0TwQbEg2VhgwvF1hG1PllfWBnOQ9A=="],
 
     "opencode-poe-auth": ["opencode-poe-auth@0.0.1", "", { "dependencies": { "open": "^10.0.0", "poe-oauth": "*" }, "peerDependencies": { "@opencode-ai/plugin": "*" } }, "sha512-cXqTlS6AXHzo1oBdosnxbT47ZJEZ9WXn050X8Re6wZ1vaNnTpB/l2fMQt90evT7RBK0fB8UjXQUDMKyd7bbiqg=="],
 

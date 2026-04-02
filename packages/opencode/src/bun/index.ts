@@ -84,6 +84,7 @@ export namespace BunProc {
       "--exact",
       // TODO: get rid of this case (see: https://github.com/oven-sh/bun/issues/19936)
       ...(proxied() || process.env.CI ? ["--no-cache"] : []),
+      ...(process.env.OPENCODE_PLUGIN_INSTALL_IGNORE_SCRIPTS === "1" ? ["--ignore-scripts"] : []),
       "--cwd",
       Global.Path.cache,
       pkg + "@" + version,
