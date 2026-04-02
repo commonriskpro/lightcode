@@ -4,7 +4,7 @@
 
 Encontrar la **mejor combinación de opciones** bajo `experimental.tool_router.exact_match` que maximice el **acierto exacto** del router offline (embeddings Xenova): que el conjunto de herramientas elegidas coincida **exactamente** con el conjunto esperado para cada prompt de prueba.
 
-No buscamos solo “más herramientas correctas” sueltas: la métrica principal es **exact match** por caso (mismo multiset de ids; en la práctica el benchmark compara conjuntos ordenados como en el script). Si empatan varias combinaciones en exactitud, el script usa **tasa de exactos** y luego **F1 / precisión** como desempate (ver salida JSON).
+No buscamos solo “más herramientas correctas” sueltas: la métrica principal es **exact match** por caso (mismo conjunto de tool ids que el esperado). Si empatan varias combinaciones en exactitud, el script usa **tasa de exactos** y luego **F1 / precisión** como desempate (ver salida JSON).
 
 ## Contexto
 
@@ -28,7 +28,7 @@ El índice `bits` (0–63) codifica esos flags en el script de sweep; el campo `
 
 - Prompts sintéticos fijos + expansión hasta `CASES` (por defecto 300, máximo 500 en el script).
 - Por cada combinación se llama a `ToolRouter.apply` con el mismo perfil de router (embed local, mismos `base_tools`, etc.).
-- Se calculan coincidencias exactas por fila, **exactRate** = exactos / casos, y métricas tipo precision/recall/F1 sobre tp/fp/fn del multiset.
+- Se calculan coincidencias exactas por fila, **exactRate** = exactos / casos, y precision/recall/F1 derivados de tp/fp/fn por fila frente al conjunto esperado.
 - La salida ordena combinaciones priorizando **más exactos**, luego **exactRate**, luego **F1**, etc. Los campos `best` y `top10` resumen las mejores.
 
 ## Cómo ejecutar
