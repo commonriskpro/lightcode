@@ -63,6 +63,8 @@ Archivos relevantes:
 - [`/Users/dev/lightcode/packages/opencode/src/session/router-embed.ts`](/Users/dev/lightcode/packages/opencode/src/session/router-embed.ts)
 - [`/Users/dev/lightcode/packages/opencode/src/session/router-embed-impl.ts`](/Users/dev/lightcode/packages/opencode/src/session/router-embed-impl.ts)
 
+Benchmark offline del grid `exact_match` (objetivo: **maximizar acierto exacto** entre combinaciones de flags; metricas y comandos): [`/Users/dev/lightcode/docs/tool-router-exact-match-benchmark.md`](/Users/dev/lightcode/docs/tool-router-exact-match-benchmark.md).
+
 Opciones legacy que ya no son fuente de verdad del comportamiento:
 
 - `experimental.tool_router.keyword_rules`
