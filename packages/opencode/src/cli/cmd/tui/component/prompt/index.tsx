@@ -23,12 +23,11 @@ import { Editor } from "@tui/util/editor"
 import { DialogSddModels } from "@tui/component/dialog-sdd-models"
 import { useExit } from "../../context/exit"
 import { Clipboard } from "../../util/clipboard"
-import type { FilePart } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, FilePart } from "@opencode-ai/sdk/v2"
 import { TuiEvent } from "../../event"
 import { iife } from "@/util/iife"
 import { Log } from "@/util/log"
 import { Locale } from "@/util/locale"
-import { contextWindowPercent, lastAssistantWithUsage, lastTurnTokenTotal } from "@tui/util/session-usage"
 import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
@@ -141,15 +140,21 @@ export function Prompt(props: PromptProps) {
   const usage = createMemo(() => {
     if (!props.sessionID) return
     const msg = sync.data.message[props.sessionID] ?? []
-    const last = lastAssistantWithUsage(msg)
+    const last = msg.findLast(
+      (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
+    )
     if (!last) return
 
-    const tokens = lastTurnTokenTotal(msg)
+    const tokens =
+      last.tokens.input +
+      last.tokens.output +
+      last.tokens.reasoning +
+      last.tokens.cache.read +
+      last.tokens.cache.write
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = contextWindowPercent(last, model?.limit.context)
-    const pctStr = pct != null ? `${pct}%` : undefined
+    const pctStr = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = msg.reduce((sum, item) => sum + (item.role === "assistant" ? item.cost : 0), 0)
     return {
       context: pctStr ? `${Locale.number(tokens)} (${pctStr})` : Locale.number(tokens),

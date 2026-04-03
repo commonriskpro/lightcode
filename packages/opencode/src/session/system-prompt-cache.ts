@@ -11,7 +11,7 @@ const TTL_MS = (() => {
 const store = new Map<string, { at: number; parts: string[] }>()
 
 const INSTRUCTIONS_DEFERRED = [
-  "Project instructions from AGENTS.md, CLAUDE.md, config URLs, and other instruction sources are not inlined on this request (same policy as initial_tool_tier minimal).",
+  "Project instructions from AGENTS.md, CLAUDE.md, config URLs, and other instruction sources are not inlined on this request (deferred instruction mode).",
   "Use the read tool to load AGENTS.md or CONTEXT.md from the workspace root when you need them; use the skill tool for named skills.",
 ].join("\n")
 

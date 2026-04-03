@@ -235,7 +235,6 @@ export function baseCfg(input: BenchCfg) {
         additive: false,
         apply_after_first_assistant: false,
         inject_prompt: false,
-        base_tools: ["read"],
         max_tools: 100,
         mcp_always_include: false,
         exact_match: {

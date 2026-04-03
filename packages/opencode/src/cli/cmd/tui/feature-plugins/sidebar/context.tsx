@@ -1,6 +1,6 @@
+import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo } from "solid-js"
-import { contextWindowPercent, lastAssistantWithUsage, lastTurnTokenTotal } from "@tui/util/session-usage"
 
 const id = "internal:sidebar-context"
 
@@ -16,7 +16,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 
   const state = createMemo(() => {
     const list = msg()
-    const last = lastAssistantWithUsage(list)
+    // Same as anomalyco/opencode dev: last assistant with output, sum input+output+reasoning+cache (TUI context bar).
+    const last = list.findLast(
+      (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
+    )
     if (!last) {
       return {
         tokens: 0,
@@ -24,10 +27,16 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       }
     }
 
+    const tokens =
+      last.tokens.input +
+      last.tokens.output +
+      last.tokens.reasoning +
+      last.tokens.cache.read +
+      last.tokens.cache.write
     const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     return {
-      tokens: lastTurnTokenTotal(list),
-      percent: contextWindowPercent(last, model?.limit.context),
+      tokens,
+      percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null,
     }
   })
 

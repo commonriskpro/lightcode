@@ -5,8 +5,8 @@ import { useTheme } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "../../context/keybind"
+import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "@/util/locale"
-import { contextWindowPercent, lastAssistantWithUsage, lastTurnTokenTotal } from "@tui/util/session-usage"
 import { useTerminalDimensions } from "@opentui/solid"
 
 export function SubagentFooter() {
@@ -33,15 +33,21 @@ export function SubagentFooter() {
 
   const usage = createMemo(() => {
     const msg = messages()
-    const last = lastAssistantWithUsage(msg)
+    const last = msg.findLast(
+      (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
+    )
     if (!last) return
 
-    const tokens = lastTurnTokenTotal(msg)
+    const tokens =
+      last.tokens.input +
+      last.tokens.output +
+      last.tokens.reasoning +
+      last.tokens.cache.read +
+      last.tokens.cache.write
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = contextWindowPercent(last, model?.limit.context)
-    const pctStr = pct != null ? `${pct}%` : undefined
+    const pctStr = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = msg.reduce((sum, item) => sum + (item.role === "assistant" ? item.cost : 0), 0)
 
     const money = new Intl.NumberFormat("en-US", {

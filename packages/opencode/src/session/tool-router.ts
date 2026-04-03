@@ -26,8 +26,8 @@ function estimateTokens(text: string): number {
 }
 
 /**
- * Offline router: after `applyInitialToolTier`, either **narrows** (default) or **adds** (`experimental.tool_router.additive`)
- * from the full registry when the tier left a minimal map.
+ * Offline router: **narrows** (default) or **adds** (`experimental.tool_router.additive`) from the full registry
+ * when the additive flag is set.
  *
  * Tool ids are intersected with **agent + session permission + user toggles** (`allowedToolIds` from `resolveTools`)
  * so the model is never advertised tools that `LLM.resolveTools` would strip.
@@ -50,9 +50,7 @@ function estimateTokens(text: string): number {
  *
  * **Conversation tier** (`contextTier: "conversation"`) comes **only** from local intent embed: `hybrid` + `local_embed` + `local_intent_embed`, and `classifyIntentEmbedMerged` must mark **conversation** exclusive (see `ROUTER_INTENT_PROTOTYPES`). No regex shortcuts for chit-chat; augment is skipped when conversation wins clearly.
  */
-const DEFAULT_BASE = ["read", "task", "skill"]
-
-/** Short descriptions for base tools when not rule-matched (keeps tool list tokens small). */
+/** Short descriptions for tools when not rule-matched (keeps tool list tokens small). */
 const SLIM_DESC: Record<string, string> = {
   read: "Read a file or directory.",
   task: "Delegate a task to a subagent.",
@@ -302,7 +300,7 @@ function promptHint(input: {
 
 export namespace ToolRouter {
   export type Input = {
-    /** After `applyInitialToolTier` (may be minimal allowlist on first turn). */
+    /** Tool map for this request (permissions + session toggles already applied upstream). */
     tools: Record<string, AITool>
     /** Full tool map before tier strip; required for additive mode to attach rule-matched ids not in `tools`. */
     registryTools?: Record<string, AITool>
@@ -321,7 +319,7 @@ export namespace ToolRouter {
     fallback?: {
       expansionsUsedThisTurn: number
       maxPerTurn: number
-      expandTo: "full" | "base"
+      expandTo: "full"
       sessionID?: string
       messageID?: string
       turn?: number
@@ -617,13 +615,6 @@ export namespace ToolRouter {
 
     hadRouterSignal = hadRouterSignal || stickyMerged
 
-    if (hadRouterSignal && !conversationExclusive) {
-      const baseList = tr?.base_tools ?? DEFAULT_BASE
-      for (const id of baseList) {
-        if (builtinAvailable.has(id)) matched.add(id)
-      }
-    }
-
     const policyIds = applyRouterPolicy({
       ids: matched,
       text,
@@ -672,11 +663,7 @@ export namespace ToolRouter {
         fbOn && used < maxPer && available.size > 0 && (hadRouterSignal || recoverWithoutSignal)
 
       if (canExpand) {
-        const baseList = tr?.base_tools ?? DEFAULT_BASE
-        const idsToExpand =
-          expandTo === "base"
-            ? baseList.filter((id) => available.has(id))
-            : [...available].sort((a, b) => a.localeCompare(b))
+        const idsToExpand = [...available].sort((a, b) => a.localeCompare(b))
 
         if (idsToExpand.length === 0) {
           log.info("router.fallback", {

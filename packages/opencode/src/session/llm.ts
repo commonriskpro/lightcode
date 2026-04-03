@@ -233,7 +233,6 @@ export namespace LLM {
           isOpenaiOauth || isWorkflow
             ? JSON.stringify(messages).length + system.join("\n").length
             : JSON.stringify(messages).length
-        const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
         const threadHasAssistant = input.messages.some((m) => m.role === "assistant")
         DebugRequest.wire({
           sessionID: input.sessionID,
@@ -246,7 +245,6 @@ export namespace LLM {
           toolsBytes,
           promptBytes,
           systemBytes: system.join("\n").length,
-          initial_tool_tier: tier === "minimal" ? "minimal" : "full",
           thread_has_assistant: threadHasAssistant,
           tool_router: !!(Flag.OPENCODE_TOOL_ROUTER || cfg.experimental?.tool_router?.enabled),
         })

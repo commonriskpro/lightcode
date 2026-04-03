@@ -227,7 +227,6 @@ describe("ToolRouter.apply", () => {
             additive: true,
             apply_after_first_assistant: false,
             max_tools: 12,
-            base_tools: ["read", "task", "skill", "grep", "glob"],
           },
         },
       } as Config.Info,
@@ -473,7 +472,6 @@ describe("ToolRouter.apply", () => {
             enabled: true,
             router_only: true,
             apply_after_first_assistant: false,
-            base_tools: ["read"],
             max_tools: 12,
           },
         },
@@ -533,7 +531,7 @@ describe("ToolRouter.apply", () => {
       task: dummyTool("task"),
       skill: dummyTool("skill"),
     }
-    // "edit" is in base_tools but not in tools or registry
+    // "edit" is suggested by rules but not in tools or registry
     const out = await ToolRouter.apply({
       tools,
       registryTools: { read: dummyTool("read"), task: dummyTool("task"), skill: dummyTool("skill") },
@@ -553,32 +551,6 @@ describe("ToolRouter.apply", () => {
     // edit not available → should not crash, just omitted
     expect(out.tools.edit).toBeUndefined()
     expect(out.tools.read).toBeDefined()
-  })
-
-  test("custom base_tools do not force defaults without xenova match", async () => {
-    const tools = {
-      bash: dummyTool("bash"),
-      glob: dummyTool("glob"),
-    }
-    const out = await ToolRouter.apply({
-      tools,
-      messages: [userMsg("x"), assistantMsg(), userMsg("zzz nothing")],
-      agent: { name: "build", mode: "primary" },
-      cfg: {
-        experimental: {
-          tool_router: {
-            enabled: true,
-            apply_after_first_assistant: true,
-            max_tools: 12,
-            base_tools: ["bash", "glob"],
-          },
-        },
-      } as Config.Info,
-      mcpIds: new Set(),
-      skip: false,
-    })
-    expect(out.tools.bash).toBeUndefined()
-    expect(out.tools.glob).toBeUndefined()
   })
 
   test("no local intent embed: casual message is not conversation tier", async () => {

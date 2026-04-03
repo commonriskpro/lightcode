@@ -562,6 +562,7 @@ export type UserMessage = {
   tools?: {
     [key: string]: boolean
   }
+  toolRouterFallbackExpansionsUsed?: number
   variant?: string
 }
 
@@ -606,6 +607,8 @@ export type AssistantMessage = {
   variant?: string
   finish?: string
   toolRouterActiveIds?: Array<string>
+  toolExposureUnlockedIds?: Array<string>
+  toolExposureSessionCallableIds?: Array<string>
 }
 
 export type Message = UserMessage | AssistantMessage
@@ -1636,14 +1639,6 @@ export type Config = {
      */
     mcp_timeout?: number
     /**
-     * When minimal (default): small tool allowlist + deferred instruction pointer until an assistant message exists — unless minimal_tier_all_turns is true, in which case the allowlist stays minimal every turn and the offline router (use additive: true) expands tools from the registry.
-     */
-    initial_tool_tier?: "full" | "minimal"
-    /**
-     * When true with initial_tool_tier minimal: never expand to the full tool map after the first assistant message; keep slim tier tools before the router every turn. Also keeps instruction mode deferred (no inlined AGENTS) and disables the first-turn-only full-instruction exception when the router filters turn 1. Pair with experimental.tool_router.additive true.
-     */
-    minimal_tier_all_turns?: boolean
-    /**
      * Same as OPENCODE_DEBUG_REQUEST: log structured wire/usage lines (service=debug-request) for prompt and tool payload sizes.
      */
     debug_request?: boolean
@@ -1651,17 +1646,13 @@ export type Config = {
      * Same as OPENCODE_DISABLE_GLOBAL_DOC_READS: no global instruction file merge from config home paths, and discourage proactive reads of README.md, CLAUDE.md, package.json.
      */
     disable_global_doc_reads?: boolean
-    /**
-     * Rewrite assistant text that looks like pseudo-XML tool calls (<tool_call>, <function=name>) into real tool-call stream parts. auto: enable for lmstudio provider only; off: never; on: always.
-     */
-    repair_pseudo_xml_tool_calls?: "auto" | "on" | "off"
     tool_router?: {
       /**
        * Filter tools by offline rules after the first assistant message (see docs/spec-offline-tool-router.md).
        */
       enabled?: boolean
       /**
-       * When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty tool build falls back to base_tools only, not the full map. Conversation tier uses local intent embed only (hybrid + local_intent_embed).
+       * When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty selection can fall back to the full allowed pool per fallback config. Conversation tier uses local intent embed only (hybrid + local_intent_embed).
        */
       router_only?: boolean
       /**
@@ -1701,6 +1692,59 @@ export type Config = {
        */
       local_embed_min_score?: number
       /**
+       * When true with local embeddings: re-rank top semantic candidates using a hybrid semantic+lexical score before final tool pick.
+       */
+      rerank?: boolean
+      /**
+       * How many top semantic candidates are considered for hybrid reranking.
+       */
+      rerank_candidates?: number
+      /**
+       * Weight of normalized semantic score in reranking.
+       */
+      rerank_semantic_weight?: number
+      /**
+       * Weight of lexical overlap score in reranking.
+       */
+      rerank_lexical_weight?: number
+      /**
+       * Exact-match-oriented filters on embed-ranked tools (no fixed top-k cap). Defaults tuned via tool-router-config-benchmark.
+       */
+      exact_match?: {
+        /**
+         * Adaptive ratio vs best score (simple vs composite intent).
+         */
+        dynamic_ratio?: boolean
+        /**
+         * When dynamic_ratio: multiplier vs best score for simple (single-intent) prompts. Default 0.97 (offline benchmark).
+         */
+        dynamic_ratio_simple?: number
+        /**
+         * When dynamic_ratio: multiplier for composite / multi-step prompts. Default 0.74 (offline benchmark).
+         */
+        dynamic_ratio_composite?: number
+        /**
+         * Stricter minimum scores for destructive or costly tools.
+         */
+        per_tool_min?: boolean
+        /**
+         * Soften edit/bash when web intent wins without strong local evidence.
+         */
+        intent_gating?: boolean
+        /**
+         * Drop near-duplicate web tools when evidence is weak.
+         */
+        redundancy?: boolean
+        /**
+         * Map embed scores through a sigmoid before thresholds.
+         */
+        calibration?: boolean
+        /**
+         * Second pass: drop bash without run-like cues in the prompt.
+         */
+        two_pass?: boolean
+      }
+      /**
        * When true with mode hybrid and local embeddings: classify intent via embedding similarity to prototype phrases (including a conversation/chit-chat intent), merge tools before keyword rules, then run rule pass and tool augmentation. If the conversation intent wins, no tools are attached and the session uses minimal conversation context.
        */
       local_intent_embed?: boolean
@@ -1708,6 +1752,18 @@ export type Config = {
        * Minimum similarity to accept an intent prototype (typically slightly stricter than local_embed_min_score).
        */
       local_intent_min_score?: number
+      /**
+       * When local_intent_embed: merge secondary intent prototypes within this cosine margin of the top score (offline router).
+       */
+      intent_merge_margin?: number
+      /**
+       * Max distinct work intents to merge when within intent_merge_margin.
+       */
+      intent_max_intents?: number
+      /**
+       * When local_intent_embed: if conversation intent wins by at least this gap over the next intent, use conversation tier (no tools) without merging work intents.
+       */
+      intent_conversation_gap?: number
       /**
        * Optional provider/model for hybrid router only, e.g. openai/gpt-5-nano. Overrides small_model for this call.
        */
@@ -1721,20 +1777,16 @@ export type Config = {
        */
       apply_after_first_assistant?: boolean
       /**
-       * Always-included tool ids before rule matches; defaults to read, task, skill.
-       */
-      base_tools?: Array<string>
-      /**
-       * When true with initial_tool_tier minimal: start from the tier allowlist, then add tools from rules using full registry definitions (see ToolRouter).
+       * When true: start from the current tool map, then add rule-matched tools using full registry definitions (see ToolRouter).
        */
       additive?: boolean
       max_tools?: number
       /**
-       * When false (default): tool intent from local embed only (hybrid + local_embed + local_intent_embed) plus augmentMatchedEmbed — no regex RULES. Set true for legacy regex keyword rules after intent embed.
+       * When false (default): no regex RULES union; routing uses local intent/embed + augmentMatchedEmbed + router-policy gates. Set true to also apply regex RULES in tool-router.ts to the user text (after intent merge).
        */
       keyword_rules?: boolean
       /**
-       * When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.
+       * When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.).
        */
       no_match_fallback?: boolean
       /**
@@ -1757,6 +1809,33 @@ export type Config = {
        * When true (default), merge tool ids from the previous assistant message into the current router output so tools are not dropped between turns; tool defs often hit prompt cache, so cost is low.
        */
       sticky_previous_turn_tools?: boolean
+      /**
+       * Experimental: how tool definitions and session memory interact after the offline router. Default per_turn_subset matches legacy behavior. See docs/router-eval.md.
+       */
+      exposure_mode?:
+        | "per_turn_subset"
+        | "memory_only_unlocked"
+        | "stable_catalog_subset"
+        | "subset_plus_memory_reminder"
+        | "session_accumulative_callable"
+      fallback?: {
+        /**
+         * When true (default), recover from an empty router selection (non-conversation) by expanding to the allowed tool pool for this request.
+         */
+        enabled?: boolean
+        /**
+         * Max expansion recoveries per logical user message (tracked on the user message). Default 1.
+         */
+        max_expansions_per_turn?: number
+        /**
+         * Recover empty router selection by expanding to all tools in the allowed pool for this request.
+         */
+        expand_to?: "full"
+        /**
+         * When false (default), only recover from empty routing when the router had some signal (intent/embed/sticky/no_match_fallback/keyword). When true, also recover when selection is empty with no signal (e.g. router_only + no match); use with care.
+         */
+        recover_empty_without_signal?: boolean
+      }
     }
   }
 }

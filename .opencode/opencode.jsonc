@@ -1,12 +1,14 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // Tier minimal + tool_router (hybrid/Xenova). additive=false: no arrastrar el mapa completo por defecto.
-  // wire-tier: packages/opencode/src/session/wire-tier.ts
+  // Perfil prueba: router híbrido (intención + embed Xenova + keyword_rules). El LLM solo recibe defs de tools que el router adjunta.
+  // Arranque: ./scripts/opencode-isolated.sh desde la raíz del repo (tras build). Logs wire: debug_request + OPENCODE_DEBUG_REQUEST opcional.
+  // Modelo: elige proveedor en la TUI; lmstudio abajo es ejemplo (cambia baseURL a tu LAN).
   "plugin": [
     "../gentle-ai/plugins/skill-registry-plugin.ts",
     "../gentle-ai/plugins/background-agents.ts",
     "opencode-lmstudio@latest",
   ],
+  // build = write/edit/bash para probar tareas directas; sdd-orchestrator = delegar con task→sdd-*.
   "default_agent": "build",
   "skills": {
     "paths": ["gentle-ai/skills"],
@@ -36,13 +38,13 @@
     "engram": {
       "type": "local",
       "command": ["engram", "mcp"],
-      "enabled": true,
+      "enabled": false,
       "timeout": 30000,
     },
     "context7": {
       "type": "local",
       "command": ["npx", "-y", "@upstash/context7-mcp"],
-      "enabled": true,
+      "enabled": false,
       "timeout": 60000,
     },
   },
@@ -189,19 +191,14 @@
     },
   },
   "experimental": {
-    "initial_tool_tier": "minimal",
-    // Tier mínimo + router en todos los turnos (sin abrir el mapa completo tras el 1.er assistant).
-    "minimal_tier_all_turns": true,
-    // true → logs debug-request (toolsBytes, systemBytes, promptBytes)
+    // true → logs service=debug-request phase=wire (toolsBytes, systemBytes, promptBytes) y phase=usage
     "debug_request": true,
-    // Env en conversation tier: A=siempre incluir; C=flag para apagar rápido. minimal=true → bloque corto (cwd/root/git/platform/fecha).
     "always_include_env": true,
     "always_include_env_minimal": true,
     "tool_router": {
       "enabled": true,
-      // router_only: sin no_match glob-grep; MCP solo con señal embed/intent. Charla: tier conversation vía Xenova (ROUTER_INTENT_PROTOTYPES). Ver tool-router.ts
-      // base_tools: si solo ["read"], un turno sin regla/embed → solo read; el modelo puede intentar webfetch y falla. Incluye web* para URLs/imágenes/páginas.
-      "router_only": true,
+      // Sin no_match_fallback: solo tools que elijan intent/embed/reglas/sticky/fallback vacío (probar efectividad del router).
+      "router_only": false,
       "no_match_fallback": false,
       // hybrid + Xenova: intención (prototipos) + similitud tool↔mensaje; sin reglas regex ni LLM remoto del router.
       "mode": "hybrid",
@@ -219,7 +216,6 @@
       "additive": false,
       "apply_after_first_assistant": false,
       "inject_prompt": true,
-      "base_tools": ["read"],
       "max_tools": 100,
       "mcp_always_include": false,
       // ── Tool exposure + fallback (manual test PRIMARY profile) ─────────────────
@@ -230,9 +226,9 @@
         "expand_to": "full",
         "recover_empty_without_signal": false,
       },
-      // PRIMARY: subset + reminder (active). SECONDARY (benchmark): comment the next line and uncomment the one below.
-      "exposure_mode": "subset_plus_memory_reminder",
-      // "exposure_mode": "session_accumulative_callable",
+      // Post-router: per_turn_subset | memory_only_unlocked | subset_plus_memory_reminder | session_accumulative_callable | stable_catalog_subset (docs/router-eval.md).
+      "exposure_mode": "session_accumulative_callable",
+      // "exposure_mode": "subset_plus_memory_reminder",
     },
   },
 }

@@ -1099,18 +1099,6 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
-          initial_tool_tier: z
-            .enum(["full", "minimal"])
-            .optional()
-            .describe(
-              "When minimal (default): small tool allowlist + deferred instruction pointer until an assistant message exists — unless minimal_tier_all_turns is true, in which case the allowlist stays minimal every turn and the offline router (use additive: true) expands tools from the registry.",
-            ),
-          minimal_tier_all_turns: z
-            .boolean()
-            .optional()
-            .describe(
-              "When true with initial_tool_tier minimal: never expand to the full tool map after the first assistant message; keep slim tier tools before the router every turn. Also keeps instruction mode deferred (no inlined AGENTS) and disables the first-turn-only full-instruction exception when the router filters turn 1. Pair with experimental.tool_router.additive true.",
-            ),
           debug_request: z
             .boolean()
             .optional()
@@ -1135,7 +1123,7 @@ export namespace Config {
                 .boolean()
                 .optional()
                 .describe(
-                  "When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty tool build falls back to base_tools only, not the full map. Conversation tier uses local intent embed only (hybrid + local_intent_embed).",
+                  "When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty selection can fall back to the full allowed pool per fallback config. Conversation tier uses local intent embed only (hybrid + local_intent_embed).",
                 ),
               mode: z
                 .enum(["rules", "hybrid"])
@@ -1323,16 +1311,12 @@ export namespace Config {
                 .optional()
                 .default(false)
                 .describe("When true, skip router on the first user turn. Default is false (router active from T1)."),
-              base_tools: z
-                .array(z.string())
-                .optional()
-                .describe("Always-included tool ids before rule matches; defaults to read, task, skill."),
               additive: z
                 .boolean()
                 .optional()
                 .default(false)
                 .describe(
-                  "When true with initial_tool_tier minimal: start from the tier allowlist, then add tools from rules using full registry definitions (see ToolRouter).",
+                  "When true: start from the current tool map, then add rule-matched tools using full registry definitions (see ToolRouter).",
                 ),
               max_tools: z.number().int().min(1).max(100).optional().default(12),
               keyword_rules: z
@@ -1347,7 +1331,7 @@ export namespace Config {
                 .optional()
                 .default(false)
                 .describe(
-                  "When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.) instead of only base_tools.",
+                  "When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.).",
                 ),
               no_match_fallback_tools: z
                 .array(z.string())
@@ -1412,12 +1396,10 @@ export namespace Config {
                       "Max expansion recoveries per logical user message (tracked on the user message). Default 1.",
                     ),
                   expand_to: z
-                    .enum(["full", "base"])
+                    .literal("full")
                     .optional()
                     .default("full")
-                    .describe(
-                      "expand_to full: all tools in the allowed pool for this request. base: only base_tools intersected with that pool.",
-                    ),
+                    .describe("Recover empty router selection by expanding to all tools in the allowed pool for this request."),
                   recover_empty_without_signal: z
                     .boolean()
                     .optional()

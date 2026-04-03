@@ -33,7 +33,6 @@ import { FileTime } from "../file/time"
 import { NotFoundError } from "@/storage/db"
 import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
-import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
 import { ToolRouter, stickyToolIdsFromMessages, type ContextTier } from "./tool-router"
 import {
   applyExposure,
@@ -42,7 +41,7 @@ import {
   normalizeExposureMode,
   type ExposureMode,
 } from "./tool-exposure"
-import { instructionMode, mergedInstructionBodies, minimalTierAllTurns, threadHasAssistant } from "./wire-tier"
+import { instructionMode } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
@@ -1168,24 +1167,7 @@ export namespace SessionPrompt {
     }
 
     const cfg = input.cfg ?? (await Config.get())
-    const tier = Flag.OPENCODE_INITIAL_TOOL_TIER ?? cfg.experimental?.initial_tool_tier ?? "minimal"
-    const minimalAllTurns = minimalTierAllTurns(cfg)
     const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
-    const bashDenied = Permission.disabled(["bash"], ruleset).has("bash")
-    const includeBash = Flag.OPENCODE_INITIAL_MINIMAL_INCLUDE_BASH || (!bashDenied && input.tools?.bash !== false)
-    const webfetchDenied = Permission.disabled(["webfetch"], ruleset).has("webfetch")
-    const websearchDenied = Permission.disabled(["websearch"], ruleset).has("websearch")
-    const includeWebfetch = !webfetchDenied && input.tools?.webfetch !== false && Boolean(tools.webfetch)
-    const includeWebsearch = !websearchDenied && input.tools?.websearch !== false && Boolean(tools.websearch)
-    const afterTier = applyInitialToolTier({
-      tools,
-      messages: input.messages,
-      tier,
-      includeBash,
-      includeWebfetch,
-      includeWebsearch,
-      minimalAllTurns,
-    })
     const disabled = Permission.disabled(Object.keys(tools), ruleset)
     const allowedToolIds = new Set(
       Object.keys(tools).filter((id) => {
@@ -1202,7 +1184,7 @@ export namespace SessionPrompt {
     const trFb = cfg.experimental?.tool_router?.fallback
     const userTurn = input.messages.filter((m) => m.info.role === "user").length
     const routed = await ToolRouter.apply({
-      tools: afterTier,
+      tools,
       registryTools: tools,
       allowedToolIds,
       messages: input.messages,
@@ -1238,14 +1220,6 @@ export namespace SessionPrompt {
     }
     const inject = cfg.experimental?.tool_router?.inject_prompt !== false
     let toolRouterPrompt = routed.promptHint
-    if (!toolRouterPrompt && inject && tier === "minimal" && (!threadHasAssistant(input.messages) || minimalAllTurns)) {
-      toolRouterPrompt = minimalTierPromptHint({
-        includeBash,
-        includeWebfetch,
-        includeWebsearch,
-        allTurns: minimalAllTurns,
-      })
-    }
     const exposureMode = normalizeExposureMode(cfg.experimental?.tool_router?.exposure_mode)
     const priorMem = memoryFromMessages(input.messages)
     const exposed = applyExposure({

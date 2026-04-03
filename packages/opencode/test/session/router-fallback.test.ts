@@ -196,7 +196,7 @@ describe("ToolRouter fallback (empty selection recovery)", () => {
     expect(Object.keys(out.tools).sort()).toEqual(["edit", "read"])
   })
 
-  test("expand_to base limits recovery to base_tools intersected with pool", async () => {
+  test("expand_to full recovers entire allowed pool", async () => {
     const tools = {
       read: dummyTool("read"),
       bash: dummyTool("bash"),
@@ -214,8 +214,7 @@ describe("ToolRouter fallback (empty selection recovery)", () => {
             router_only: true,
             keyword_rules: false,
             local_intent_embed: false,
-            base_tools: ["read", "task", "skill"],
-            fallback: { expand_to: "base", recover_empty_without_signal: true },
+            fallback: { expand_to: "full", recover_empty_without_signal: true },
           },
         },
       } as Config.Info,
@@ -224,10 +223,10 @@ describe("ToolRouter fallback (empty selection recovery)", () => {
       fallback: {
         expansionsUsedThisTurn: 0,
         maxPerTurn: 1,
-        expandTo: "base",
+        expandTo: "full",
       },
     })
     expect(out.usedFallbackExpansion).toBe(true)
-    expect(Object.keys(out.tools)).toEqual(["read"])
+    expect(Object.keys(out.tools).sort()).toEqual(["bash", "edit", "glob", "read"])
   })
 })

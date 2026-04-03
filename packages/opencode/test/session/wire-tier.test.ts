@@ -45,26 +45,9 @@ function assistant() {
 }
 
 describe("includeInstructionBodies", () => {
-  test("full tier always includes", () => {
-    const prev = process.env.OPENCODE_INITIAL_TOOL_TIER
-    delete process.env.OPENCODE_INITIAL_TOOL_TIER
-    try {
-      const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "full" as const } }
-      expect(includeInstructionBodies(cfg, [user()])).toBe(true)
-      expect(includeInstructionBodies(cfg, [user(), assistant()])).toBe(true)
-    } finally {
-      if (prev !== undefined) process.env.OPENCODE_INITIAL_TOOL_TIER = prev
-    }
-  })
-
-  test("minimal first turn omits", () => {
-    const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "minimal" as const } }
-    expect(includeInstructionBodies(cfg, [user()])).toBe(false)
-  })
-
-  test("minimal after assistant includes", () => {
-    const cfg = { ...baseCfg, experimental: { ...baseCfg.experimental, initial_tool_tier: "minimal" as const } }
-    expect(includeInstructionBodies(cfg, [user(), assistant()])).toBe(true)
+  test("always true (minimal tier removed)", () => {
+    expect(includeInstructionBodies(baseCfg, [user()])).toBe(true)
+    expect(includeInstructionBodies(baseCfg, [user(), assistant()])).toBe(true)
   })
 })
 
@@ -87,52 +70,44 @@ describe("routerFiltersFirstTurn", () => {
 
 describe("mergedInstructionBodies", () => {
   test("skipRouter forces full (e.g. json_schema)", () => {
-    const cfg = { ...baseCfg, experimental: { initial_tool_tier: "minimal" as const } }
-    expect(mergedInstructionBodies(cfg, [user()], true)).toBe(true)
+    expect(mergedInstructionBodies(baseCfg, [user()], true)).toBe(true)
   })
 
-  test("router filters first turn forces full even with minimal tier", () => {
+  test("router filters first turn forces full", () => {
     const cfg = {
       experimental: {
-        initial_tool_tier: "minimal" as const,
         tool_router: { enabled: true, apply_after_first_assistant: false },
       },
     } as Config.Info
     expect(mergedInstructionBodies(cfg, [user()], false)).toBe(true)
   })
 
-  test("minimal_tier_all_turns keeps merged off on T1 even when router filters T1", () => {
+  test("otherwise merged", () => {
     const cfg = {
       experimental: {
-        initial_tool_tier: "minimal" as const,
-        minimal_tier_all_turns: true,
-        tool_router: { enabled: true, apply_after_first_assistant: false },
-      },
-    } as Config.Info
-    expect(mergedInstructionBodies(cfg, [user()], false)).toBe(false)
-  })
-
-  test("minimal default router defers instructions on T1", () => {
-    const cfg = {
-      experimental: {
-        initial_tool_tier: "minimal" as const,
         tool_router: { enabled: true, apply_after_first_assistant: true },
       },
     } as Config.Info
-    expect(mergedInstructionBodies(cfg, [user()], false)).toBe(false)
+    expect(mergedInstructionBodies(cfg, [user()], false)).toBe(true)
   })
 })
 
-describe("instructionMode minimal_tier_all_turns", () => {
-  test("defers even when router would force full on T1", () => {
+describe("instructionMode", () => {
+  test("full when router filters first turn", () => {
     const cfg = {
       experimental: {
-        initial_tool_tier: "minimal" as const,
-        minimal_tier_all_turns: true,
         tool_router: { enabled: true, apply_after_first_assistant: false },
       },
     } as Config.Info
-    expect(instructionMode(cfg, [user()], false)).toBe("deferred")
-    expect(instructionMode(cfg, [user(), assistant()], false)).toBe("deferred")
+    expect(instructionMode(cfg, [user()], false)).toBe("full")
+  })
+
+  test("index after assistant when router does not filter T1", () => {
+    const cfg = {
+      experimental: {
+        tool_router: { enabled: true, apply_after_first_assistant: true },
+      },
+    } as Config.Info
+    expect(instructionMode(cfg, [user(), assistant()], false)).toBe("index")
   })
 })

@@ -1,11 +1,16 @@
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 
+/**
+ * Last assistant message with a completed generation (`tokens.output > 0`), same predicate as
+ * [anomalyco/opencode](https://github.com/anomalyco/opencode) TUI (`prompt/index.tsx`, `sidebar/context.tsx`).
+ * Sidebar/prompt use this formula inline; this helper remains for tests and tooling.
+ */
 export function lastAssistantWithUsage(
   messages: readonly { role: string; tokens?: AssistantMessage["tokens"] }[],
 ) {
   return messages.findLast(
     (item): item is AssistantMessage =>
-      item.role === "assistant" && (item.tokens?.output ?? 0) > 0,
+      item.role === "assistant" && item.tokens != null && item.tokens.output > 0,
   )
 }
 
@@ -22,8 +27,7 @@ export function promptTokensForContext(t: AssistantMessage["tokens"]) {
 }
 
 /**
- * Total tokens for one assistant turn — same formula as [anomalyco/opencode](https://github.com/anomalyco/opencode)
- * TUI (`prompt/index.tsx`, `sidebar/context.tsx`): input + output + reasoning + cache read + cache write.
+ * Total tokens for one assistant turn — same five-field sum as anomalyco/opencode TUI context bar.
  */
 export function turnTokenTotal(t: AssistantMessage["tokens"]) {
   const c = t.cache

@@ -200,7 +200,7 @@ export function evalModePatch(mode: EvalModePreset): ToolRouterPatch {
   if (mode === "default") return {}
   if (mode === "keyword_rules_on") return { keyword_rules: true }
   if (mode === "keyword_rules_off") return { keyword_rules: false }
-  if (mode === "router_only") return { router_only: true, base_tools: ["read", "task", "skill"], no_match_fallback: false }
+  if (mode === "router_only") return { router_only: true, no_match_fallback: false }
   if (mode === "no_match_on") return { no_match_fallback: true }
   if (mode === "sticky_off") return { sticky_previous_turn_tools: false }
   if (mode === "passthrough") return { enabled: false }
