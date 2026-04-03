@@ -1,0 +1,17 @@
+# --- Python: use 3.11 or 3.12 (avoid 3.14 for PyTorch + transformers; wheels may be broken). ---
+#
+# --- Step 1: install torch + torchvision TOGETHER from the same PyTorch index (fixes
+#     "operator torchvision::nms does not exist" = mismatched torch/torchvision). ---
+# GPU (pick ONE line that matches your CUDA from pytorch.org):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# CPU:
+#   pip install torch torchvision
+#
+# --- Step 2: rest of stack ---
+#   pip install -r requirements.txt
+
+sentence-transformers>=3.0.0
+datasets>=2.16.0
+accelerate>=1.1.0
+onnx>=1.16.0
+onnxruntime>=1.17.0

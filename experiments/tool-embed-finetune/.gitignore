@@ -1,0 +1,13 @@
+.venv/
+output/
+__pycache__/
+*.pyc
+dataset_10k.jsonl
+dataset_500k.jsonl
+dataset_100k.jsonl
+dataset_5k.jsonl
+dataset_seed_100k.jsonl
+extrapolated*.jsonl
+extrapolated_*.jsonl
+dataset_train_500k_unique.jsonl
+dataset_train_500k_hq.jsonl

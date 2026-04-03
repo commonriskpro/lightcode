@@ -1,0 +1,597 @@
+﻿{
+  "benchmark": "config",
+  "objective": "exact",
+  "bits": 1,
+  "label": "dyn",
+  "flags": {
+    "dynamic_ratio": true,
+    "per_tool_min": false,
+    "intent_gating": false,
+    "redundancy": false,
+    "calibration": false,
+    "two_pass": false
+  },
+  "grid": {
+    "ratios": [
+      0.76,
+      0.8,
+      0.84,
+      0.88,
+      0.92,
+      0.96
+    ],
+    "minScores": [
+      0.08,
+      0.12,
+      0.16,
+      0.2,
+      0.24,
+      0.28
+    ],
+    "cells": 36
+  },
+  "cases": 100,
+  "best": {
+    "auto_score_ratio": 0.76,
+    "local_embed_min_score": 0.24,
+    "flags": {
+      "dynamic_ratio": true,
+      "per_tool_min": false,
+      "intent_gating": false,
+      "redundancy": false,
+      "calibration": false,
+      "two_pass": false
+    },
+    "bits": 1,
+    "label": "dyn",
+    "m": {
+      "tp": 90,
+      "fp": 41,
+      "fn": 52,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085,
+      "f1": 0.6593406593406593,
+      "exact": 49,
+      "total": 100,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53
+    }
+  },
+  "top10": [
+    {
+      "rank": 1,
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 2,
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 3,
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 4,
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 5,
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 6,
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 7,
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 8,
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 9,
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "rank": 10,
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    }
+  ],
+  "fullTable": [
+    {
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.24,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6593406593406593,
+      "precision": 0.6870229007633588,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.08,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.12,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.16,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.2,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6569343065693432,
+      "precision": 0.6818181818181818,
+      "recall": 0.6338028169014085
+    },
+    {
+      "auto_score_ratio": 0.76,
+      "local_embed_min_score": 0.28,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 52,
+      "fullCoverageRate": 0.52,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "auto_score_ratio": 0.8,
+      "local_embed_min_score": 0.28,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 52,
+      "fullCoverageRate": 0.52,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "auto_score_ratio": 0.84,
+      "local_embed_min_score": 0.28,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 52,
+      "fullCoverageRate": 0.52,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "auto_score_ratio": 0.88,
+      "local_embed_min_score": 0.28,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 52,
+      "fullCoverageRate": 0.52,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "auto_score_ratio": 0.92,
+      "local_embed_min_score": 0.28,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 52,
+      "fullCoverageRate": 0.52,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "auto_score_ratio": 0.96,
+      "local_embed_min_score": 0.28,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 52,
+      "fullCoverageRate": 0.52,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    }
+  ],
+  "productTarget": {
+    "fullCoveragePctGoal": 80,
+    "note": "Priorizar fullCoverageRate; exactRate penaliza herramientas extra."
+  },
+  "recommendedYaml": {
+    "experimental.tool_router.auto_score_ratio": 0.76,
+    "experimental.tool_router.local_embed_min_score": 0.24,
+    "experimental.tool_router.exact_match": {
+      "dynamic_ratio": true,
+      "per_tool_min": false,
+      "intent_gating": false,
+      "redundancy": false,
+      "calibration": false,
+      "two_pass": false
+    }
+  }
+}

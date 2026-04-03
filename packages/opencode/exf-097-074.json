@@ -1,0 +1,888 @@
+﻿{
+  "script": "tool-router-exact-failures",
+  "cases": 100,
+  "bits": 1,
+  "label": "dyn",
+  "flags": {
+    "dynamic_ratio": true,
+    "per_tool_min": false,
+    "intent_gating": false,
+    "redundancy": false,
+    "calibration": false,
+    "two_pass": false
+  },
+  "benchmark": {
+    "local_intent_embed": false,
+    "no_intent_env": "1"
+  },
+  "cfgOverrides": {
+    "auto_score_ratio": 0.86,
+    "local_embed_min_score": 0.18,
+    "dynamic_ratio_simple": 0.97,
+    "dynamic_ratio_composite": 0.74
+  },
+  "summary": {
+    "exact": 51,
+    "exactRate": 0.51,
+    "fullCoverage": 59,
+    "fullCoverageRate": 0.59,
+    "f1": 0.6808510638297872,
+    "precision": 0.6857142857142857,
+    "recall": 0.676056338028169,
+    "failCount": 49
+  },
+  "aggregate": {
+    "failureKind": {
+      "missingOnly": 16,
+      "extraOnly": 8,
+      "missingAndExtra": 25
+    },
+    "toolRefTotals": {
+      "missing": 46,
+      "extra": 44
+    },
+    "topMissing": {
+      "write": 9,
+      "edit": 8,
+      "grep": 6,
+      "read": 5,
+      "bash": 5,
+      "glob": 4,
+      "codesearch": 4,
+      "todowrite": 2,
+      "websearch": 1,
+      "question": 1,
+      "webfetch": 1
+    },
+    "topExtra": {
+      "todowrite": 9,
+      "codesearch": 6,
+      "read": 6,
+      "websearch": 5,
+      "write": 5,
+      "glob": 4,
+      "edit": 3,
+      "grep": 3,
+      "task": 2,
+      "question": 1
+    }
+  },
+  "failures": [
+    {
+      "index": 3,
+      "text": "open docs/architecture.md and extract key modules",
+      "expect": [
+        "read"
+      ],
+      "got": [
+        "codesearch"
+      ],
+      "missing": [
+        "read"
+      ],
+      "extra": [
+        "codesearch"
+      ]
+    },
+    {
+      "index": 4,
+      "text": "revisa src/config.ts y dime los defaults importantes",
+      "expect": [
+        "read"
+      ],
+      "got": [
+        "edit"
+      ],
+      "missing": [
+        "read"
+      ],
+      "extra": [
+        "edit"
+      ]
+    },
+    {
+      "index": 6,
+      "text": "busca archivos .env",
+      "expect": [
+        "glob"
+      ],
+      "got": [
+        "grep",
+        "websearch"
+      ],
+      "missing": [
+        "glob"
+      ],
+      "extra": [
+        "grep",
+        "websearch"
+      ]
+    },
+    {
+      "index": 9,
+      "text": "search for function buildServer in repo",
+      "expect": [
+        "grep"
+      ],
+      "got": [
+        "codesearch"
+      ],
+      "missing": [
+        "grep"
+      ],
+      "extra": [
+        "codesearch"
+      ]
+    },
+    {
+      "index": 11,
+      "text": "search for OPENAI_API_KEY references across the workspace",
+      "expect": [
+        "grep"
+      ],
+      "got": [
+        "codesearch"
+      ],
+      "missing": [
+        "grep"
+      ],
+      "extra": [
+        "codesearch"
+      ]
+    },
+    {
+      "index": 14,
+      "text": "refactoriza esta funcion en util.ts",
+      "expect": [
+        "edit"
+      ],
+      "got": [
+        "task"
+      ],
+      "missing": [
+        "edit"
+      ],
+      "extra": [
+        "task"
+      ]
+    },
+    {
+      "index": 15,
+      "text": "update retry logic in src/net/client.ts",
+      "expect": [
+        "edit"
+      ],
+      "got": [
+        "todowrite"
+      ],
+      "missing": [
+        "edit"
+      ],
+      "extra": [
+        "todowrite"
+      ]
+    },
+    {
+      "index": 23,
+      "text": "run bun typecheck in packages/opencode",
+      "expect": [
+        "bash"
+      ],
+      "got": [
+        "codesearch"
+      ],
+      "missing": [
+        "bash"
+      ],
+      "extra": [
+        "codesearch"
+      ]
+    },
+    {
+      "index": 24,
+      "text": "ejecuta git status y muestra cambios pendientes",
+      "expect": [
+        "bash"
+      ],
+      "got": [
+        "todowrite"
+      ],
+      "missing": [
+        "bash"
+      ],
+      "extra": [
+        "todowrite"
+      ]
+    },
+    {
+      "index": 25,
+      "text": "search web for bun test timeout issues",
+      "expect": [
+        "websearch"
+      ],
+      "got": [
+        "todowrite"
+      ],
+      "missing": [
+        "websearch"
+      ],
+      "extra": [
+        "todowrite"
+      ]
+    },
+    {
+      "index": 42,
+      "text": "ask me to choose deployment region",
+      "expect": [
+        "question"
+      ],
+      "got": [
+        "task"
+      ],
+      "missing": [
+        "question"
+      ],
+      "extra": [
+        "task"
+      ]
+    },
+    {
+      "index": 43,
+      "text": "ask me which database provider I prefer",
+      "expect": [
+        "question"
+      ],
+      "got": [
+        "question",
+        "websearch"
+      ],
+      "missing": [],
+      "extra": [
+        "websearch"
+      ]
+    },
+    {
+      "index": 46,
+      "text": "haz busqueda semantica de controladores",
+      "expect": [
+        "codesearch"
+      ],
+      "got": [
+        "question"
+      ],
+      "missing": [
+        "codesearch"
+      ],
+      "extra": [
+        "question"
+      ]
+    },
+    {
+      "index": 48,
+      "text": "haz busqueda semantica del flujo de pagos",
+      "expect": [
+        "codesearch"
+      ],
+      "got": [
+        "grep"
+      ],
+      "missing": [
+        "codesearch"
+      ],
+      "extra": [
+        "grep"
+      ]
+    },
+    {
+      "index": 49,
+      "text": "find all references and then edit them",
+      "expect": [
+        "edit",
+        "grep"
+      ],
+      "got": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "todowrite",
+        "websearch"
+      ],
+      "missing": [],
+      "extra": [
+        "glob",
+        "read",
+        "todowrite",
+        "websearch"
+      ]
+    },
+    {
+      "index": 50,
+      "text": "busca en archivos y luego escribe resumen.md",
+      "expect": [
+        "glob",
+        "write"
+      ],
+      "got": [
+        "glob",
+        "read",
+        "write"
+      ],
+      "missing": [],
+      "extra": [
+        "read"
+      ]
+    },
+    {
+      "index": 52,
+      "text": "lee CHANGELOG.md y escribe resumen en release-notes.md",
+      "expect": [
+        "read",
+        "write"
+      ],
+      "got": [
+        "write"
+      ],
+      "missing": [
+        "read"
+      ],
+      "extra": []
+    },
+    {
+      "index": 53,
+      "text": "fetch website and write markdown digest",
+      "expect": [
+        "webfetch",
+        "write"
+      ],
+      "got": [
+        "webfetch"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": []
+    },
+    {
+      "index": 54,
+      "text": "descarga la pagina de docs y guarda digest.md",
+      "expect": [
+        "webfetch",
+        "write"
+      ],
+      "got": [
+        "webfetch"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": []
+    },
+    {
+      "index": 55,
+      "text": "run tests and edit failing snapshot",
+      "expect": [
+        "bash",
+        "edit"
+      ],
+      "got": [
+        "bash",
+        "edit",
+        "todowrite"
+      ],
+      "missing": [],
+      "extra": [
+        "todowrite"
+      ]
+    },
+    {
+      "index": 56,
+      "text": "ejecuta tests y corrige el archivo",
+      "expect": [
+        "bash",
+        "edit"
+      ],
+      "got": [
+        "bash"
+      ],
+      "missing": [
+        "edit"
+      ],
+      "extra": []
+    },
+    {
+      "index": 57,
+      "text": "open file and edit text",
+      "expect": [
+        "edit",
+        "read"
+      ],
+      "got": [
+        "edit",
+        "read",
+        "write"
+      ],
+      "missing": [],
+      "extra": [
+        "write"
+      ]
+    },
+    {
+      "index": 58,
+      "text": "lee config y modificalo",
+      "expect": [
+        "edit",
+        "read"
+      ],
+      "got": [
+        "read",
+        "write"
+      ],
+      "missing": [
+        "edit"
+      ],
+      "extra": [
+        "write"
+      ]
+    },
+    {
+      "index": 60,
+      "text": "encuentra archivos y busca el texto API_KEY",
+      "expect": [
+        "glob",
+        "grep"
+      ],
+      "got": [
+        "codesearch"
+      ],
+      "missing": [
+        "glob",
+        "grep"
+      ],
+      "extra": [
+        "codesearch"
+      ]
+    },
+    {
+      "index": 61,
+      "text": "create new file then run formatter",
+      "expect": [
+        "bash",
+        "write"
+      ],
+      "got": [
+        "edit",
+        "write"
+      ],
+      "missing": [
+        "bash"
+      ],
+      "extra": [
+        "edit"
+      ]
+    },
+    {
+      "index": 62,
+      "text": "crea archivo y ejecuta prettier",
+      "expect": [
+        "bash",
+        "write"
+      ],
+      "got": [
+        "write"
+      ],
+      "missing": [
+        "bash"
+      ],
+      "extra": []
+    },
+    {
+      "index": 65,
+      "text": "delegate and write plan.md",
+      "expect": [
+        "task",
+        "write"
+      ],
+      "got": [
+        "task",
+        "todowrite",
+        "write"
+      ],
+      "missing": [],
+      "extra": [
+        "todowrite"
+      ]
+    },
+    {
+      "index": 66,
+      "text": "usa subagente y guarda plan en markdown",
+      "expect": [
+        "task",
+        "write"
+      ],
+      "got": [
+        "task"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": []
+    },
+    {
+      "index": 67,
+      "text": "ask user choice then update todo",
+      "expect": [
+        "question",
+        "todowrite"
+      ],
+      "got": [
+        "question"
+      ],
+      "missing": [
+        "todowrite"
+      ],
+      "extra": []
+    },
+    {
+      "index": 68,
+      "text": "pregunta al usuario y actualiza pendientes",
+      "expect": [
+        "question",
+        "todowrite"
+      ],
+      "got": [
+        "question"
+      ],
+      "missing": [
+        "todowrite"
+      ],
+      "extra": []
+    },
+    {
+      "index": 69,
+      "text": "semantic search then edit implementation",
+      "expect": [
+        "codesearch",
+        "edit"
+      ],
+      "got": [
+        "codesearch"
+      ],
+      "missing": [
+        "edit"
+      ],
+      "extra": []
+    },
+    {
+      "index": 70,
+      "text": "busqueda semantica y refactor",
+      "expect": [
+        "codesearch",
+        "edit"
+      ],
+      "got": [
+        "websearch"
+      ],
+      "missing": [
+        "codesearch",
+        "edit"
+      ],
+      "extra": [
+        "websearch"
+      ]
+    },
+    {
+      "index": 71,
+      "text": "read docs and run typecheck to validate changes",
+      "expect": [
+        "bash",
+        "read"
+      ],
+      "got": [
+        "codesearch",
+        "read",
+        "todowrite",
+        "write"
+      ],
+      "missing": [
+        "bash"
+      ],
+      "extra": [
+        "codesearch",
+        "todowrite",
+        "write"
+      ]
+    },
+    {
+      "index": 73,
+      "text": "fetch url and summarize to md file",
+      "expect": [
+        "webfetch",
+        "write"
+      ],
+      "got": [
+        "read",
+        "webfetch"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": [
+        "read"
+      ]
+    },
+    {
+      "index": 74,
+      "text": "descarga una url tecnica y guarda resumen.md",
+      "expect": [
+        "webfetch",
+        "write"
+      ],
+      "got": [
+        "webfetch"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": []
+    },
+    {
+      "index": 75,
+      "text": "grep endpoint and write migration notes",
+      "expect": [
+        "grep",
+        "write"
+      ],
+      "got": [
+        "glob",
+        "grep",
+        "write"
+      ],
+      "missing": [],
+      "extra": [
+        "glob"
+      ]
+    },
+    {
+      "index": 76,
+      "text": "busca endpoint y guarda notas.md",
+      "expect": [
+        "grep",
+        "write"
+      ],
+      "got": [
+        "todowrite"
+      ],
+      "missing": [
+        "grep",
+        "write"
+      ],
+      "extra": [
+        "todowrite"
+      ]
+    },
+    {
+      "index": 77,
+      "text": "run shell command and read output file",
+      "expect": [
+        "bash",
+        "read"
+      ],
+      "got": [
+        "bash"
+      ],
+      "missing": [
+        "read"
+      ],
+      "extra": []
+    },
+    {
+      "index": 78,
+      "text": "ejecuta comando y lee el log",
+      "expect": [
+        "bash",
+        "read"
+      ],
+      "got": [
+        "bash"
+      ],
+      "missing": [
+        "read"
+      ],
+      "extra": []
+    },
+    {
+      "index": 79,
+      "text": "run git diff and summarize changed files",
+      "expect": [
+        "bash",
+        "read"
+      ],
+      "got": [
+        "bash",
+        "edit",
+        "glob",
+        "read",
+        "write"
+      ],
+      "missing": [],
+      "extra": [
+        "edit",
+        "glob",
+        "write"
+      ]
+    },
+    {
+      "index": 81,
+      "text": "find service files and delegate implementation to subagent",
+      "expect": [
+        "glob",
+        "task"
+      ],
+      "got": [
+        "task"
+      ],
+      "missing": [
+        "glob"
+      ],
+      "extra": []
+    },
+    {
+      "index": 82,
+      "text": "encuentra archivos de api y delega la refactorizacion",
+      "expect": [
+        "glob",
+        "task"
+      ],
+      "got": [
+        "task"
+      ],
+      "missing": [
+        "glob"
+      ],
+      "extra": []
+    },
+    {
+      "index": 83,
+      "text": "grep auth code and ask user which strategy to keep",
+      "expect": [
+        "grep",
+        "question"
+      ],
+      "got": [
+        "question"
+      ],
+      "missing": [
+        "grep"
+      ],
+      "extra": []
+    },
+    {
+      "index": 84,
+      "text": "busca dos implementaciones y preguntame cual dejamos",
+      "expect": [
+        "grep",
+        "question"
+      ],
+      "got": [
+        "question"
+      ],
+      "missing": [
+        "grep"
+      ],
+      "extra": []
+    },
+    {
+      "index": 85,
+      "text": "semantic search for cache layer then write findings to notes.md",
+      "expect": [
+        "codesearch",
+        "write"
+      ],
+      "got": [
+        "codesearch",
+        "glob",
+        "grep",
+        "todowrite"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": [
+        "glob",
+        "grep",
+        "todowrite"
+      ]
+    },
+    {
+      "index": 86,
+      "text": "haz busqueda semantica y guarda hallazgos en reporte.md",
+      "expect": [
+        "codesearch",
+        "write"
+      ],
+      "got": [
+        "websearch"
+      ],
+      "missing": [
+        "codesearch",
+        "write"
+      ],
+      "extra": [
+        "websearch"
+      ]
+    },
+    {
+      "index": 91,
+      "text": "write output to out.txt (case 90)",
+      "expect": [
+        "write"
+      ],
+      "got": [
+        "read"
+      ],
+      "missing": [
+        "write"
+      ],
+      "extra": [
+        "read"
+      ]
+    },
+    {
+      "index": 92,
+      "text": "edit lib/utils.ts (case 91)",
+      "expect": [
+        "edit"
+      ],
+      "got": [
+        "read"
+      ],
+      "missing": [
+        "edit"
+      ],
+      "extra": [
+        "read"
+      ]
+    },
+    {
+      "index": 98,
+      "text": "fetch docs and edit README [97]",
+      "expect": [
+        "edit",
+        "webfetch"
+      ],
+      "got": [
+        "read",
+        "write"
+      ],
+      "missing": [
+        "edit",
+        "webfetch"
+      ],
+      "extra": [
+        "read",
+        "write"
+      ]
+    }
+  ]
+}

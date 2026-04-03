@@ -1,0 +1,31 @@
+Launch a subagent to handle complex or multi-step work autonomously.
+
+Available agent types:
+{agents}
+
+You must specify:
+- description: short task label
+- prompt: the full task for the subagent
+- subagent_type: which subagent to use
+- task_id: optional, to resume a previous subagent session
+
+Use Task when:
+- the user explicitly asks to use another agent or subagent
+- the user asks to run a slash command; prefer Task and pass the slash command invocation directly as the subagent prompt
+- the work is complex, multi-step, or better handled by a specialized agent
+- multiple clearly independent subtasks can be delegated in parallel
+
+Do not use Task for simple direct actions like:
+- reading a specific file
+- grepping/searching a small number of files
+- locating an obvious symbol or class in the current repo
+
+Important:
+- The subagent result comes back to you, not directly to the user.
+- New subagents start with fresh context unless task_id is provided.
+- Give the subagent a detailed prompt and say exactly what result to return.
+- Tell it whether it should research, edit code, or verify with tests.
+- If a subagent is meant to be used proactively, use your judgment.
+- For slash commands, pass the slash command invocation directly as the prompt.
+- Use parallel Task calls only for clearly independent subtasks that can be worked safely at the same time.
+- Do not use parallel Task calls for dependent or sequential work.

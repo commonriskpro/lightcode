@@ -1,0 +1,106 @@
+{
+  "row_count": 294,
+  "by_source": {
+    "seed": 57,
+    "synthetic": 237
+  },
+  "by_category": {
+    "seed": 57,
+    "bash_gate": 30,
+    "conflict_gate": 12,
+    "conversation": 48,
+    "edge": 17,
+    "edit_write": 18,
+    "grep_codesearch": 30,
+    "multi_clause": 43,
+    "task_skill": 11,
+    "web_pair": 28
+  },
+  "required_tool_counts": {
+    "read": 218,
+    "grep": 100,
+    "edit": 68,
+    "bash": 38,
+    "codesearch": 18,
+    "task": 9,
+    "glob": 4,
+    "write": 11,
+    "question": 4,
+    "skill": 5,
+    "todowrite": 1,
+    "webfetch": 17,
+    "websearch": 17
+  },
+  "forbidden_tool_counts": {
+    "bash": 51,
+    "edit": 9,
+    "write": 32,
+    "webfetch": 109,
+    "websearch": 102,
+    "codesearch": 19,
+    "task": 2
+  },
+  "en_es_rough": {
+    "es_hint": 71,
+    "en_hint": 222,
+    "unknown": 1
+  },
+  "by_confidence": {
+    "unspecified": 294
+  },
+  "reviewed_true": 0,
+  "category_vs_floor": {
+    "bash_gate": {
+      "floor": 22,
+      "actual": 30,
+      "gap": 0
+    },
+    "conflict_gate": {
+      "floor": 12,
+      "actual": 12,
+      "gap": 0
+    },
+    "conversation": {
+      "floor": 28,
+      "actual": 48,
+      "gap": 0
+    },
+    "edge": {
+      "floor": 14,
+      "actual": 17,
+      "gap": 0
+    },
+    "edit_write": {
+      "floor": 18,
+      "actual": 18,
+      "gap": 0
+    },
+    "grep_codesearch": {
+      "floor": 18,
+      "actual": 30,
+      "gap": 0
+    },
+    "multi_clause": {
+      "floor": 22,
+      "actual": 43,
+      "gap": 0
+    },
+    "seed": {
+      "floor": 57,
+      "actual": 57,
+      "gap": 0
+    },
+    "task_skill": {
+      "floor": 10,
+      "actual": 11,
+      "gap": 0
+    },
+    "web_pair": {
+      "floor": 18,
+      "actual": 28,
+      "gap": 0
+    }
+  },
+  "underrepresented_categories": [],
+  "review_candidate_count": 10
+}

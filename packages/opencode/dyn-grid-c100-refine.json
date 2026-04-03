@@ -1,0 +1,540 @@
+﻿{
+  "benchmark": "dyn_ratio",
+  "objective": "exact",
+  "bits": 1,
+  "label": "dyn",
+  "baseFlags": {
+    "dynamic_ratio": true,
+    "per_tool_min": false,
+    "intent_gating": false,
+    "redundancy": false,
+    "calibration": false,
+    "two_pass": false
+  },
+  "grid": {
+    "dynamicSimple": [
+      0.95,
+      0.96,
+      0.97,
+      0.98,
+      0.99
+    ],
+    "dynamicComposite": [
+      0.68,
+      0.7,
+      0.72,
+      0.74,
+      0.76,
+      0.78
+    ],
+    "cells": 30
+  },
+  "fixed": {
+    "auto_score_ratio": 0.86,
+    "local_embed_min_score": 0.18
+  },
+  "cases": 100,
+  "best": {
+    "dynamic_ratio_simple": 0.97,
+    "dynamic_ratio_composite": 0.74,
+    "auto_score_ratio": 0.86,
+    "local_embed_min_score": 0.18,
+    "flags": {
+      "dynamic_ratio": true,
+      "per_tool_min": false,
+      "intent_gating": false,
+      "redundancy": false,
+      "calibration": false,
+      "two_pass": false,
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.74
+    },
+    "bits": 1,
+    "label": "dyn",
+    "m": {
+      "tp": 96,
+      "fp": 44,
+      "fn": 46,
+      "precision": 0.6857142857142857,
+      "recall": 0.676056338028169,
+      "f1": 0.6808510638297872,
+      "exact": 51,
+      "total": 100,
+      "exactRate": 0.51,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59
+    }
+  },
+  "top10": [
+    {
+      "rank": 1,
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 51,
+      "exactRate": 0.51,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6808510638297872,
+      "precision": 0.6857142857142857,
+      "recall": 0.676056338028169
+    },
+    {
+      "rank": 2,
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 51,
+      "exactRate": 0.51,
+      "fullCoverage": 54,
+      "fullCoverageRate": 0.54,
+      "f1": 0.6691176470588236,
+      "precision": 0.7,
+      "recall": 0.6408450704225352
+    },
+    {
+      "rank": 3,
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.76,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 57,
+      "fullCoverageRate": 0.57,
+      "f1": 0.6787003610108304,
+      "precision": 0.6962962962962963,
+      "recall": 0.6619718309859155
+    },
+    {
+      "rank": 4,
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6784452296819787,
+      "precision": 0.6808510638297872,
+      "recall": 0.676056338028169
+    },
+    {
+      "rank": 5,
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.676056338028169,
+      "precision": 0.676056338028169,
+      "recall": 0.676056338028169
+    },
+    {
+      "rank": 6,
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6714285714285715,
+      "precision": 0.6811594202898551,
+      "recall": 0.6619718309859155
+    },
+    {
+      "rank": 7,
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6714285714285715,
+      "precision": 0.6811594202898551,
+      "recall": 0.6619718309859155
+    },
+    {
+      "rank": 8,
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.72,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6713286713286714,
+      "precision": 0.6666666666666666,
+      "recall": 0.676056338028169
+    },
+    {
+      "rank": 9,
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 54,
+      "fullCoverageRate": 0.54,
+      "f1": 0.6666666666666666,
+      "precision": 0.6946564885496184,
+      "recall": 0.6408450704225352
+    },
+    {
+      "rank": 10,
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 54,
+      "fullCoverageRate": 0.54,
+      "f1": 0.6642335766423358,
+      "precision": 0.6893939393939394,
+      "recall": 0.6408450704225352
+    }
+  ],
+  "fullTable": [
+    {
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 51,
+      "exactRate": 0.51,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6808510638297872,
+      "precision": 0.6857142857142857,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 51,
+      "exactRate": 0.51,
+      "fullCoverage": 54,
+      "fullCoverageRate": 0.54,
+      "f1": 0.6691176470588236,
+      "precision": 0.7,
+      "recall": 0.6408450704225352
+    },
+    {
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.76,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 57,
+      "fullCoverageRate": 0.57,
+      "f1": 0.6787003610108304,
+      "precision": 0.6962962962962963,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6784452296819787,
+      "precision": 0.6808510638297872,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.676056338028169,
+      "precision": 0.676056338028169,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6714285714285715,
+      "precision": 0.6811594202898551,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.74,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6714285714285715,
+      "precision": 0.6811594202898551,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.72,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6713286713286714,
+      "precision": 0.6666666666666666,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 54,
+      "fullCoverageRate": 0.54,
+      "f1": 0.6666666666666666,
+      "precision": 0.6946564885496184,
+      "recall": 0.6408450704225352
+    },
+    {
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 54,
+      "fullCoverageRate": 0.54,
+      "f1": 0.6642335766423358,
+      "precision": 0.6893939393939394,
+      "recall": 0.6408450704225352
+    },
+    {
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.78,
+      "exact": 50,
+      "exactRate": 0.5,
+      "fullCoverage": 53,
+      "fullCoverageRate": 0.53,
+      "f1": 0.6592592592592592,
+      "precision": 0.6953125,
+      "recall": 0.6267605633802817
+    },
+    {
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.76,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 57,
+      "fullCoverageRate": 0.57,
+      "f1": 0.6762589928057554,
+      "precision": 0.6911764705882353,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.76,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 57,
+      "fullCoverageRate": 0.57,
+      "f1": 0.6738351254480287,
+      "precision": 0.6861313868613139,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.76,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 56,
+      "fullCoverageRate": 0.56,
+      "f1": 0.6690909090909091,
+      "precision": 0.6917293233082706,
+      "recall": 0.647887323943662
+    },
+    {
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.76,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 56,
+      "fullCoverageRate": 0.56,
+      "f1": 0.6690909090909091,
+      "precision": 0.6917293233082706,
+      "recall": 0.647887323943662
+    },
+    {
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.72,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6689895470383276,
+      "precision": 0.6620689655172414,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.72,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6666666666666666,
+      "precision": 0.6575342465753424,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.72,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6619718309859155,
+      "precision": 0.6619718309859155,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.72,
+      "exact": 49,
+      "exactRate": 0.49,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6619718309859155,
+      "precision": 0.6619718309859155,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.7,
+      "exact": 48,
+      "exactRate": 0.48,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6597938144329897,
+      "precision": 0.6442953020134228,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.7,
+      "exact": 47,
+      "exactRate": 0.47,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6575342465753424,
+      "precision": 0.64,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.7,
+      "exact": 47,
+      "exactRate": 0.47,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6552901023890785,
+      "precision": 0.6357615894039735,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.7,
+      "exact": 47,
+      "exactRate": 0.47,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6505190311418685,
+      "precision": 0.6394557823129252,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.7,
+      "exact": 47,
+      "exactRate": 0.47,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6505190311418685,
+      "precision": 0.6394557823129252,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.68,
+      "exact": 47,
+      "exactRate": 0.47,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6464646464646465,
+      "precision": 0.6193548387096774,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.96,
+      "dynamic_ratio_composite": 0.68,
+      "exact": 46,
+      "exactRate": 0.46,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6442953020134228,
+      "precision": 0.6153846153846154,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.95,
+      "dynamic_ratio_composite": 0.68,
+      "exact": 46,
+      "exactRate": 0.46,
+      "fullCoverage": 59,
+      "fullCoverageRate": 0.59,
+      "f1": 0.6421404682274248,
+      "precision": 0.6114649681528662,
+      "recall": 0.676056338028169
+    },
+    {
+      "dynamic_ratio_simple": 0.98,
+      "dynamic_ratio_composite": 0.68,
+      "exact": 46,
+      "exactRate": 0.46,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6372881355932203,
+      "precision": 0.6143790849673203,
+      "recall": 0.6619718309859155
+    },
+    {
+      "dynamic_ratio_simple": 0.99,
+      "dynamic_ratio_composite": 0.68,
+      "exact": 46,
+      "exactRate": 0.46,
+      "fullCoverage": 58,
+      "fullCoverageRate": 0.58,
+      "f1": 0.6372881355932203,
+      "precision": 0.6143790849673203,
+      "recall": 0.6619718309859155
+    }
+  ],
+  "productTarget": {
+    "fullCoveragePctGoal": 80,
+    "note": "Grid tunea multiplicadores 0.92/0.82 sustituidos por dynamic_ratio_simple/composite cuando dynamic_ratio es true."
+  },
+  "recommendedYaml": {
+    "experimental.tool_router.auto_score_ratio": 0.86,
+    "experimental.tool_router.local_embed_min_score": 0.18,
+    "experimental.tool_router.exact_match": {
+      "dynamic_ratio": true,
+      "per_tool_min": false,
+      "intent_gating": false,
+      "redundancy": false,
+      "calibration": false,
+      "two_pass": false,
+      "dynamic_ratio_simple": 0.97,
+      "dynamic_ratio_composite": 0.74
+    }
+  }
+}

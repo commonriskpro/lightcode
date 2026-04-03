@@ -1,0 +1,474 @@
+﻿{
+  "benchmark": "config",
+  "objective": "coverage",
+  "bits": 19,
+  "label": "dyn+ptm+cal",
+  "flags": {
+    "dynamic_ratio": true,
+    "per_tool_min": true,
+    "intent_gating": false,
+    "redundancy": false,
+    "calibration": true,
+    "two_pass": false
+  },
+  "grid": {
+    "ratios": [
+      0.78,
+      0.82,
+      0.86,
+      0.9,
+      0.94
+    ],
+    "minScores": [
+      0.22,
+      0.26,
+      0.3,
+      0.34,
+      0.38
+    ],
+    "cells": 25
+  },
+  "cases": 500,
+  "best": {
+    "auto_score_ratio": 0.78,
+    "local_embed_min_score": 0.22,
+    "flags": {
+      "dynamic_ratio": true,
+      "per_tool_min": true,
+      "intent_gating": false,
+      "redundancy": false,
+      "calibration": true,
+      "two_pass": false
+    },
+    "bits": 19,
+    "label": "dyn+ptm+cal",
+    "m": {
+      "tp": 563,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "exact": 500,
+      "total": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1
+    }
+  },
+  "top10": [
+    {
+      "rank": 1,
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 2,
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 3,
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 4,
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 5,
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 6,
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 7,
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 8,
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 9,
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "rank": 10,
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    }
+  ],
+  "fullTable": [
+    {
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.78,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.82,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.86,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.86,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.86,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.86,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.86,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.9,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.9,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.9,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.9,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.9,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.94,
+      "local_embed_min_score": 0.22,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.94,
+      "local_embed_min_score": 0.26,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.94,
+      "local_embed_min_score": 0.3,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.94,
+      "local_embed_min_score": 0.34,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "auto_score_ratio": 0.94,
+      "local_embed_min_score": 0.38,
+      "exact": 500,
+      "exactRate": 1,
+      "fullCoverage": 500,
+      "fullCoverageRate": 1,
+      "f1": 1,
+      "precision": 1,
+      "recall": 1
+    }
+  ],
+  "productTarget": {
+    "fullCoveragePctGoal": 80,
+    "note": "Priorizar fullCoverageRate; exactRate penaliza herramientas extra."
+  },
+  "recommendedYaml": {
+    "experimental.tool_router.auto_score_ratio": 0.78,
+    "experimental.tool_router.local_embed_min_score": 0.22,
+    "experimental.tool_router.exact_match": {
+      "dynamic_ratio": true,
+      "per_tool_min": true,
+      "intent_gating": false,
+      "redundancy": false,
+      "calibration": true,
+      "two_pass": false
+    }
+  }
+}

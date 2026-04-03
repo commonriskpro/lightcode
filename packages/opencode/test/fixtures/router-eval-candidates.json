@@ -1,0 +1,89 @@
+{
+  "generated_from": "router-eval-expanded.jsonl",
+  "row_count": 294,
+  "candidate_count": 10,
+  "candidates": [
+    {
+      "id": "syn-edge-0224",
+      "priority": 52,
+      "reasons": [
+        "many_required",
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "syn-edge-0226",
+      "priority": 52,
+      "reasons": [
+        "many_required",
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "en-amb-2",
+      "priority": 40,
+      "reasons": [
+        "many_required",
+        "short_prompt"
+      ]
+    },
+    {
+      "id": "syn-edit_write-0026",
+      "priority": 40,
+      "reasons": [
+        "many_required",
+        "short_prompt"
+      ]
+    },
+    {
+      "id": "syn-edge-0051",
+      "priority": 37,
+      "reasons": [
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "syn-edge-0052",
+      "priority": 37,
+      "reasons": [
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "syn-edge-0053",
+      "priority": 37,
+      "reasons": [
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "syn-edge-0225",
+      "priority": 37,
+      "reasons": [
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "syn-edge-0230",
+      "priority": 37,
+      "reasons": [
+        "short_prompt",
+        "weak_category"
+      ]
+    },
+    {
+      "id": "en-amb-1",
+      "priority": 35,
+      "reasons": [
+        "short_prompt",
+        "wide_allowed"
+      ]
+    }
+  ]
+}

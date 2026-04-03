@@ -1,0 +1,3025 @@
+[
+  {
+    "text": "lee README.md y resumelo",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "read package.json",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "open docs/architecture.md and extract key modules",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "revisa src/config.ts y dime los defaults importantes",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "find tsconfig files",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca archivos .env",
+    "expect": [
+      "grep",
+      "websearch"
+    ]
+  },
+  {
+    "text": "list all migration files under db/migrations",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "encuentra todos los archivos *.spec.ts en packages",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "search for function buildServer in repo",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "grep TODO in src",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search for OPENAI_API_KEY references across the workspace",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca 'deprecated' en todo el monorepo",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "edita src/app.ts y cambia el puerto",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "refactoriza esta funcion en util.ts",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "update retry logic in src/net/client.ts",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "corrige el typo en docs/cli.md sin tocar otras lineas",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "create docs/plan.md with rollout steps",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "guarda el resultado en reporte.md",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "write a changelog entry for version 1.4.0",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "crea un archivo notes/today.md con pendientes",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "run bun test",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "ejecuta npm run build",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "run bun typecheck in packages/opencode",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "ejecuta git status y muestra cambios pendientes",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "search web for bun test timeout issues",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "busca en internet documentacion de drizzle relations",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://example.com/docs",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "abre y descarga contenido de https://opencode.ai",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate this migration to subagent",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "usa otro agente para revisar",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "delegate performance profiling to a subagent",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "delega a otro agente la revision de seguridad",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill playwright",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "carga la skill de testing",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "load the cursor settings skill",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "carga una skill para crear reglas del proyecto",
+    "expect": [
+      "skill",
+      "task"
+    ]
+  },
+  {
+    "text": "actualiza mi todo list con 3 tareas",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "mark task 2 as completed in todo",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "add two pending tasks and cancel the old one in todo",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "actualiza mi lista de tareas: una en progreso y dos pendientes",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "preguntame si prefiero plan a o b",
+    "expect": [
+      "question"
+    ]
+  },
+  {
+    "text": "ask me to choose deployment region",
+    "expect": []
+  },
+  {
+    "text": "ask me which database provider I prefer",
+    "expect": [
+      "question",
+      "websearch"
+    ]
+  },
+  {
+    "text": "preguntame si quiero modo rapido o modo seguro",
+    "expect": [
+      "question"
+    ]
+  },
+  {
+    "text": "semantic code search for auth middleware",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "haz busqueda semantica de controladores",
+    "expect": [
+      "question"
+    ]
+  },
+  {
+    "text": "semantic search for websocket reconnect logic",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "haz busqueda semantica del flujo de pagos",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "find all references and then edit them",
+    "expect": [
+      "grep",
+      "read",
+      "todowrite"
+    ]
+  },
+  {
+    "text": "busca en archivos y luego escribe resumen.md",
+    "expect": [
+      "glob",
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "read docs/contributing.md and write a short onboarding.md",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "lee CHANGELOG.md y escribe resumen en release-notes.md",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "fetch website and write markdown digest",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga la pagina de docs y guarda digest.md",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "run tests and edit failing snapshot",
+    "expect": [
+      "bash",
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ejecuta tests y corrige el archivo",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "open file and edit text",
+    "expect": [
+      "edit",
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "lee config y modificalo",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "list files and grep FIXME",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "encuentra archivos y busca el texto API_KEY",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "create new file then run formatter",
+    "expect": [
+      "edit",
+      "write"
+    ]
+  },
+  {
+    "text": "crea archivo y ejecuta prettier",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "search release notes and then fetch the official page",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "busca una guia de bun y luego abre el enlace oficial",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "delegate and write plan.md",
+    "expect": [
+      "task",
+      "todowrite",
+      "write"
+    ]
+  },
+  {
+    "text": "usa subagente y guarda plan en markdown",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "ask user choice then update todo",
+    "expect": [
+      "question",
+      "todowrite"
+    ]
+  },
+  {
+    "text": "pregunta al usuario y actualiza pendientes",
+    "expect": [
+      "question"
+    ]
+  },
+  {
+    "text": "semantic search then edit implementation",
+    "expect": [
+      "codesearch",
+      "grep",
+      "question",
+      "websearch"
+    ]
+  },
+  {
+    "text": "busqueda semantica y refactor",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "read docs and run typecheck to validate changes",
+    "expect": [
+      "write"
+    ]
+  },
+  {
+    "text": "lee el archivo y luego ejecuta pruebas rapidas",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "fetch url and summarize to md file",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "descarga una url tecnica y guarda resumen.md",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "grep endpoint and write migration notes",
+    "expect": [
+      "grep",
+      "write"
+    ]
+  },
+  {
+    "text": "busca endpoint y guarda notas.md",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "run shell command and read output file",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta comando y lee el log",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "run git diff and summarize changed files",
+    "expect": [
+      "edit",
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "ejecuta un comando y despues lee el resultado en un archivo",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "find service files and delegate implementation to subagent",
+    "expect": [
+      "codesearch",
+      "task"
+    ]
+  },
+  {
+    "text": "encuentra archivos de api y delega la refactorizacion",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "grep auth code and ask user which strategy to keep",
+    "expect": [
+      "question"
+    ]
+  },
+  {
+    "text": "busca dos implementaciones y preguntame cual dejamos",
+    "expect": [
+      "question"
+    ]
+  },
+  {
+    "text": "semantic search for cache layer then write findings to notes.md",
+    "expect": [
+      "codesearch",
+      "glob",
+      "grep",
+      "todowrite"
+    ]
+  },
+  {
+    "text": "haz busqueda semantica y guarda hallazgos en reporte.md",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "load skill and then delegate execution",
+    "expect": [
+      "skill",
+      "task"
+    ]
+  },
+  {
+    "text": "carga una skill y luego delega el trabajo",
+    "expect": [
+      "skill",
+      "task"
+    ]
+  },
+  {
+    "text": "read the config file (case 88)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "glob src then grep export [89]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 90)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 91)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 92)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 93)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 94)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 95)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 96)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [97]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 98)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 99)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 100)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 101)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 102)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 103)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 104)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [105]",
+    "expect": [
+      "codesearch",
+      "grep",
+      "task"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 106)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 107)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 108)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 109)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 110)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 111)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 112)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [113]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 114)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 115)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 116)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 117)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 118)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 119)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 120)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [121]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 122)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 123)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 124)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 125)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 126)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 127)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 128)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "glob src then grep export [129]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 130)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 131)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 132)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 133)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 134)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 135)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 136)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [137]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 138)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 139)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 140)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 141)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 142)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 143)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 144)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [145]",
+    "expect": [
+      "codesearch",
+      "grep",
+      "task"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 146)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 147)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "read the config file (case 148)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 149)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 150)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 151)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 152)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [153]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 154)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 155)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 156)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 157)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 158)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 159)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 160)",
+    "expect": []
+  },
+  {
+    "text": "read tests and run bun test [161]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "codesearch payment flow (case 162)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 163)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 164)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 165)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 166)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 167)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 168)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "glob src then grep export [169]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 170)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 171)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 172)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 173)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 174)",
+    "expect": [
+      "edit",
+      "write"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 175)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 176)",
+    "expect": []
+  },
+  {
+    "text": "fetch docs and edit README [177]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "read the config file (case 178)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 179)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 180)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "run cargo check (case 181)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 182)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 183)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 184)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [185]",
+    "expect": [
+      "codesearch",
+      "glob",
+      "grep",
+      "task"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 186)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 187)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 188)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 189)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 190)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 191)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 192)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [193]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 194)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 195)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 196)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 197)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 198)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 199)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 200)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [201]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 202)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 203)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 204)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 205)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 206)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 207)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 208)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "glob src then grep export [209]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 210)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "run cargo check (case 211)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 212)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 213)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 214)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 215)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 216)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [217]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 218)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 219)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 220)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 221)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 222)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 223)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 224)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [225]",
+    "expect": [
+      "codesearch",
+      "grep",
+      "task"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 226)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 227)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 228)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 229)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 230)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 231)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 232)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [233]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 234)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 235)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 236)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 237)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 238)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 239)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 240)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [241]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 242)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 243)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 244)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 245)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 246)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 247)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 248)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "glob src then grep export [249]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 250)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 251)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 252)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 253)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 254)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 255)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 256)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [257]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 258)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 259)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 260)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 261)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 262)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 263)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 264)",
+    "expect": []
+  },
+  {
+    "text": "grep handler and codesearch callers [265]",
+    "expect": [
+      "codesearch",
+      "grep"
+    ]
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 266)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 267)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 268)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 269)",
+    "expect": [
+      "edit",
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 270)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 271)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 272)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [273]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 274)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 275)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 276)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 277)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 278)",
+    "expect": [
+      "edit",
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 279)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 280)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [281]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 282)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 283)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 284)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 285)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 286)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 287)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 288)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "glob src then grep export [289]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 290)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 291)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 292)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 293)",
+    "expect": []
+  },
+  {
+    "text": "preguntame si o no (case 294)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 295)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 296)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [297]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 298)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 299)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 300)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 301)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 302)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 303)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 304)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [305]",
+    "expect": [
+      "codesearch",
+      "grep"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 306)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 307)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 308)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 309)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 310)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 311)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 312)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [313]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 314)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 315)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 316)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 317)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 318)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 319)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 320)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [321]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 322)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 323)",
+    "expect": [
+      "edit",
+      "write"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 324)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 325)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 326)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 327)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 328)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "glob src then grep export [329]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "run cargo check (case 330)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 331)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 332)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 333)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 334)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 335)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 336)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [337]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 338)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 339)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 340)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 341)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 342)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 343)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 344)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [345]",
+    "expect": [
+      "codesearch",
+      "grep"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 346)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 347)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 348)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 349)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 350)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 351)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 352)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [353]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 354)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 355)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "read the config file (case 356)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 357)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 358)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 359)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 360)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [361]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 362)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 363)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 364)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 365)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 366)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 367)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 368)",
+    "expect": []
+  },
+  {
+    "text": "glob src then grep export [369]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "codesearch payment flow (case 370)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 371)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 372)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 373)",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 374)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 375)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 376)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [377]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 378)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 379)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 380)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 381)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 382)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 383)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 384)",
+    "expect": []
+  },
+  {
+    "text": "grep handler and codesearch callers [385]",
+    "expect": [
+      "codesearch",
+      "grep"
+    ]
+  },
+  {
+    "text": "read the config file (case 386)",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 387)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 388)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 389)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 390)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 391)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 392)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [393]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 394)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 395)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 396)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 397)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 398)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 399)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 400)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [401]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 402)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 403)",
+    "expect": [
+      "edit",
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 404)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 405)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 406)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 407)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 408)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "glob src then grep export [409]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 410)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 411)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 412)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 413)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 414)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 415)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 416)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [417]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 418)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "run cargo check (case 419)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 420)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 421)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 422)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 423)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 424)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [425]",
+    "expect": [
+      "codesearch",
+      "grep"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 426)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 427)",
+    "expect": [
+      "edit",
+      "todowrite"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 428)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 429)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 430)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 431)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 432)",
+    "expect": [
+      "edit",
+      "read"
+    ]
+  },
+  {
+    "text": "web search price and save price.md [433]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 434)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 435)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 436)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 437)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 438)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 439)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 440)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [441]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 442)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 443)",
+    "expect": []
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 444)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 445)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 446)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 447)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "run cargo check (case 448)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob src then grep export [449]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 450)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 451)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 452)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 453)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 454)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 455)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 456)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [457]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 458)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 459)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 460)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 461)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 462)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 463)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 464)",
+    "expect": [
+      "bash",
+      "glob"
+    ]
+  },
+  {
+    "text": "grep handler and codesearch callers [465]",
+    "expect": [
+      "codesearch",
+      "grep",
+      "task"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 466)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 467)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 468)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 469)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "carga skill typescript (case 470)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "actualiza todo con arreglos (case 471)",
+    "expect": [
+      "todowrite"
+    ]
+  },
+  {
+    "text": "preguntame si o no (case 472)",
+    "expect": []
+  },
+  {
+    "text": "web search price and save price.md [473]",
+    "expect": [
+      "webfetch",
+      "websearch"
+    ]
+  },
+  {
+    "text": "busqueda semantica flujo de pago (case 474)",
+    "expect": []
+  },
+  {
+    "text": "read the config file (case 475)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "write output to out.txt (case 476)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edit lib/utils.ts (case 477)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "run cargo check (case 478)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "glob **/*.test.ts (case 479)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "grep for deprecated (case 480)",
+    "expect": [
+      "grep"
+    ]
+  },
+  {
+    "text": "read tests and run bun test [481]",
+    "expect": [
+      "bash",
+      "read"
+    ]
+  },
+  {
+    "text": "search web for latest nextjs (case 482)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch https://api.github.com (case 483)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delegate to build agent (case 484)",
+    "expect": [
+      "task"
+    ]
+  },
+  {
+    "text": "load skill typescript (case 485)",
+    "expect": [
+      "skill"
+    ]
+  },
+  {
+    "text": "update todo with fixes (case 486)",
+    "expect": [
+      "edit"
+    ]
+  },
+  {
+    "text": "ask me yes or no (case 487)",
+    "expect": []
+  },
+  {
+    "text": "codesearch payment flow (case 488)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "glob src then grep export [489]",
+    "expect": [
+      "glob",
+      "grep"
+    ]
+  },
+  {
+    "text": "lee el archivo de configuracion (case 490)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "escribe salida en out.txt (case 491)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "edita lib/utils.ts (case 492)",
+    "expect": [
+      "read"
+    ]
+  },
+  {
+    "text": "ejecuta cargo check (case 493)",
+    "expect": [
+      "bash"
+    ]
+  },
+  {
+    "text": "busca **/*.test.ts (case 494)",
+    "expect": [
+      "glob"
+    ]
+  },
+  {
+    "text": "busca deprecated en el codigo (case 495)",
+    "expect": [
+      "codesearch"
+    ]
+  },
+  {
+    "text": "busca en internet nextjs ultima version (case 496)",
+    "expect": [
+      "websearch"
+    ]
+  },
+  {
+    "text": "fetch docs and edit README [497]",
+    "expect": [
+      "read",
+      "write"
+    ]
+  },
+  {
+    "text": "descarga https://api.github.com (case 498)",
+    "expect": [
+      "webfetch"
+    ]
+  },
+  {
+    "text": "delega al agente build (case 499)",
+    "expect": [
+      "task"
+    ]
+  }
+]
