@@ -1379,6 +1379,19 @@ export namespace Config {
                 .describe(
                   "When true (default), merge tool ids from the previous assistant message into the current router output so tools are not dropped between turns; tool defs often hit prompt cache, so cost is low.",
                 ),
+              exposure_mode: z
+                .enum([
+                  "per_turn_subset",
+                  "memory_only_unlocked",
+                  "stable_catalog_subset",
+                  "subset_plus_memory_reminder",
+                  "session_accumulative_callable",
+                ])
+                .optional()
+                .default("per_turn_subset")
+                .describe(
+                  "Experimental: how tool definitions and session memory interact after the offline router. Default per_turn_subset matches legacy behavior. See docs/router-eval.md.",
+                ),
               fallback: z
                 .object({
                   enabled: z

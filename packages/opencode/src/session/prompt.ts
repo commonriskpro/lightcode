@@ -35,6 +35,13 @@ import { Flag } from "../flag/flag"
 import { Config } from "@/config/config"
 import { applyInitialToolTier, minimalTierPromptHint } from "./initial-tool-tier"
 import { ToolRouter, stickyToolIdsFromMessages, type ContextTier } from "./tool-router"
+import {
+  applyExposure,
+  estimateAttachedToolPayload,
+  memoryFromMessages,
+  normalizeExposureMode,
+  type ExposureMode,
+} from "./tool-exposure"
 import { instructionMode, mergedInstructionBodies, minimalTierAllTurns, threadHasAssistant } from "./wire-tier"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
@@ -678,7 +685,7 @@ export namespace SessionPrompt {
       const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
       const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
-      const { tools, toolRouterPrompt, contextTier } = await resolveTools({
+      const { tools, toolRouterPrompt, contextTier, exposureUpdated } = await resolveTools({
         agent,
         session,
         model,
@@ -849,6 +856,13 @@ export namespace SessionPrompt {
         .catch(() => {})
 
       processor.message.toolRouterActiveIds = Object.keys(tools).sort()
+      if (exposureUpdated) {
+        processor.message.toolExposureUnlockedIds = exposureUpdated.unlocked
+        processor.message.toolExposureSessionCallableIds = exposureUpdated.sessionCallable
+      } else {
+        processor.message.toolExposureUnlockedIds = undefined
+        processor.message.toolExposureSessionCallableIds = undefined
+      }
       await Session.updateMessage(processor.message)
 
       const result = await processor.process({
@@ -950,6 +964,8 @@ export namespace SessionPrompt {
     toolRouterPrompt?: string
     contextTier: ContextTier
     usedRouterFallbackExpansion?: boolean
+    exposureMode: ExposureMode
+    exposureUpdated?: { unlocked: string[]; sessionCallable: string[] }
   }> {
     using _ = log.time("resolveTools")
     const start = performance.now()
@@ -1230,17 +1246,51 @@ export namespace SessionPrompt {
         allTurns: minimalAllTurns,
       })
     }
+    const exposureMode = normalizeExposureMode(cfg.experimental?.tool_router?.exposure_mode)
+    const priorMem = memoryFromMessages(input.messages)
+    const exposed = applyExposure({
+      mode: exposureMode,
+      routed,
+      registryTools: tools,
+      allowedToolIds,
+      messages: input.messages,
+      prior: priorMem,
+    })
+    if (exposed.promptSuffix) {
+      toolRouterPrompt = [toolRouterPrompt, exposed.promptSuffix].filter(Boolean).join("\n\n")
+    }
+    const attachedNames = Object.keys(exposed.tools).sort()
+    const est = estimateAttachedToolPayload(exposed.tools)
+    log.info("tool_exposure", {
+      sessionID: input.session.id,
+      exposure_mode: exposureMode,
+      attached_tool_ids: attachedNames,
+      remembered_unlocked: exposed.updated.unlocked,
+      callable_this_turn: attachedNames,
+      reminder_injected: exposed.reminderInjected,
+      approx_attached_tool_bytes: est.bytes,
+      approx_attached_tool_tokens: est.tokens,
+      used_router_fallback_expansion: routed.usedFallbackExpansion === true,
+      widened_vs_router: exposed.widenedVsRouter,
+      stable_catalog_note: exposed.stableCatalogNote,
+    })
     if (trace) {
       log.info("resolveTools.complete", {
         duration_ms: Math.round((performance.now() - start) * 100) / 100,
         sessionID: input.session.id,
       })
     }
+    const exposureUpdated =
+      exposureMode === "per_turn_subset"
+        ? undefined
+        : { unlocked: exposed.updated.unlocked, sessionCallable: exposed.updated.sessionCallable }
     return {
-      tools: routed.tools,
+      tools: exposed.tools,
       toolRouterPrompt,
       contextTier: routed.contextTier,
       usedRouterFallbackExpansion: routed.usedFallbackExpansion === true,
+      exposureMode,
+      exposureUpdated,
     }
   }
 

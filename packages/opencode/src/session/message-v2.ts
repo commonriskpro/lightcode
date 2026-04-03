@@ -448,6 +448,10 @@ export namespace MessageV2 {
     finish: z.string().optional(),
     /** Tool ids attached to the last model request (offline router output); next turn merges these so definitions stay aligned with prompt cache. */
     toolRouterActiveIds: z.array(z.string()).optional(),
+    /** Experimental tool-exposure memory: ids seen/unlocked in session (when exposure_mode !== per_turn_subset). */
+    toolExposureUnlockedIds: z.array(z.string()).optional(),
+    /** Experimental: monotonic callable set for session_accumulative_callable (intersected with permissions each turn). */
+    toolExposureSessionCallableIds: z.array(z.string()).optional(),
   }).meta({
     ref: "AssistantMessage",
   })

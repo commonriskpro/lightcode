@@ -2,6 +2,14 @@ import type { Tool as AITool } from "ai"
 import type { Config } from "@/config/config"
 import type { MessageV2 } from "./message-v2"
 import { ToolRouter } from "./tool-router"
+import {
+  applyExposure,
+  estimateAttachedToolPayload,
+  memoryFromMessages,
+  normalizeExposureMode,
+  type ExposureMemory,
+  type ExposureMode,
+} from "./tool-exposure"
 
 function dummyTool(id: string): AITool {
   return { description: `Tool ${id}` } as AITool
@@ -101,6 +109,7 @@ export function defaultEvalRouterConfig(): Config.Info {
         sticky_previous_turn_tools: true,
         router_only: false,
         no_match_fallback: false,
+        exposure_mode: "per_turn_subset",
       },
     },
   } as Config.Info
@@ -145,16 +154,31 @@ export function evalModePatch(mode: EvalModePreset): Partial<NonNullable<Config.
   return {}
 }
 
+export type RouterEvalExposureMetrics = {
+  mode: ExposureMode
+  router_selected_count: number
+  attached_after_exposure_count: number
+  approx_attached_tool_bytes: number
+  approx_attached_tool_tokens: number
+  reminder_injected: boolean
+  widened_vs_router: boolean
+}
+
 export async function runRouterEvalCase(input: {
   prompt: string
   agent: { name: string; mode: string }
   available_tools: string[]
   cfg: Config.Info
   stickyToolIds?: string[]
+  /** Override messages (e.g. prior assistant with exposure memory). Default: single user row. */
+  messages?: MessageV2.WithParts[]
+  /** Override exposure; defaults from cfg.experimental.tool_router.exposure_mode */
+  exposureMode?: ExposureMode
+  priorExposure?: ExposureMemory
 }) {
   const tools = buildEvalTools(input.available_tools)
   const allowedToolIds = new Set(input.available_tools)
-  const messages = buildEvalMessages(input.prompt)
+  const messages = input.messages ?? buildEvalMessages(input.prompt)
   const prev = process.env.OPENCODE_TOOL_ROUTER
   process.env.OPENCODE_TOOL_ROUTER = "1"
   const out = await ToolRouter.apply({
@@ -171,9 +195,30 @@ export async function runRouterEvalCase(input: {
   if (prev === undefined) delete process.env.OPENCODE_TOOL_ROUTER
   else process.env.OPENCODE_TOOL_ROUTER = prev
   const selected = Object.keys(out.tools).sort()
+  const mode = input.exposureMode ?? normalizeExposureMode(input.cfg.experimental?.tool_router?.exposure_mode)
+  const prior = input.priorExposure ?? memoryFromMessages(messages)
+  const exposed = applyExposure({
+    mode,
+    routed: out,
+    registryTools: tools,
+    allowedToolIds,
+    messages,
+    prior,
+  })
+  const est = estimateAttachedToolPayload(exposed.tools)
+  const exposure_metrics: RouterEvalExposureMetrics = {
+    mode,
+    router_selected_count: selected.length,
+    attached_after_exposure_count: Object.keys(exposed.tools).length,
+    approx_attached_tool_bytes: est.bytes,
+    approx_attached_tool_tokens: est.tokens,
+    reminder_injected: exposed.reminderInjected,
+    widened_vs_router: exposed.widenedVsRouter,
+  }
   return {
     selected,
     context_tier: out.contextTier,
     prompt_hint: out.promptHint,
+    exposure_metrics,
   }
 }

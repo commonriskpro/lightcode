@@ -26,6 +26,12 @@ This spec describes **what** to build and **how** it fits OpenCode; it does not 
 - Proving a globally minimal tool set (NP-hard in the general case); we target **good enough** with fallbacks.
 - Changing provider APIs or wire format (still `LanguageModelV3CallOptions` → HTTP as today).
 
+### Tool exposure experiments (optional)
+
+`experimental.tool_router.exposure_mode` (default `per_turn_subset`) runs **after** `ToolRouter.apply` in `resolveTools` and can add **session memory** (`toolExposureUnlockedIds`, `toolExposureSessionCallableIds` on assistant messages) and optional **reminder** text. It does **not** change the router’s selection logic by default.
+
+**Stable catalog + subset:** The AI SDK path used here passes a **single** `tools` map per request. There is **no** separate provider field for “full catalog definitions + per-request allowed tool names” in this stack. Mode `stable_catalog_subset` therefore **does not** introduce a second wire layer; it behaves like `per_turn_subset` and is documented in logs. A future provider-specific adapter could extend this.
+
 ---
 
 ## 4. Current behavior (baseline)

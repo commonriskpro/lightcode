@@ -243,7 +243,7 @@ Precedencia env/config: `OPENCODE_INITIAL_TOOL_TIER` → `experimental.initial_t
 
 **Especificación:** `packages/opencode/docs/spec-offline-tool-router.md`
 
-**Eval offline (dataset JSONL + métricas sin modelo de chat):** `packages/opencode/docs/router-eval.md` — `bun run router:eval` desde `packages/opencode`. **Puerta de regresión estricta (subset revisado congelado):** `bun run router:eval:reviewed:gate` (exige **100%** pass en `router-eval-reviewed.jsonl`). El dataset **expanded** es exploratorio; ver docs para `router:eval:expanded:breakdown` y el advisory opcional. **Coste estimado de definiciones de tools (bytes/tokens, extras por coste):** `bun run router:eval:tool-costs` y `--breakdown` en el harness.
+**Eval offline (dataset JSONL + métricas sin modelo de chat):** `packages/opencode/docs/router-eval.md` — `bun run router:eval` desde `packages/opencode`. **Puerta de regresión estricta (subset revisado congelado):** `bun run router:eval:reviewed:gate` (exige **100%** pass en `router-eval-reviewed.jsonl`). El dataset **expanded** es exploratorio; ver docs para `router:eval:expanded:breakdown` y el advisory opcional. **Coste estimado de definiciones de tools (bytes/tokens, extras por coste):** `bun run router:eval:tool-costs` y `--breakdown` en el harness. **Modos experimentales de exposición de tools** (`experimental.tool_router.exposure_mode`, p. ej. recordatorio sin re-adjuntar vs. conjunto callable acumulativo): ver `packages/opencode/docs/router-eval.md` sección *Tool exposure modes*.
 
 ---
 
