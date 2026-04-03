@@ -26,13 +26,18 @@
     "router:eval": "bun run script/router-eval.ts",
     "router:eval:expand": "bun run script/router-eval-expand.ts",
     "router:eval:reviewed": "bun run script/router-eval.ts -- --reviewed",
-    "router:eval:reviewed:gate": "bun run script/router-eval.ts -- --reviewed --min-pass-rate 1 --breakdown",
+    "router:eval:reviewed:gate": "bun run script/router-eval.ts -- --reviewed --profile safe --min-pass-rate 1 --breakdown",
     "router:eval:expanded": "bun run script/router-eval.ts -- --expanded",
     "router:eval:expanded:breakdown": "bun run script/router-eval.ts -- --expanded --breakdown",
     "router:eval:expanded:advisory": "bun run script/router-eval.ts -- --expanded --min-pass-rate 0.75 --breakdown",
     "router:eval:review-candidates": "bun run script/router-eval-review-candidates.ts",
     "router:eval:tool-costs": "bun run script/router-eval.ts -- --tool-costs",
-    "router:eval:scenarios": "bun run script/router-exposure-scenarios.ts"
+    "router:eval:scenarios": "bun run script/router-exposure-scenarios.ts",
+    "router:eval:reviewed:per-turn": "bun run script/router-eval.ts -- --reviewed --profile safe",
+    "router:eval:reviewed:subset-reminder": "bun run script/router-eval.ts -- --reviewed --profile experiment",
+    "router:eval:reviewed:session-accumulative": "bun run script/router-eval.ts -- --reviewed --profile session_accumulative",
+    "router:eval:reviewed:aggressive-recovery": "bun run script/router-eval.ts -- --reviewed --profile aggressive_recovery",
+    "router:eval:reviewed:compare-exposure": "bun run script/router-eval.ts -- --reviewed --profile safe --compare-exposure per_turn_subset session_accumulative"
   },
   "bin": {
     "opencode": "./bin/opencode"

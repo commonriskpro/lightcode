@@ -711,6 +711,28 @@ describe("ToolRouter hybrid multi-clause", () => {
     expect(out.selected.includes("write")).toBe(true)
   })
 
+  test("ES creame sin acento + archivo.md en root seeds write (keyword_rules off)", async () => {
+    const out = await runRouterEvalCase({
+      prompt: "creame un archivo hecho.md en el root del repo",
+      agent: { name: "build", mode: "primary" },
+      available_tools: tools,
+      cfg: defaultEvalRouterConfig(),
+    })
+    shutdownRouterEmbedIpc()
+    expect(out.selected.includes("write")).toBe(true)
+  })
+
+  test("ES créame archivo.md en root sin que se llame seeds write", async () => {
+    const out = await runRouterEvalCase({
+      prompt: "créame un archivo hecho.md en el root del repo",
+      agent: { name: "build", mode: "primary" },
+      available_tools: tools,
+      cfg: defaultEvalRouterConfig(),
+    })
+    shutdownRouterEmbedIpc()
+    expect(out.selected.includes("write")).toBe(true)
+  })
+
   test("EN create a file named done.md in the repo root selects write", async () => {
     const out = await runRouterEvalCase({
       prompt: "create a file named done.md in the repo root",

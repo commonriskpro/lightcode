@@ -90,6 +90,14 @@ describe("lexicalSignals seed write/edit cues", () => {
     ).toBe(true)
   })
 
+  test("creame un archivo hecho.md en el root del repo triggers strongWrite", () => {
+    expect(lexicalSignals("creame un archivo hecho.md en el root del repo").strongWrite).toBe(true)
+  })
+
+  test("créame un archivo hecho.md en el root del repo triggers strongWrite", () => {
+    expect(lexicalSignals("créame un archivo hecho.md en el root del repo").strongWrite).toBe(true)
+  })
+
   test("create a file named done.md in the repo root triggers strongWrite", () => {
     expect(lexicalSignals("create a file named done.md in the repo root").strongWrite).toBe(true)
   })

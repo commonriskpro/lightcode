@@ -104,7 +104,7 @@ export function lexicalSignals(text: string): LexicalSignals {
         u,
       ),
     strongWrite:
-      (/\b(create|new file|scaffold|new component|add file|add\s+a\s+unit\s+test\s+file|create\s+a\s+new\s+test\s+file|finalize\s+the\s+plan\s+document|write\s+(?:a|the|to)|from scratch|crear\s+(?:un|una|archivo)|crea\s+un\s+archivo|cr[eé]ame\s+un\s+archivo|creame\s+un\s+archivo|archivo\s+que\s+se\s+llame|un\s+archivo\s+que\s+se\s+llame|create\s+a\s+file\s+(?:named|called)|create\s+a\s+new\s+markdown\s+file|create\s+a\s+new\s+file\s+in\s+the\s+repo\s+root|nuevo\s+archivo|documenta\s+(?:la|el|los|un|una)|documentar\s+(?:en|la|el))\b/i.test(
+      (/\b(create|new file|scaffold|new component|add file|add\s+a\s+unit\s+test\s+file|create\s+a\s+new\s+test\s+file|finalize\s+the\s+plan\s+document|write\s+(?:a|the|to)|from scratch|crear\s+(?:un|una|archivo)|crea\s+un\s+archivo|cr[eé]ame\s+un\s+archivo|creame\s+un\s+archivo|archivo\s+que\s+se\s+llame|un\s+archivo\s+que\s+se\s+llame|create\s+a\s+file\s+(?:named|called)|create\s+a\s+file\s+in\s+the\s+repo\s+root|create\s+a\s+new\s+markdown\s+file|create\s+a\s+new\s+file\s+in\s+the\s+repo\s+root|nuevo\s+archivo|documenta\s+(?:la|el|los|un|una)|documentar\s+(?:en|la|el))\b/i.test(
         u,
       ) ||
         (/\b(?:en\s+el\s+root\s+del\s+repo|at\s+the\s+repo\s+root|in\s+the\s+repo\s+root|en\s+la\s+raíz\s+del\s+repositorio|en\s+la\s+raíz)\b/i.test(u) &&

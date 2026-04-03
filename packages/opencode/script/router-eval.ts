@@ -1,6 +1,6 @@
 /**
  * Offline tool-router evaluation harness (no chat model).
- * Usage: bun run router:eval [--dataset path] [--reviewed] [--expanded] [--mode default|...] [--exposure-mode per_turn_subset|...] [--compare-exposure a b] [--compare a b] [--json-out f] [--limit N] [--verbose] [--breakdown] [--tool-costs] [--tool bash] [--min-pass-rate 0.8] [--fail-on-regression]
+ * Usage: bun run router:eval [--dataset path] [--reviewed] [--expanded] [--mode default|...] [--profile safe|experiment|session_accumulative|aggressive_recovery] [--exposure-mode per_turn_subset|...] [--compare-exposure a b] [--compare a b] [--json-out f] [--limit N] [--verbose] [--breakdown] [--tool-costs] [--tool bash] [--min-pass-rate 0.8] [--fail-on-regression]
  * --reviewed loads test/fixtures/router-eval-reviewed.jsonl (frozen trusted regression gate; **gate** uses --min-pass-rate 1).
  * --expanded loads test/fixtures/router-eval-expanded.jsonl (same as --dataset …/router-eval-expanded.jsonl).
  */
@@ -29,7 +29,9 @@ import {
   evalModePatch,
   mergeEvalConfig,
   runRouterEvalCase,
+  routerEvalProfilePatch,
   type EvalModePreset,
+  type RouterEvalProfile,
 } from "../src/session/router-eval-context"
 import { normalizeExposureMode } from "../src/session/tool-exposure"
 import { shutdownRouterEmbedIpc } from "../src/session/router-embed-ipc"
@@ -56,6 +58,7 @@ function parseArgs(argv: string[]) {
     toolCosts: boolean
     exposureMode?: string
     compareExposure?: [string, string]
+    profile?: RouterEvalProfile
   } = {
     mode: "default",
     verbose: false,
@@ -129,6 +132,10 @@ function parseArgs(argv: string[]) {
       o.compareExposure = [argv[++i], argv[++i]]
       continue
     }
+    if (a === "--profile" && argv[i + 1]) {
+      o.profile = argv[++i] as RouterEvalProfile
+      continue
+    }
   }
   if (o.failOnRegression && o.minPassRate === 0) o.minPassRate = 0.85
   return o
@@ -166,6 +173,7 @@ async function runEval(
   tool: string | undefined,
   verbose: boolean,
   exposureMode?: string,
+  profile?: RouterEvalProfile,
 ): Promise<{
   rows: RowEvalResult[]
   dataset: ReturnType<typeof loadRouterEvalJsonl>
@@ -173,6 +181,8 @@ async function runEval(
   exposureAvgBytes: number
   exposureAvgAttached: number
   exposureAvgRouterSelected: number
+  evalProfile: RouterEvalProfile | null
+  exposureModeEffective: ReturnType<typeof normalizeExposureMode>
 }> {
   const raw = await readFile(datasetPath, "utf8")
   let dataset = loadRouterEvalJsonl(raw)
@@ -180,7 +190,9 @@ async function runEval(
   if (limit !== undefined) dataset = dataset.slice(0, limit)
 
   let cfg = mergeEvalConfig(defaultEvalRouterConfig(), evalModePatch(mode))
+  if (profile) cfg = mergeEvalConfig(cfg, routerEvalProfilePatch(profile))
   if (exposureMode) cfg = mergeEvalConfig(cfg, { exposure_mode: normalizeExposureMode(exposureMode) })
+  const exposureModeEffective = normalizeExposureMode(cfg.experimental?.tool_router?.exposure_mode)
   const results: RowEvalResult[] = []
   const micro = new Map<string, ToolMicro>()
   let sumBytes = 0
@@ -215,6 +227,8 @@ async function runEval(
     exposureAvgBytes: sumBytes / n,
     exposureAvgAttached: sumAttached / n,
     exposureAvgRouterSelected: sumRouterSel / n,
+    evalProfile: profile ?? null,
+    exposureModeEffective,
   }
 }
 
@@ -390,13 +404,13 @@ async function main(): Promise<number> {
 
   if (args.compareExposure) {
     const [e1, e2] = args.compareExposure
-    const r1 = await runEval(datasetPath, args.mode, args.limit, args.tool, args.verbose, e1)
+    const r1 = await runEval(datasetPath, args.mode, args.limit, args.tool, args.verbose, e1, args.profile)
     printReport(`mode=${args.mode} exposure=${normalizeExposureMode(e1)}`, r1.rows, r1.dataset, r1.micro, {
       avgBytes: r1.exposureAvgBytes,
       avgAttached: r1.exposureAvgAttached,
       avgRouterSel: r1.exposureAvgRouterSelected,
     })
-    const r2 = await runEval(datasetPath, args.mode, args.limit, args.tool, args.verbose, e2)
+    const r2 = await runEval(datasetPath, args.mode, args.limit, args.tool, args.verbose, e2, args.profile)
     printReport(`mode=${args.mode} exposure=${normalizeExposureMode(e2)}`, r2.rows, r2.dataset, r2.micro, {
       avgBytes: r2.exposureAvgBytes,
       avgAttached: r2.exposureAvgAttached,
@@ -420,13 +434,13 @@ async function main(): Promise<number> {
 
   if (args.compare) {
     const [a, b] = args.compare
-    const r1 = await runEval(datasetPath, a, args.limit, args.tool, args.verbose, args.exposureMode)
+    const r1 = await runEval(datasetPath, a, args.limit, args.tool, args.verbose, args.exposureMode, args.profile)
     printReport(`mode=${a}`, r1.rows, r1.dataset, r1.micro, {
       avgBytes: r1.exposureAvgBytes,
       avgAttached: r1.exposureAvgAttached,
       avgRouterSel: r1.exposureAvgRouterSelected,
     })
-    const r2 = await runEval(datasetPath, b, args.limit, args.tool, args.verbose, args.exposureMode)
+    const r2 = await runEval(datasetPath, b, args.limit, args.tool, args.verbose, args.exposureMode, args.profile)
     printReport(`mode=${b}`, r2.rows, r2.dataset, r2.micro, {
       avgBytes: r2.exposureAvgBytes,
       avgAttached: r2.exposureAvgAttached,
@@ -446,7 +460,7 @@ async function main(): Promise<number> {
     return 0
   }
 
-  const r = await runEval(datasetPath, args.mode, args.limit, args.tool, args.verbose, args.exposureMode)
+  const r = await runEval(datasetPath, args.mode, args.limit, args.tool, args.verbose, args.exposureMode, args.profile)
   printReport(`mode=${args.mode}`, r.rows, r.dataset, r.micro, {
     avgBytes: r.exposureAvgBytes,
     avgAttached: r.exposureAvgAttached,
@@ -463,7 +477,8 @@ async function main(): Promise<number> {
   if (args.jsonOut) {
     const payload = {
       mode: args.mode,
-      exposure_mode: args.exposureMode ? normalizeExposureMode(args.exposureMode) : "per_turn_subset",
+      profile: r.evalProfile,
+      exposure_mode: r.exposureModeEffective,
       exposure_aggregate: {
         avg_attached_bytes: r.exposureAvgBytes,
         avg_attached_count: r.exposureAvgAttached,

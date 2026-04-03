@@ -110,26 +110,80 @@ export function defaultEvalRouterConfig(): Config.Info {
         router_only: false,
         no_match_fallback: false,
         exposure_mode: "per_turn_subset",
+        fallback: {
+          enabled: true,
+          max_expansions_per_turn: 1,
+          expand_to: "full",
+          recover_empty_without_signal: false,
+        },
       },
     },
   } as Config.Info
 }
 
-export function mergeEvalConfig(
-  base: Config.Info,
-  patch: Partial<NonNullable<Config.Info["experimental"]>["tool_router"]>,
-): Config.Info {
-  const tr = base.experimental?.tool_router ?? {}
+type ToolRouterPatch = Partial<NonNullable<NonNullable<Config.Info["experimental"]>["tool_router"]>>
+type ToolRouterFull = NonNullable<NonNullable<Config.Info["experimental"]>["tool_router"]>
+
+export function mergeEvalConfig(base: Config.Info, patch: ToolRouterPatch): Config.Info {
+  const tr = (base.experimental?.tool_router ?? {}) as ToolRouterFull
+  const mergedFallback =
+    patch.fallback !== undefined ? { ...tr.fallback, ...patch.fallback } : tr.fallback
+  const { fallback: _ignore, ...patchRest } = patch
+  const next = {
+    ...tr,
+    ...patchRest,
+    ...(mergedFallback !== undefined ? { fallback: mergedFallback } : {}),
+  }
   return {
     ...base,
     experimental: {
       ...base.experimental,
-      tool_router: {
-        ...tr,
-        ...patch,
-      },
+      tool_router: next,
     },
   } as Config.Info
+}
+
+/**
+ * Named harness presets for `script/router-eval.ts --profile` (offline eval only).
+ * **safe** = empty patch (same as `defaultEvalRouterConfig`: conservative, reviewed gate).
+ * Other profiles add keyword RULES union + explicit fallback + exposure mode for experiments.
+ */
+export type RouterEvalProfile = "safe" | "experiment" | "session_accumulative" | "aggressive_recovery"
+
+export function routerEvalProfilePatch(p: RouterEvalProfile): ToolRouterPatch {
+  type Tr = NonNullable<NonNullable<Config.Info["experimental"]>["tool_router"]>
+  const fb: NonNullable<Tr["fallback"]> = {
+    enabled: true,
+    max_expansions_per_turn: 1,
+    expand_to: "full",
+    recover_empty_without_signal: false,
+  }
+  if (p === "safe") return {}
+  if (p === "experiment") {
+    return {
+      exposure_mode: "subset_plus_memory_reminder",
+      keyword_rules: true,
+      local_intent_embed: true,
+      fallback: fb,
+    }
+  }
+  if (p === "session_accumulative") {
+    return {
+      exposure_mode: "session_accumulative_callable",
+      keyword_rules: true,
+      local_intent_embed: true,
+      fallback: fb,
+    }
+  }
+  if (p === "aggressive_recovery") {
+    return {
+      exposure_mode: "subset_plus_memory_reminder",
+      keyword_rules: true,
+      local_intent_embed: true,
+      fallback: { ...fb, recover_empty_without_signal: true },
+    }
+  }
+  return {}
 }
 
 export type EvalModePreset =
@@ -142,7 +196,7 @@ export type EvalModePreset =
   | "passthrough"
   | "intent_on"
 
-export function evalModePatch(mode: EvalModePreset): Partial<NonNullable<Config.Info["experimental"]>["tool_router"]> {
+export function evalModePatch(mode: EvalModePreset): ToolRouterPatch {
   if (mode === "default") return {}
   if (mode === "keyword_rules_on") return { keyword_rules: true }
   if (mode === "keyword_rules_off") return { keyword_rules: false }

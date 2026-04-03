@@ -116,12 +116,12 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     label: "edit/refactor",
   },
   {
-    re: /\b(create|add|implement|new file|scaffold|crear|añadir|implementar)\b/i,
+    re: /\b(create|add|implement|new file|scaffold|crear|añadir|implementar|crea\s+un\s+archivo)\b/i,
     add: ["write", "edit", "grep", "read"],
     label: "create/implement",
   },
   {
-    re: /cr[eé]ame\s+un\s+archivo|creame\s+un\s+archivo|archivo\s+que\s+se\s+llame|un\s+archivo\s+que\s+se\s+llame|create\s+a\s+file\s+(?:named|called)|create\s+a\s+new\s+markdown\s+file|create\s+a\s+new\s+file\s+in\s+the\s+repo\s+root/i,
+    re: /cr[eé]ame\s+un\s+archivo|creame\s+un\s+archivo|archivo\s+que\s+se\s+llame|un\s+archivo\s+que\s+se\s+llame|create\s+a\s+file\s+(?:named|called)|create\s+a\s+file\s+in\s+the\s+repo\s+root|create\s+a\s+new\s+markdown\s+file|create\s+a\s+new\s+file\s+in\s+the\s+repo\s+root|(?:\.md|\.txt)\s+(?:en\s+el\s+root\s+del\s+repo|at\s+the\s+repo\s+root|in\s+the\s+repo\s+root)/i,
     add: ["write", "edit", "grep", "read"],
     label: "create/file-named",
   },
@@ -530,39 +530,47 @@ export namespace ToolRouter {
 
     let askMeLead = false
     let lexicalHint = false
-    if (!conversationExclusive && !keywordRules) {
-      const lead = text.trim()
-      if (/^ask\s+me\b/i.test(lead) || /^pregúntame\b/i.test(lead)) {
-        askMeLead = true
-        if (builtinAvailable.has("question")) matched.add("question")
-        labels.push("hint/ask_me")
-      }
+    let strongWriteSeed = false
+    if (!conversationExclusive) {
       const sig = lexicalSignals(text)
-      if (sig.questionIntent && builtinAvailable.has("question")) {
-        if (!matched.has("question")) lexicalHint = true
-        matched.add("question")
-        if (!askMeLead) labels.push("hint/question_lexical")
-      }
-      if ((/^this$/i.test(lead) || /^this\s*\(/i.test(lead)) && builtinAvailable.has("grep")) {
-        matched.add("grep")
-        if (builtinAvailable.has("read")) matched.add("read")
-        if (builtinAvailable.has("question")) matched.add("question")
-        lexicalHint = true
-        labels.push("hint/edge_this")
-      }
-      if (
-        /¿qué\s+hace/i.test(text) &&
-        /\b(?:en este repo|in this repo)\b/i.test(text) &&
-        builtinAvailable.has("grep")
-      ) {
-        matched.add("grep")
-        lexicalHint = true
-        labels.push("hint/repo_que_hace")
-      }
-      if (/\bcreate\s+a\s+new\s+test\s+file\b/i.test(text) && builtinAvailable.has("write")) {
+      if (sig.strongWrite && builtinAvailable.has("write")) {
         matched.add("write")
-        lexicalHint = true
-        labels.push("hint/new_test_file")
+        strongWriteSeed = true
+        if (!labels.some((l) => l === "lexical/strong_write")) labels.push("lexical/strong_write")
+      }
+      if (!keywordRules) {
+        const lead = text.trim()
+        if (/^ask\s+me\b/i.test(lead) || /^pregúntame\b/i.test(lead)) {
+          askMeLead = true
+          if (builtinAvailable.has("question")) matched.add("question")
+          labels.push("hint/ask_me")
+        }
+        if (sig.questionIntent && builtinAvailable.has("question")) {
+          if (!matched.has("question")) lexicalHint = true
+          matched.add("question")
+          if (!askMeLead) labels.push("hint/question_lexical")
+        }
+        if ((/^this$/i.test(lead) || /^this\s*\(/i.test(lead)) && builtinAvailable.has("grep")) {
+          matched.add("grep")
+          if (builtinAvailable.has("read")) matched.add("read")
+          if (builtinAvailable.has("question")) matched.add("question")
+          lexicalHint = true
+          labels.push("hint/edge_this")
+        }
+        if (
+          /¿qué\s+hace/i.test(text) &&
+          /\b(?:en este repo|in this repo)\b/i.test(text) &&
+          builtinAvailable.has("grep")
+        ) {
+          matched.add("grep")
+          lexicalHint = true
+          labels.push("hint/repo_que_hace")
+        }
+        if (/\bcreate\s+a\s+new\s+test\s+file\b/i.test(text) && builtinAvailable.has("write")) {
+          matched.add("write")
+          lexicalHint = true
+          labels.push("hint/new_test_file")
+        }
       }
     }
 
@@ -579,7 +587,8 @@ export namespace ToolRouter {
       ruleLabels.length > 0 ||
       hybridAugmented ||
       askMeLead ||
-      lexicalHint
+      lexicalHint ||
+      strongWriteSeed
 
     if (!hadRouterSignal && !routerOnly && tr?.no_match_fallback === true) {
       const fb = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]

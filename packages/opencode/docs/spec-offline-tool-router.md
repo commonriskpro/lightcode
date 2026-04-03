@@ -32,6 +32,8 @@ This spec describes **what** to build and **how** it fits OpenCode; it does not 
 
 **Stable catalog + subset:** The AI SDK path used here passes a **single** `tools` map per request. There is **no** separate provider field for “full catalog definitions + per-request allowed tool names” in this stack. Mode `stable_catalog_subset` therefore **does not** introduce a second wire layer; it behaves like `per_turn_subset` and is documented in logs. A future provider-specific adapter could extend this.
 
+**Recommended profiles & copy-paste snippets:** `docs/tool-router-profiles.md` (safe default, subset+reminder, session accumulative, aggressive recovery). **Harness:** `bun run script/router-eval.ts -- --profile …` — see `docs/router-eval.md`.
+
 ---
 
 ## 4. Current behavior (baseline)

@@ -2,6 +2,8 @@
 
 Local harness to measure routing precision, extras, and forbidden selections **without** the chat model.
 
+**Recommended settings (profiles A–D), copy-paste config, and flag cheat sheet:** [`tool-router-profiles.md`](./tool-router-profiles.md).
+
 ## Benchmark tiers (read this first)
 
 | Dataset | Role | Trust level |
@@ -20,10 +22,10 @@ From `packages/opencode`:
 bun run router:eval:reviewed:gate
 ```
 
-This runs `router-eval-reviewed.jsonl` with **`--min-pass-rate 1`** (exit code **1** if any row fails) and **`--breakdown`** (category, source, extras summary). Same as:
+This runs `router-eval-reviewed.jsonl` with **`--profile safe`**, **`--min-pass-rate 1`**, and **`--breakdown`**. Same as:
 
 ```bash
-bun run script/router-eval.ts -- --reviewed --min-pass-rate 1 --breakdown
+bun run script/router-eval.ts -- --reviewed --profile safe --min-pass-rate 1 --breakdown
 ```
 
 **Recommended** before merging router changes: `bun typecheck`, `router:eval:reviewed:gate`, and `test/session/tool-router*.ts` / `router-policy*.ts` / `router-eval*.ts`.
@@ -61,6 +63,12 @@ Default dataset: `test/fixtures/router-eval.jsonl` (small seed).
 | `router:eval:expanded:breakdown` | Expanded + category / source / extras |
 | `router:eval:expanded:advisory` | Expanded + min pass **75%** (advisory) |
 | `router:eval:tool-costs` | Print **canonical per-tool definition cost** table (no eval run) |
+| `router:eval:reviewed:per-turn` | Reviewed + harness profile **safe** (`per_turn_subset`-style defaults) |
+| `router:eval:reviewed:subset-reminder` | Reviewed + profile **experiment** (keyword_rules + `subset_plus_memory_reminder`) |
+| `router:eval:reviewed:session-accumulative` | Reviewed + profile **session_accumulative** |
+| `router:eval:reviewed:aggressive-recovery` | Reviewed + profile **aggressive_recovery** |
+| `router:eval:reviewed:compare-exposure` | Reviewed + `--compare-exposure per_turn_subset session_accumulative` |
+| `router:eval:scenarios` | Multi-turn exposure scenario battery (see fixture + `router-exposure-scenario.ts`) |
 
 ### CLI flags
 
@@ -72,8 +80,9 @@ Default dataset: `test/fixtures/router-eval.jsonl` (small seed).
 - `--min-pass-rate <0..1>` — exit **1** if global pass rate below threshold
 - `--fail-on-regression` — sets min pass rate to **0.85** if not overridden (legacy; prefer explicit `--min-pass-rate` for gates)
 - `--mode <preset>` — `default` \| `keyword_rules_on` \| `keyword_rules_off` \| `router_only` \| `no_match_on` \| `sticky_off` \| `passthrough` \| `intent_on`
+- `--profile <name>` — harness preset: **`safe`** (default when omitted; conservative, good for gate) \| **`experiment`** (keyword_rules + fallback + `subset_plus_memory_reminder`) \| **`session_accumulative`** (same + `session_accumulative_callable`) \| **`aggressive_recovery`** (experiment + `recover_empty_without_signal: true`). Applied after `--mode`, before `--exposure-mode`.
 - `--compare <a> <b>` — two **router** presets, side-by-side + delta pass rate
-- `--exposure-mode <mode>` — experimental **tool exposure** after `ToolRouter.apply` (default `per_turn_subset`; does not change router scoring / pass rate by itself)
+- `--exposure-mode <mode>` — overrides **only** `exposure_mode` after profile merge (experimental **tool exposure** after `ToolRouter.apply`; does not change router scoring / pass rate by itself)
 - `--compare-exposure <a> <b>` — same router preset, two exposure modes; prints **delta** of average attached-tool **bytes** (offline estimate) + pass rate (same for both)
 - `--limit N` — first N rows
 - `--tool <id>` — rows that involve that tool in required/forbidden/allowed or notes
@@ -130,13 +139,13 @@ Use **compare** modes for A/B thresholds. **Do not** tune primarily against revi
 
 Config: `experimental.tool_router.exposure_mode` (default **`per_turn_subset`** — same behavior as before this feature). Applied **after** the offline router in `SessionPrompt.resolveTools`, after permissions. See `src/session/tool-exposure.ts`.
 
-| Mode | Purpose |
-|------|---------|
-| `per_turn_subset` | **Control (default):** router output only; no exposure memory. |
-| `memory_only_unlocked` | Router subset + **reminder** line listing previously-unlocked tool ids (probe; not guaranteed callable). |
-| `stable_catalog_subset` | **Documented limitation:** this stack does not expose a separate “full catalog + allowed subset” on the wire; behavior matches `per_turn_subset` and logs a note. |
-| `subset_plus_memory_reminder` | Same as `memory_only_unlocked` for attachment (subset + reminder); unlocked ids accumulate in session memory. |
-| `session_accumulative_callable` | **Union** of router output with prior session callable ids (∩ `allowedToolIds`); grows monotonically until a new session. |
+| Mode | Safe? | Purpose |
+|------|-------|---------|
+| `per_turn_subset` | **Yes (default)** | Router output only; no exposure memory. |
+| `memory_only_unlocked` | Experimental | Router subset + **reminder** line listing previously-unlocked tool ids (not guaranteed callable). |
+| `stable_catalog_subset` | Experimental | **Limitation:** no separate wire catalog; behaves like `per_turn_subset` + note in logs. |
+| `subset_plus_memory_reminder` | **Recommended for daily experiments** | Subset + reminder; unlocked ids accumulate. |
+| `session_accumulative_callable` | Experimental (larger attach) | **Union** of router output with prior session callable ids (∩ `allowedToolIds`); grows until new session. |
 
 **Eval:** Pass/fail rows still score **router** `selected` ids only. The harness reports **`exposure_avg_attached_B`** (and counts) so you can compare payload cost across exposure modes without changing the regression oracle.
 

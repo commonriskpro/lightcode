@@ -222,9 +222,17 @@
       "base_tools": ["read"],
       "max_tools": 100,
       "mcp_always_include": false,
-      // Post-router: qué adjuntar + memoria de sesión. per_turn_subset = control (igual que sin esta clave).
-      // Otros: memory_only_unlocked | subset_plus_memory_reminder | session_accumulative_callable | stable_catalog_subset (ver docs/router-eval.md).
+      // ── Tool exposure + fallback (manual test PRIMARY profile) ─────────────────
+      // Subset per turn + reminder of unlocked ids; conservative empty-selection recovery.
+      "fallback": {
+        "enabled": true,
+        "max_expansions_per_turn": 1,
+        "expand_to": "full",
+        "recover_empty_without_signal": false,
+      },
+      // PRIMARY: subset + reminder (active). SECONDARY (benchmark): comment the next line and uncomment the one below.
       "exposure_mode": "subset_plus_memory_reminder",
+      // "exposure_mode": "session_accumulative_callable",
     },
   },
 }
