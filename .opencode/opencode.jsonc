@@ -222,6 +222,9 @@
       "base_tools": ["read"],
       "max_tools": 100,
       "mcp_always_include": false,
+      // Post-router: qué adjuntar + memoria de sesión. per_turn_subset = control (igual que sin esta clave).
+      // Otros: memory_only_unlocked | subset_plus_memory_reminder | session_accumulative_callable | stable_catalog_subset (ver docs/router-eval.md).
+      "exposure_mode": "subset_plus_memory_reminder",
     },
   },
 }
