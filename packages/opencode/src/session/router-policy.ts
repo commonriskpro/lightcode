@@ -90,9 +90,10 @@ export function lexicalSignalsMerged(fullText: string, clauses: string[]): Lexic
 
 export function lexicalSignals(text: string): LexicalSignals {
   const u = text
+  /** Bare "internet" / "en internet" are not enough; require search/doc/research phrasing (see tool-router web/research RULE). */
   const webResearchPos =
     !negatesWebResearch(u) &&
-    (/\b(search\s+the\s+web|web\s+search|look\s+up\s+online|documentaci[oó]n|wikipedia|investigaci[oó]n|research\s+on|third[- ]party|external\s+(api|tool|library)|busca\s+en\s+(?:internet|la\s+web)|buscar\s+en\s+(?:internet|la\s+web))\b/i.test(
+    (/\b(search\s+the\s+web|web\s+search|look\s+up\s+online|documentaci[oó]n\s+(oficial|online|externa|pública)|documentaci[oó]n\s+sobre|documentaci[oó]n\s+de\b|wikipedia|investigaci[oó]n|research\s+on|third[- ]party|external\s+(api|tool|library)|busca\s+en\s+(?:internet|la\s+web)|buscar\s+en\s+(?:internet|la\s+web)|busca\s+documentaci[oó]n\s+oficial)\b/i.test(
       u,
     ) ||
       /\blook\s+up\b.*\bonline\b/i.test(u))
@@ -103,9 +104,11 @@ export function lexicalSignals(text: string): LexicalSignals {
         u,
       ),
     strongWrite:
-      /\b(create|new file|scaffold|new component|add file|add\s+a\s+unit\s+test\s+file|create\s+a\s+new\s+test\s+file|finalize\s+the\s+plan\s+document|write\s+(?:a|the|to)|from scratch|crear\s+(?:un|una|archivo)|crea\s+un\s+archivo|nuevo\s+archivo|documenta\s+(?:la|el|los|un|una)|documentar\s+(?:en|la|el))\b/i.test(
+      (/\b(create|new file|scaffold|new component|add file|add\s+a\s+unit\s+test\s+file|create\s+a\s+new\s+test\s+file|finalize\s+the\s+plan\s+document|write\s+(?:a|the|to)|from scratch|crear\s+(?:un|una|archivo)|crea\s+un\s+archivo|cr[eé]ame\s+un\s+archivo|creame\s+un\s+archivo|archivo\s+que\s+se\s+llame|un\s+archivo\s+que\s+se\s+llame|create\s+a\s+file\s+(?:named|called)|create\s+a\s+new\s+markdown\s+file|create\s+a\s+new\s+file\s+in\s+the\s+repo\s+root|nuevo\s+archivo|documenta\s+(?:la|el|los|un|una)|documentar\s+(?:en|la|el))\b/i.test(
         u,
-      ),
+      ) ||
+        (/\b(?:en\s+el\s+root\s+del\s+repo|at\s+the\s+repo\s+root|in\s+the\s+repo\s+root|en\s+la\s+raíz\s+del\s+repositorio|en\s+la\s+raíz)\b/i.test(u) &&
+          /\b(?:archivo|file|\.md|llame|named|called)\b/i.test(u))),
     strongEdit:
       /\b(edit|edits|patch|refactor|change|update|modify|fix|rename|move|delete|remove|replace|apply\s+edits|search_replace|implement\s+in\s+|implementa|corrige|corrígelo|arregla|arreglalo|reescribe|renombra|añade\s+jsdoc|add\s+jsdoc)\b/i.test(u),
     strongModify:
@@ -202,7 +205,10 @@ function applyHardGates(ids: Set<string>, text: string, sig: LexicalSignals, mul
       /\b(search|lookup|find)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online)\b/i.test(text) ||
       /\b(documentation|docs|reference)\s+(?:for|about|on)\b/i.test(text) ||
       /\b(busca|buscar)\s+en\s+(?:internet|la\s+web)\b/i.test(text) ||
-      /\blook\s+up\s+online\b/i.test(text)
+      /\blook\s+up\s+online\b/i.test(text) ||
+      /\bdocumentaci[oó]n\s+(oficial|online|externa|pública)\b/i.test(text) ||
+      /\bdocumentaci[oó]n\s+sobre\b/i.test(text) ||
+      /\bbusca\s+documentaci[oó]n\b/i.test(text)
     if (!ok) out.delete("websearch")
   }
 

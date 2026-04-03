@@ -21,6 +21,20 @@ describe("lexicalSignals webResearch", () => {
     const s = lexicalSignals("Look up best practices for Zod v4 migrations online (eval-syn-33)")
     expect(s.webResearch).toBe(true)
   })
+
+  test("false for bare internet mention without search/doc phrasing", () => {
+    expect(lexicalSignals("internet").webResearch).toBe(false)
+    expect(lexicalSignals("habla de internet").webResearch).toBe(false)
+    expect(lexicalSignals("en internet").webResearch).toBe(false)
+  })
+
+  test("true for busca en internet with doc intent", () => {
+    expect(lexicalSignals("Busca en internet documentacion oficial de Postgres").webResearch).toBe(true)
+  })
+
+  test("true for documentación oficial sobre (reviewed-style)", () => {
+    expect(lexicalSignals("Busca documentación oficial sobre advisory locks en Postgres").webResearch).toBe(true)
+  })
 })
 
 describe("lexicalSignals codesearch vs grep cues", () => {
@@ -69,6 +83,16 @@ describe("lexicalSignals seed write/edit cues", () => {
   test("crea un archivo triggers strongWrite", () => {
     expect(lexicalSignals("Crea un archivo nuevo reporte.md con el resumen").strongWrite).toBe(true)
   })
+
+  test("créame un archivo que se llame hecho.md en el root del repo triggers strongWrite", () => {
+    expect(
+      lexicalSignals("créame un archivo que se llame hecho.md en el root del repo").strongWrite,
+    ).toBe(true)
+  })
+
+  test("create a file named done.md in the repo root triggers strongWrite", () => {
+    expect(lexicalSignals("create a file named done.md in the repo root").strongWrite).toBe(true)
+  })
 })
 
 describe("lexicalSignalsMerged", () => {
@@ -77,6 +101,22 @@ describe("lexicalSignalsMerged", () => {
     const parts = ["Read foo.ts", "fix the typo in the comment"]
     const m = lexicalSignalsMerged(full, parts)
     expect(m.strongEdit).toBe(true)
+  })
+})
+
+describe("applyRouterPolicy websearch weak internet", () => {
+  test("strips websearch when candidate set includes it but prompt only mentions internet weakly", () => {
+    const ids = new Set(["read", "grep", "glob", "websearch", "webfetch", "skill", "task"])
+    const available = new Set(["read", "grep", "glob", "websearch", "webfetch", "skill", "task"])
+    const t = "solo menciono internet sin buscar nada"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+    })
+    expect(out.includes("websearch")).toBe(false)
   })
 })
 

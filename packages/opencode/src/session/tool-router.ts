@@ -121,6 +121,11 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     label: "create/implement",
   },
   {
+    re: /cr[eé]ame\s+un\s+archivo|creame\s+un\s+archivo|archivo\s+que\s+se\s+llame|un\s+archivo\s+que\s+se\s+llame|create\s+a\s+file\s+(?:named|called)|create\s+a\s+new\s+markdown\s+file|create\s+a\s+new\s+file\s+in\s+the\s+repo\s+root/i,
+    add: ["write", "edit", "grep", "read"],
+    label: "create/file-named",
+  },
+  {
     // Spanish: "borralo/borrarlos/borrarlo" are one word — \bborra\b does not match inside them.
     re: /\b(delete|remove|unlink|erase|trash|rm\b|rmdir|borr(?:as|ar|a|alo|ala|arlos|arlas|arlo|arla)|eliminar|elimina|suprimir)\b/i,
     add: ["bash", "edit", "write", "read", "glob"],
@@ -162,7 +167,8 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
     label: "web/screenshot-media",
   },
   {
-    re: /\b(http|curl|fetch|url|website|web\s+search|internet|navegador|wikipedia|búsqueda\s+web|en\s+internet|investigar\s+sobre|investigaci[oó]n\s+sobre|investigaci[oó]n\s+de|investigues\s+sobre|investigue\s+sobre|buscar\s+informaci[oó]n\s+sobre|buscar\s+informaci[oó]n\s+de|busca\s+informaci[oó]n\s+sobre|busca\s+informaci[oó]n\s+de|informaci[oó]n\s+sobre|producto\s+externo|software\s+externo|herramienta\s+externa|documentaci[oó]n\s+pública|documentaci[oó]n\s+oficial|mercado\s+externo|research\s+(on|about|into)|look\s+up\s+online|third[- ]party|external\s+(product|software|tool|vendor))\b/i,
+    // Do not use bare \binternet\b or \ben internet\b — too many false positives. Require research/doc/search phrasing.
+    re: /\b(http|curl|fetch|url|website|web\s+search|navegador|wikipedia|búsqueda\s+web|investigar\s+sobre|investigaci[oó]n\s+sobre|investigaci[oó]n\s+de|investigues\s+sobre|investigue\s+sobre|buscar\s+informaci[oó]n\s+sobre|buscar\s+informaci[oó]n\s+de|busca\s+informaci[oó]n\s+sobre|busca\s+informaci[oó]n\s+de|informaci[oó]n\s+sobre|producto\s+externo|software\s+externo|herramienta\s+externa|documentaci[oó]n\s+pública|documentaci[oó]n\s+oficial|mercado\s+externo|research\s+(on|about|into)|look\s+up\s+online|third[- ]party|external\s+(product|software|tool|vendor))\b/i,
     add: ["webfetch", "websearch", "read"],
     label: "web/research",
   },

@@ -31,7 +31,8 @@
     "router:eval:expanded:breakdown": "bun run script/router-eval.ts -- --expanded --breakdown",
     "router:eval:expanded:advisory": "bun run script/router-eval.ts -- --expanded --min-pass-rate 0.75 --breakdown",
     "router:eval:review-candidates": "bun run script/router-eval-review-candidates.ts",
-    "router:eval:tool-costs": "bun run script/router-eval.ts -- --tool-costs"
+    "router:eval:tool-costs": "bun run script/router-eval.ts -- --tool-costs",
+    "router:eval:scenarios": "bun run script/router-exposure-scenarios.ts"
   },
   "bin": {
     "opencode": "./bin/opencode"

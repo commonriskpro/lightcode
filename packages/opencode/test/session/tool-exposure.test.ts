@@ -4,6 +4,15 @@ import { applyExposure, memoryFromMessages, normalizeExposureMode, toolIdsFromCo
 import { ToolRouter } from "@/session/tool-router"
 import type { MessageV2 } from "@/session/message-v2"
 
+function withRouterEnv<T>(fn: () => Promise<T>) {
+  const prev = process.env.OPENCODE_TOOL_ROUTER
+  process.env.OPENCODE_TOOL_ROUTER = "1"
+  return fn().finally(() => {
+    if (prev === undefined) delete process.env.OPENCODE_TOOL_ROUTER
+    else process.env.OPENCODE_TOOL_ROUTER = prev
+  })
+}
+
 describe("tool-exposure", () => {
   test("default mode unchanged vs router output", async () => {
     const cfg = defaultEvalRouterConfig()
@@ -137,5 +146,68 @@ describe("tool-exposure", () => {
     expect(normalizeExposureMode(undefined)).toBe("per_turn_subset")
     expect(normalizeExposureMode("garbage")).toBe("per_turn_subset")
     expect(normalizeExposureMode("session_accumulative_callable")).toBe("session_accumulative_callable")
+  })
+
+  test("session_accumulative_callable keeps write after first file-creation turn", async () => {
+    const cfg = defaultEvalRouterConfig()
+    const ids = [
+      "read",
+      "write",
+      "grep",
+      "glob",
+      "edit",
+      "bash",
+      "task",
+      "skill",
+      "webfetch",
+      "websearch",
+      "question",
+      "todowrite",
+      "codesearch",
+    ]
+    const tools = buildEvalTools(ids)
+    const allowed = new Set(ids)
+    await withRouterEnv(async () => {
+      const msg1 = buildEvalMessages("créame un archivo que se llame hecho.md en el root del repo")
+      const routed1 = await ToolRouter.apply({
+        tools,
+        registryTools: tools,
+        allowedToolIds: allowed,
+        messages: msg1,
+        agent: { name: "build", mode: "primary" },
+        cfg,
+        mcpIds: new Set(),
+        skip: false,
+      })
+      const ex1 = applyExposure({
+        mode: "session_accumulative_callable",
+        routed: routed1,
+        registryTools: tools,
+        allowedToolIds: allowed,
+        messages: msg1,
+        prior: { unlocked: [], sessionCallable: [] },
+      })
+      expect(Object.keys(ex1.tools).includes("write")).toBe(true)
+      const msg2 = buildEvalMessages("lista los archivos en src/")
+      const routed2 = await ToolRouter.apply({
+        tools,
+        registryTools: tools,
+        allowedToolIds: allowed,
+        messages: msg2,
+        agent: { name: "build", mode: "primary" },
+        cfg,
+        mcpIds: new Set(),
+        skip: false,
+      })
+      const ex2 = applyExposure({
+        mode: "session_accumulative_callable",
+        routed: routed2,
+        registryTools: tools,
+        allowedToolIds: allowed,
+        messages: msg2,
+        prior: ex1.updated,
+      })
+      expect(Object.keys(ex2.tools).includes("write")).toBe(true)
+    })
   })
 })

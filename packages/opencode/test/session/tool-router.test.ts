@@ -699,4 +699,26 @@ describe("ToolRouter hybrid multi-clause", () => {
     expect(out.selected.includes("bash")).toBe(false)
     expect(out.selected.includes("grep")).toBe(true)
   })
+
+  test("ES créame archivo hecho.md en root selects write", async () => {
+    const out = await runRouterEvalCase({
+      prompt: "créame un archivo que se llame hecho.md en el root del repo",
+      agent: { name: "build", mode: "primary" },
+      available_tools: tools,
+      cfg: defaultEvalRouterConfig(),
+    })
+    shutdownRouterEmbedIpc()
+    expect(out.selected.includes("write")).toBe(true)
+  })
+
+  test("EN create a file named done.md in the repo root selects write", async () => {
+    const out = await runRouterEvalCase({
+      prompt: "create a file named done.md in the repo root",
+      agent: { name: "build", mode: "primary" },
+      available_tools: tools,
+      cfg: defaultEvalRouterConfig(),
+    })
+    shutdownRouterEmbedIpc()
+    expect(out.selected.includes("write")).toBe(true)
+  })
 })

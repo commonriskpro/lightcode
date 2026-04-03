@@ -1,0 +1,881 @@
+{
+  "defaults": {
+    "allowed_tools": [
+      "read",
+      "grep",
+      "glob",
+      "bash",
+      "edit",
+      "write",
+      "webfetch",
+      "websearch",
+      "task",
+      "skill",
+      "question",
+      "codesearch",
+      "todowrite"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "A-sac-conv-read",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "hola, como estas?",
+          "expect": { "chitchat": true, "session_callable_exact": [] }
+        },
+        {
+          "user": "read package.json and summarize the name field",
+          "expect": {
+            "router_selected_contains": ["read"],
+            "callable_after_contains": ["read"],
+            "session_callable_contains": ["read"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-write",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "thanks for helping today",
+          "expect": { "chitchat": true, "session_callable_exact": [] }
+        },
+        {
+          "user": "create a file named done.md in the repo root with a single line hello",
+          "expect": {
+            "router_selected_contains": ["write"],
+            "callable_after_contains": ["write"],
+            "session_callable_contains": ["write"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-write-es",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        { "user": "buenos dias", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "créame un archivo que se llame hecho.md en el root del repo",
+          "expect": {
+            "router_selected_contains": ["write"],
+            "callable_after_contains": ["write"],
+            "session_callable_contains": ["write"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-edit",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        { "user": "hey", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "edit src/foo.ts and replace TODO with done",
+          "expect": {
+            "router_selected_contains": ["edit"],
+            "callable_after_contains": ["edit"],
+            "session_callable_contains": ["edit"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-bash",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        { "user": "quick ping", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "run npm test in the repo",
+          "expect": {
+            "router_selected_contains": ["bash"],
+            "callable_after_contains": ["bash"],
+            "session_callable_contains": ["bash"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-websearch",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        { "user": "ok", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "buscar en internet documentación oficial sobre Zod v4",
+          "expect": {
+            "router_selected_contains": ["websearch"],
+            "callable_after_contains": ["websearch"],
+            "session_callable_contains": ["websearch"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-codesearch",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        { "user": "hi", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "use codesearch to find where authentication is implemented by meaning",
+          "expect": {
+            "router_selected_contains": ["codesearch"],
+            "callable_after_contains": ["codesearch"],
+            "session_callable_contains": ["codesearch"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "B-sac-chain-read-edit-write",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "open README.md and tell me the first line",
+          "expect": {
+            "router_selected_contains": ["read"],
+            "callable_after_contains": ["read"],
+            "session_callable_contains": ["read"]
+          }
+        },
+        {
+          "user": "now edit README.md to add a blank line at the end",
+          "expect": {
+            "callable_after_contains": ["read", "edit"],
+            "session_callable_contains": ["read", "edit"]
+          }
+        },
+        {
+          "user": "create notes/tmp.md with text ok",
+          "expect": {
+            "router_selected_contains": ["write"],
+            "callable_after_contains": ["write", "edit", "read"],
+            "session_callable_contains": ["write", "edit", "read"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "B-sac-write-stays-callable",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create a new markdown file plan.md at the repo root",
+          "expect": {
+            "router_selected_contains": ["write"],
+            "session_callable_contains": ["write"]
+          }
+        },
+        {
+          "user": "list TypeScript files under src using glob",
+          "expect": {
+            "callable_after_contains": ["write", "glob"],
+            "session_callable_contains": ["write", "glob"]
+          }
+        },
+        {
+          "user": "grep for export default in src",
+          "expect": {
+            "callable_after_contains": ["write", "glob", "grep"],
+            "session_callable_contains": ["write", "glob", "grep"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "B-sac-conv-interleaved",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create out.txt with hello as a new file in the repo root",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        },
+        {
+          "user": "gracias!",
+          "expect": {
+            "chitchat": true,
+            "session_callable_contains": ["write"],
+            "callable_after_contains": ["write"]
+          }
+        },
+        {
+          "user": "edit out.txt to append a line containing world",
+          "expect": {
+            "router_selected_contains": ["edit"],
+            "callable_after_contains": ["write", "edit"],
+            "session_callable_contains": ["write", "edit"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "B-spr-reminder-after-unlock",
+      "category": "B",
+      "mode": "subset_plus_memory_reminder",
+      "turns": [
+        {
+          "user": "read LICENSE file",
+          "expect": {
+            "router_selected_contains": ["read"],
+            "reminder_injected": true,
+            "session_callable_contains": ["read"]
+          }
+        },
+        {
+          "user": "thanks",
+          "expect": {
+            "chitchat": true,
+            "reminder_injected": true,
+            "session_callable_contains": ["read"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C-write-es-crea",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "crea un archivo vacío llamado tmp.md",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "C-write-en-named",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create a file named report.md in docs/",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "C-write-md-root",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create a markdown file in the repo root called NOTES.md",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "C-write-raiz-es",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "crea foo.md en la raíz del repositorio",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "C-write-at-root-en",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "at the root of the repo create done.md with OK",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-weak-internet",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "internet",
+          "expect": { "router_selected_not_contains": ["websearch", "webfetch"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-weak-en-internet",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "en internet",
+          "expect": { "router_selected_not_contains": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-strong-buscar",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "buscar en internet documentación oficial sobre Postgres locks",
+          "expect": { "router_selected_contains": ["websearch"], "session_callable_contains": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-url",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "fetch https://example.com/docs and summarize",
+          "expect": { "router_selected_contains": ["webfetch"], "session_callable_contains": ["webfetch"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-forbid-short",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "no internet please — explain routers offline only",
+          "expect": { "router_selected_not_contains": ["websearch"], "forbidden_after": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "E-bash-run-tests",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "run the unit tests with bun test",
+          "expect": { "router_selected_contains": ["bash"], "session_callable_contains": ["bash"] }
+        }
+      ]
+    },
+    {
+      "id": "E-bash-build",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "build the project with bun run build",
+          "expect": { "router_selected_contains": ["bash"], "session_callable_contains": ["bash"] }
+        }
+      ]
+    },
+    {
+      "id": "E-bash-no-terminal",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "run npm test but do not use the terminal",
+          "expect": { "router_selected_not_contains": ["bash"], "forbidden_after": ["bash"] }
+        }
+      ]
+    },
+    {
+      "id": "E-bash-glob-path",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "use glob to list all *.md files under docs/ only",
+          "expect": { "router_selected_contains": ["glob"], "router_selected_not_contains": ["bash"] }
+        }
+      ]
+    },
+    {
+      "id": "F-question-ask-me",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "Ask me whether we should enable strict mode",
+          "expect": { "router_selected_contains": ["question"], "session_callable_contains": ["question"] }
+        }
+      ]
+    },
+    {
+      "id": "F-task-explicit",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "use the task tool to delegate a refactor to a subagent",
+          "expect": { "router_selected_contains": ["task"], "session_callable_contains": ["task"] }
+        }
+      ]
+    },
+    {
+      "id": "F-workflow-no-task",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "explain what rain is in one sentence",
+          "expect": { "chitchat": true, "session_callable_exact": [] }
+        }
+      ]
+    },
+    {
+      "id": "F-skill-cue",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "load the Next.js skill and summarize routing",
+          "expect": { "router_selected_contains": ["skill"], "session_callable_contains": ["skill"] }
+        }
+      ]
+    },
+    {
+      "id": "G-perm-drop-web",
+      "category": "G",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "buscar en internet documentación oficial sobre TypeScript 5.8",
+          "expect": {
+            "router_selected_contains": ["websearch"],
+            "session_callable_contains": ["websearch"]
+          }
+        },
+        {
+          "user": "grep for interface in src/",
+          "allowed_tools": [
+            "read",
+            "grep",
+            "glob",
+            "bash",
+            "edit",
+            "write",
+            "task",
+            "skill",
+            "question",
+            "codesearch",
+            "todowrite"
+          ],
+          "expect": {
+            "forbidden_after": ["websearch", "webfetch"],
+            "session_callable_not_contains": ["websearch"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "PTS-no-exposure-memory",
+      "category": "G",
+      "mode": "per_turn_subset",
+      "turns": [
+        {
+          "user": "create file a.md with hi",
+          "expect": {
+            "router_selected_contains": ["write"],
+            "session_callable_exact": []
+          }
+        },
+        {
+          "user": "read package.json name",
+          "expect": {
+            "session_callable_exact": [],
+            "router_selected_contains": ["read"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MOU-unlocked-grows",
+      "category": "B",
+      "mode": "memory_only_unlocked",
+      "turns": [
+        {
+          "user": "grep TODO in src",
+          "expect": { "router_selected_contains": ["grep"], "session_callable_contains": ["grep"] }
+        },
+        {
+          "user": "glob **/*.ts under packages",
+          "expect": {
+            "router_selected_contains": ["glob"],
+            "unlocked_after_contains": ["glob", "grep"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "G-growth-sac",
+      "category": "G",
+      "mode": "session_accumulative_callable",
+      "router": { "sticky_previous_turn_tools": false },
+      "turns": [
+        { "user": "hola", "expect": { "chitchat": true, "min_attached_bytes": 0 } },
+        {
+          "user": "grep for TODO in packages/opencode/src",
+          "expect": { "router_selected_contains": ["grep"], "min_attached_bytes": 1 }
+        },
+        {
+          "user": "create root marker.md with x",
+          "expect": {
+            "router_selected_contains": ["write"],
+            "min_attached_bytes": 1,
+            "callable_after_contains": ["grep", "write"],
+            "session_callable_contains": ["grep", "write"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "G-growth-spr",
+      "category": "G",
+      "mode": "subset_plus_memory_reminder",
+      "router": { "sticky_previous_turn_tools": false },
+      "turns": [
+        { "user": "hola", "expect": { "chitchat": true, "min_attached_bytes": 0 } },
+        {
+          "user": "grep for TODO in packages/opencode/src",
+          "expect": { "router_selected_contains": ["grep"], "min_attached_bytes": 1 }
+        },
+        {
+          "user": "create root marker.md with x",
+          "expect": { "router_selected_contains": ["write"], "min_attached_bytes": 1 }
+        }
+      ]
+    },
+    {
+      "id": "A-pts-conv-then-read",
+      "category": "A",
+      "mode": "per_turn_subset",
+      "turns": [
+        { "user": "good morning", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "read tsconfig.json",
+          "expect": { "router_selected_contains": ["read"], "session_callable_exact": [] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-lookup-online-en",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "look up best practices for Zod migrations online",
+          "expect": { "router_selected_contains": ["websearch"], "session_callable_contains": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "B-sac-read-stays",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "show me packages/opencode/package.json scripts section",
+          "expect": { "router_selected_contains": ["read"], "session_callable_contains": ["read"] }
+        },
+        {
+          "user": "what was that again?",
+          "expect": {
+            "chitchat": true,
+            "session_callable_contains": ["read"],
+            "callable_after_contains": ["read"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "E-bash-git-status",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "run git status --short",
+          "expect": { "router_selected_contains": ["bash"], "session_callable_contains": ["bash"] }
+        }
+      ]
+    },
+    {
+      "id": "F-pregunta-es",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "pregúntame si debo usar pnpm o bun",
+          "expect": { "router_selected_contains": ["question"], "session_callable_contains": ["question"] }
+        }
+      ]
+    },
+    {
+      "id": "C-write-new-file-called",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create a new file called CHANGELOG entry under docs/changelog.md with text v1",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-search-internet-for",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "search the internet for Bun 1.2 release notes",
+          "expect": { "router_selected_contains": ["websearch"], "session_callable_contains": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "B-sac-bash-then-read",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "run pwd in the shell",
+          "expect": { "router_selected_contains": ["bash"], "session_callable_contains": ["bash"] }
+        },
+        {
+          "user": "read .gitignore first 5 lines",
+          "expect": {
+            "callable_after_contains": ["bash", "read"],
+            "session_callable_contains": ["bash", "read"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "G-perm-drop-write",
+      "category": "G",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create tmp-perm.md with x",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        },
+        {
+          "user": "grep foo in src",
+          "allowed_tools": ["read", "grep", "glob", "bash", "edit", "task", "skill", "question", "codesearch", "todowrite"],
+          "expect": {
+            "forbidden_after": ["write"],
+            "session_callable_not_contains": ["write"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "SPR-read-then-conv-reminder",
+      "category": "B",
+      "mode": "subset_plus_memory_reminder",
+      "turns": [
+        {
+          "user": "read AGENTS.md",
+          "expect": { "reminder_injected": true, "session_callable_contains": ["read"] }
+        },
+        {
+          "user": "ok cool",
+          "expect": { "chitchat": true, "reminder_injected": true }
+        }
+      ]
+    },
+    {
+      "id": "SAC-monotonic-bytes",
+      "category": "G",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "grep export in index.ts",
+          "expect": { "min_attached_count": 1, "min_attached_bytes": 1 }
+        },
+        {
+          "user": "also run ls in terminal",
+          "expect": {
+            "router_selected_contains": ["bash"],
+            "min_attached_count": 2,
+            "min_attached_bytes": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "A-sac-conv-webfetch",
+      "category": "A",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        { "user": "hey there", "expect": { "chitchat": true, "session_callable_exact": [] } },
+        {
+          "user": "download https://example.com/page and extract title",
+          "expect": {
+            "router_selected_contains": ["webfetch"],
+            "session_callable_contains": ["webfetch"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "F-orchestrate-without-delegate",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "read package.json then grep the name field in that file",
+          "expect": { "router_selected_contains": ["read", "grep"] }
+        }
+      ]
+    },
+    {
+      "id": "C-write-docs-subdir",
+      "category": "C",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "create docs/internal/note.md with hello",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        }
+      ]
+    },
+    {
+      "id": "D-web-weak-docs-word",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "documentación",
+          "expect": { "router_selected_not_contains": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "B-stable-catalog-note",
+      "category": "B",
+      "mode": "stable_catalog_subset",
+      "turns": [
+        {
+          "user": "read LICENSE",
+          "expect": { "router_selected_contains": ["read"], "session_callable_contains": ["read"] }
+        }
+      ]
+    },
+    {
+      "id": "E-no-git-bash",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "run git commit but do not run any git commands",
+          "expect": { "router_selected_not_contains": ["bash"] }
+        }
+      ]
+    },
+    {
+      "id": "B-sac-three-tool-grow",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "glob **/*.json in repo root",
+          "expect": { "session_callable_contains": ["glob"] }
+        },
+        {
+          "user": "grep TODO in packages",
+          "expect": { "callable_after_contains": ["glob", "grep"], "session_callable_contains": ["glob", "grep"] }
+        },
+        {
+          "user": "run echo ok in shell",
+          "expect": {
+            "router_selected_contains": ["bash"],
+            "callable_after_contains": ["glob", "grep", "bash"],
+            "session_callable_contains": ["glob", "grep", "bash"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "PTS-second-turn-no-sac",
+      "category": "G",
+      "mode": "per_turn_subset",
+      "turns": [
+        {
+          "user": "read README.md",
+          "expect": { "session_callable_exact": [], "router_selected_contains": ["read"] }
+        },
+        {
+          "user": "grep opencode in README.md",
+          "expect": {
+            "session_callable_exact": [],
+            "router_selected_contains": ["grep"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "SAC-conv-then-write-persist",
+      "category": "B",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "hello!",
+          "expect": { "chitchat": true, "session_callable_exact": [] }
+        },
+        {
+          "user": "create done2.md in repo root",
+          "expect": { "router_selected_contains": ["write"], "session_callable_contains": ["write"] }
+        },
+        {
+          "user": "thanks",
+          "expect": {
+            "chitchat": true,
+            "session_callable_contains": ["write"],
+            "callable_after_contains": ["write"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D-web-official-docs-es",
+      "category": "D",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "busca documentación oficial sobre Drizzle ORM",
+          "expect": { "router_selected_contains": ["websearch"], "session_callable_contains": ["websearch"] }
+        }
+      ]
+    },
+    {
+      "id": "F-delete-question",
+      "category": "F",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "Ask me whether to delete the file",
+          "expect": { "router_selected_contains": ["question", "edit"] }
+        }
+      ]
+    },
+    {
+      "id": "E-bash-cargo-test",
+      "category": "E",
+      "mode": "session_accumulative_callable",
+      "turns": [
+        {
+          "user": "run cargo test --all-features in the crate",
+          "expect": { "router_selected_contains": ["bash"], "session_callable_contains": ["bash"] }
+        }
+      ]
+    }
+  ]
+}
