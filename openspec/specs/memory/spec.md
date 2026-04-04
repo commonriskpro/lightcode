@@ -168,17 +168,88 @@ The system MUST respect configuration settings for the Observer model.
 - WHEN the Observer would fire
 - THEN the system MUST disable the Observer gracefully
 
-## MODIFIED Requirements (Phase 2)
+### Requirement: Reflector trigger
+
+The system MUST trigger the Reflector based on the observation tokens threshold and execution path.
+
+#### Scenario: Token threshold not met
+
+- GIVEN `observation_tokens <= 40_000` after activate
+- WHEN turn completes
+- THEN Reflector MUST NOT fire
+
+#### Scenario: Token threshold met on activate path
+
+- GIVEN `observation_tokens > 40_000` after activate path
+- WHEN turn completes
+- THEN Reflector SHOULD fire as non-blocking background fiber
+
+#### Scenario: Token threshold met on force path
+
+- GIVEN `observation_tokens > 40_000` after force path
+- WHEN turn completes
+- THEN Reflector MUST fire inline (blocking)
+
+### Requirement: Reflector LLM output
+
+The Reflector MUST process and persist condensed observations when successful, and handle failures gracefully.
+
+#### Scenario: Successful reflection
+
+- GIVEN observations text passed to Reflector
+- WHEN Reflector LLM responds successfully
+- THEN `reflections` column MUST be updated with condensed text
+- AND condensed text MUST preserve all 🔴 user assertions
+- AND condensed text MUST condense older observations more aggressively than recent ones
+
+#### Scenario: Reflection failure or unconfigured model
+
+- GIVEN Reflector LLM fails or observer_model not configured
+- WHEN Reflector fires
+- THEN `reflections` MUST remain unchanged (NULL or previous value)
+- AND session MUST continue normally
+
+### Requirement: observations preserved for Observer continuity
+
+The original observations MUST be preserved for the next Observer cycle.
+
+#### Scenario: Observer cycle after reflection
+
+- GIVEN Reflector runs successfully
+- WHEN next Observer cycle fires
+- THEN Observer.run MUST receive `observations` as `prev` (not `reflections`)
+- AND `observations` MUST NOT be cleared or replaced by the Reflector
+
+### Requirement: Graceful degradation (Reflector)
+
+The system MUST NOT trigger reflection if the observer is disabled and no model is configured.
+
+#### Scenario: Unconfigured observer fallback
+
+- GIVEN `observer_model` is not configured AND `observer: false`
+- WHEN observation_tokens crosses 40k threshold
+- THEN Reflector MUST NOT fire
+- AND session MUST continue with existing observations injected normally
+
+## MODIFIED Requirements (Phase 2-3)
 
 ### Requirement: System Prompt Assembly
 
-The system MUST assemble the prompt such that local observations are included without destabilizing existing cached segments.
+The system MUST assemble the prompt such that local observations or reflections are included without destabilizing existing cached segments.
 
-#### Scenario: Session has active observations
+#### Scenario: Session has active reflections
 
-- GIVEN a session with active observations in the `ObservationTable`
+- GIVEN a session with non-null `reflections`
 - WHEN the system prompt is assembled
-- THEN the system MUST inject the observations at `system[2]`
+- THEN the system MUST inject the reflections at `system[2]`
+- AND the system MUST leave `system[0]` untouched (1h cache)
+- AND the system MUST leave `system[1]` untouched (5min cache)
+
+#### Scenario: Session has active observations (no reflections)
+
+- GIVEN a session with NULL `reflections` but non-null observations in the `ObservationTable`
+- WHEN the system prompt is assembled
+- THEN the system MUST inject the observations at `system[2]` (Phase 2 behavior)
 - AND the system MUST leave `system[0]` untouched (1h cache)
 - AND the system MUST leave `system[1]` untouched (5min cache)
 
@@ -195,4 +266,4 @@ The system MUST provide AutoDream with a complete picture of the session, includ
 
 ## Deferred Requirements
 
-- Reflector (Phase 3): Cross-session compression and pattern detection via a periodic Reflector agent that reads multiple observation records from Engram to infer systemic patterns in behavior and decision-making.
+(None currently. All planned phases have been implemented.)
