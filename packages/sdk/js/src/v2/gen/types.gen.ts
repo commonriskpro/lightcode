@@ -1628,6 +1628,14 @@ export type Config = {
      * Model to use for AutoDream consolidation (format: provider/model). Defaults to session model.
      */
     autodream_model?: string
+    /**
+     * Enable background observational memory — compresses message history every 30k tokens. Requires Engram.
+     */
+    observer?: boolean
+    /**
+     * Model to use for background observational memory (format: provider/model). Defaults to google/gemini-2.5-flash.
+     */
+    observer_model?: string
   }
 }
 

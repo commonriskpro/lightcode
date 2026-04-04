@@ -2,11 +2,14 @@ import { createMemo, createSignal } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useSDK } from "@tui/context/sdk"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
+import { useDialog } from "@tui/ui/dialog"
 import { useTheme } from "../context/theme"
 import { Keybind } from "@/util/keybind"
 import { TextAttributes } from "@opentui/core"
 import { Flag } from "@/flag/flag"
 import { useToast } from "../ui/toast"
+import { DialogDreamModel } from "./dialog-dream-model"
+import { DialogObserverModel } from "./dialog-observer-model"
 
 interface Feature {
   id: string
@@ -14,16 +17,25 @@ interface Feature {
   description: string
   env?: string
   config?: string
+  /** Model config key — when set, Enter opens the model picker */
+  modelConfig?: string
   enabled: () => boolean
+  /** Current model string shown as subtitle when configured */
+  currentModel?: () => string | undefined
 }
 
-function Status(props: { enabled: boolean; loading: boolean }) {
+function Status(props: { enabled: boolean; loading: boolean; model?: string }) {
   const { theme } = useTheme()
   if (props.loading) {
     return <span style={{ fg: theme.textMuted }}>⋯ Saving</span>
   }
   if (props.enabled) {
-    return <span style={{ fg: theme.success, attributes: TextAttributes.BOLD }}>✓ Enabled</span>
+    return (
+      <span>
+        <span style={{ fg: theme.success, attributes: TextAttributes.BOLD }}>✓ Enabled</span>
+        {props.model ? <span style={{ fg: theme.textMuted }}> · {props.model}</span> : null}
+      </span>
+    )
   }
   return <span style={{ fg: theme.textMuted }}>○ Disabled</span>
 }
@@ -31,6 +43,7 @@ function Status(props: { enabled: boolean; loading: boolean }) {
 export function DialogFeature() {
   const sync = useSync()
   const sdk = useSDK()
+  const dialog = useDialog()
   const toast = useToast()
   const [loading, setLoading] = createSignal<string | null>(null)
 
@@ -42,6 +55,11 @@ export function DialogFeature() {
     if (key in l) return l[key]
     const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
     return exp?.[key] === true || env
+  }
+
+  function currentModel(key: string): string | undefined {
+    const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
+    return exp?.[key] as string | undefined
   }
 
   const features = createMemo((): Feature[] => {
@@ -113,27 +131,49 @@ export function DialogFeature() {
         description: "Consolidate session memory to Engram when idle",
         env: "OPENCODE_EXPERIMENTAL_AUTODREAM",
         config: "autodream",
+        modelConfig: "autodream_model",
         enabled: () => isEnabled("autodream", Flag.OPENCODE_EXPERIMENTAL_AUTODREAM),
+        currentModel: () => currentModel("autodream_model"),
       },
       {
         id: "observer",
         title: "Observer Memory",
         description: "Compress message history every 30k tokens (requires Engram)",
         config: "observer",
+        modelConfig: "observer_model",
         enabled: () => isEnabled("observer", false),
+        currentModel: () => currentModel("observer_model") ?? "google/gemini-2.5-flash",
       },
     ]
   })
 
   const options = createMemo(() => {
-    const current = loading()
+    const cur = loading()
     return features().map((f) => ({
       value: f.id,
       title: f.title,
-      description: f.config ? f.description : `${f.description} (env only)`,
-      footer: <Status enabled={f.enabled()} loading={current === f.id} />,
+      description: f.config
+        ? f.modelConfig
+          ? `${f.description} — enter to configure model`
+          : f.description
+        : `${f.description} (env only)`,
+      footer: (
+        <Status
+          enabled={f.enabled()}
+          loading={cur === f.id}
+          model={f.enabled() && f.currentModel ? f.currentModel() : undefined}
+        />
+      ),
     }))
   })
+
+  function openModelDialog(id: string) {
+    if (id === "autodream") {
+      dialog.replace(() => <DialogDreamModel />)
+    } else if (id === "observer") {
+      dialog.replace(() => <DialogObserverModel />)
+    }
+  }
 
   const keybinds = createMemo(() => [
     {
@@ -185,8 +225,12 @@ export function DialogFeature() {
       title="Features"
       options={options()}
       keybind={keybinds()}
-      onSelect={() => {
-        // Don't close on select, only on escape
+      onSelect={(option) => {
+        const feature = features().find((f) => f.id === option.value)
+        if (feature?.modelConfig) {
+          openModelDialog(feature.id)
+        }
+        // Features without modelConfig don't close on enter — only on escape
       }}
     />
   )
