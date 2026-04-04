@@ -6,6 +6,7 @@ import { useTheme } from "../context/theme"
 import { Keybind } from "@/util/keybind"
 import { TextAttributes } from "@opentui/core"
 import { Flag } from "@/flag/flag"
+import { useToast } from "../ui/toast"
 
 interface Feature {
   id: string
@@ -30,6 +31,7 @@ function Status(props: { enabled: boolean; loading: boolean }) {
 export function DialogFeature() {
   const sync = useSync()
   const sdk = useSDK()
+  const toast = useToast()
   const [loading, setLoading] = createSignal<string | null>(null)
 
   // Local state tracks toggle results immediately without waiting for server roundtrip
@@ -142,10 +144,20 @@ export function DialogFeature() {
               experimental: { [feature.config]: next },
             },
           })
+          toast.show({
+            title: feature.title,
+            message: next ? "Enabled — takes effect on next session" : "Disabled — takes effect on next session",
+            variant: next ? "success" : "info",
+            duration: 2000,
+          })
         } catch (error) {
-          // Revert local state on failure
           setLocal((prev) => ({ ...prev, [feature.config!]: current }))
-          console.error("Failed to toggle feature:", error)
+          toast.show({
+            title: feature.title,
+            message: `Failed to toggle: ${error instanceof Error ? error.message : "unknown error"}`,
+            variant: "error",
+            duration: 3000,
+          })
         } finally {
           setLoading(null)
         }
