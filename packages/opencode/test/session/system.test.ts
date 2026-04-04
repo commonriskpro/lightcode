@@ -3,8 +3,13 @@ import fs from "fs/promises"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
+import { Session } from "../../src/session"
+import { OM } from "../../src/session/om/record"
 import { SystemPrompt } from "../../src/session/system"
+import type { SessionID } from "../../src/session/schema"
 import { tmpdir } from "../fixture/fixture"
+
+const root = path.join(__dirname, "../..")
 
 describe("session.system.volatile", () => {
   test("volatile returns date and model name", () => {
@@ -97,5 +102,93 @@ description: ${description}
     } finally {
       process.env.OPENCODE_TEST_HOME = home
     }
+  })
+})
+
+// ─── SystemPrompt.observations — reflections priority ─────────────────────────
+
+describe("SystemPrompt.observations — reflections priority", () => {
+  test("uses reflections when both reflections and observations are present", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const rec = {
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "raw observations text",
+            reflections: "condensed reflections text",
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 50_000,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          }
+          OM.upsert(rec)
+          const result = await SystemPrompt.observations(s.id as SessionID)
+          expect(result).not.toBeUndefined()
+          expect(result).toContain("condensed reflections text")
+          expect(result).not.toContain("raw observations text")
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("falls back to observations when reflections is null", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const rec = {
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "raw observations text",
+            reflections: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 10,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          }
+          OM.upsert(rec)
+          const result = await SystemPrompt.observations(s.id as SessionID)
+          expect(result).not.toBeUndefined()
+          expect(result).toContain("raw observations text")
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("returns undefined when both observations and reflections are null", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const rec = {
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: null,
+            reflections: null,
+            last_observed_at: Date.now(),
+            generation_count: 0,
+            observation_tokens: 0,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          }
+          OM.upsert(rec)
+          const result = await SystemPrompt.observations(s.id as SessionID)
+          expect(result).toBeUndefined()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
   })
 })

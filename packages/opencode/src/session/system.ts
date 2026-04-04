@@ -78,8 +78,10 @@ export namespace SystemPrompt {
 
   export async function observations(sid: SessionID): Promise<string | undefined> {
     const rec = OM.get(sid)
-    if (!rec?.observations) return undefined
-    return wrapObservations(rec.observations)
+    if (!rec) return undefined
+    const body = rec.reflections ?? rec.observations
+    if (!body) return undefined
+    return wrapObservations(body)
   }
 
   export async function recall(pid: string): Promise<string | undefined> {

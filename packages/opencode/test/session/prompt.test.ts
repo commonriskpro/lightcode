@@ -6,9 +6,14 @@ import { Instance } from "../../src/project/instance"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
 import { MessageV2 } from "../../src/session/message-v2"
+import { OM } from "../../src/session/om/record"
+import { Reflector } from "../../src/session/om/reflector"
 import { SessionPrompt } from "../../src/session/prompt"
+import type { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util/log"
 import { tmpdir } from "../fixture/fixture"
+
+const root = path.join(__dirname, "../..")
 
 Log.init({ print: false })
 
@@ -515,4 +520,71 @@ describe("session.agent-resolution", () => {
       },
     })
   }, 30000)
+})
+
+// ─── Reflector threshold gating ───────────────────────────────────────────────
+
+describe("session.prompt.reflector-threshold", () => {
+  test("Reflector.threshold is 40_000", () => {
+    expect(Reflector.threshold).toBe(40_000)
+  })
+
+  test("Reflector does not fire when observation_tokens is below threshold", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const rec = {
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 some fact",
+            reflections: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 1_000,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          }
+          OM.upsert(rec)
+          // Below threshold → Reflector.run must return without writing reflections
+          await Reflector.run(s.id as SessionID)
+          const got = OM.get(s.id as SessionID)
+          // reflections must remain null — run short-circuited
+          expect(got!.reflections).toBeNull()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("Reflector skips when observation_tokens is exactly at threshold", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const rec = {
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 boundary fact",
+            reflections: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 40_000,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          }
+          OM.upsert(rec)
+          // Exactly at threshold (not >) → no-op
+          await Reflector.run(s.id as SessionID)
+          const got = OM.get(s.id as SessionID)
+          expect(got!.reflections).toBeNull()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
 })

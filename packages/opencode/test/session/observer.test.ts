@@ -4,6 +4,7 @@ import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
 import { OMBuf } from "../../src/session/om/buffer"
 import { OM } from "../../src/session/om/record"
+import { Reflector } from "../../src/session/om/reflector"
 import { SystemPrompt } from "../../src/session/system"
 import type { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util/log"
@@ -433,5 +434,57 @@ describe("session.llm.system-layout", () => {
     const body = "small obs"
     const capped = SystemPrompt.capRecallBody(body)
     expect(capped).toBe(body)
+  })
+})
+
+// ─── Reflector ────────────────────────────────────────────────────────────────
+
+describe("session.om.reflector", () => {
+  test("threshold constant is 40_000", () => {
+    expect(Reflector.threshold).toBe(40_000)
+  })
+
+  test("OM.reflect updates reflections without touching observations", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const rec = {
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 user is a TypeScript developer",
+            reflections: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 50_000,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          }
+          OM.upsert(rec)
+          OM.reflect(s.id as SessionID, "condensed text")
+          const got = OM.get(s.id as SessionID)
+          expect(got!.reflections).toBe("condensed text")
+          expect(got!.observations).toBe("🔴 user is a TypeScript developer")
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("Reflector.run returns early when observation_tokens is below threshold", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          // No OM record → run should return without error
+          await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
   })
 })

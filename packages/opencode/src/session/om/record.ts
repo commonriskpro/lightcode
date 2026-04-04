@@ -72,4 +72,14 @@ export namespace OM {
 
     Database.use((db) => db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run())
   }
+
+  export function reflect(sid: SessionID, txt: string): void {
+    Database.use((db) =>
+      db
+        .update(ObservationTable)
+        .set({ reflections: txt, time_updated: Date.now() })
+        .where(eq(ObservationTable.session_id, sid))
+        .run(),
+    )
+  }
 }

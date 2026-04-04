@@ -52,7 +52,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
-import { OM, Observer, OMBuf } from "./om"
+import { OM, Observer, OMBuf, Reflector } from "./om"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1537,6 +1537,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     time_created: rec?.time_created ?? Date.now(),
                     time_updated: Date.now(),
                   })
+                const fresh = OM.get(sessionID)
+                if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) await Reflector.run(sessionID)
               }).pipe(Effect.ignore, Effect.forkIn(scope))
             }
             if (sig === "force") {
@@ -1561,6 +1563,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     time_created: rec?.time_created ?? Date.now(),
                     time_updated: Date.now(),
                   })
+                const fresh = OM.get(sessionID)
+                if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) await Reflector.run(sessionID)
               }).pipe(Effect.ignore)
             }
 
