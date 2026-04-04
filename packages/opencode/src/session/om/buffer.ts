@@ -6,6 +6,10 @@ type State = { tok: number; pending: boolean; lastInterval: number }
 
 const state = new Map<SessionID, State>()
 
+// Observable status for TUI feedback — polled by sidebar footer
+let _observing = false
+let _reflecting = false
+
 export namespace OMBuf {
   const TRIGGER = 30_000
   const INTERVAL = 6_000
@@ -45,5 +49,19 @@ export namespace OMBuf {
 
   export function add(sid: SessionID, tok: number): void {
     ensure(sid).tok += tok
+  }
+
+  // Status flags for TUI feedback
+  export function observing(): boolean {
+    return _observing
+  }
+  export function reflecting(): boolean {
+    return _reflecting
+  }
+  export function setObserving(v: boolean): void {
+    _observing = v
+  }
+  export function setReflecting(v: boolean): void {
+    _reflecting = v
   }
 }

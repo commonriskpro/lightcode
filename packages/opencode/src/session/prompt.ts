@@ -1517,54 +1517,78 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const sig = OMBuf.check(sessionID, tok)
             if (sig === "buffer" || sig === "activate") {
               yield* Effect.promise(async () => {
-                const rec = OM.get(sessionID)
-                const boundary = rec?.last_observed_at ?? 0
-                const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
-                const obs = await Observer.run({
-                  sid: sessionID,
-                  msgs: unobserved,
-                  prev: rec?.observations ?? undefined,
-                })
-                if (obs)
-                  OM.upsert({
-                    id: sessionID,
-                    session_id: sessionID,
-                    observations: obs,
-                    reflections: null,
-                    last_observed_at: Date.now(),
-                    generation_count: (rec?.generation_count ?? 0) + 1,
-                    observation_tokens: obs.length >> 2,
-                    time_created: rec?.time_created ?? Date.now(),
-                    time_updated: Date.now(),
+                OMBuf.setObserving(true)
+                try {
+                  const rec = OM.get(sessionID)
+                  const boundary = rec?.last_observed_at ?? 0
+                  const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
+                  const obs = await Observer.run({
+                    sid: sessionID,
+                    msgs: unobserved,
+                    prev: rec?.observations ?? undefined,
                   })
-                const fresh = OM.get(sessionID)
-                if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) await Reflector.run(sessionID)
+                  if (obs)
+                    OM.upsert({
+                      id: sessionID,
+                      session_id: sessionID,
+                      observations: obs,
+                      reflections: null,
+                      last_observed_at: Date.now(),
+                      generation_count: (rec?.generation_count ?? 0) + 1,
+                      observation_tokens: obs.length >> 2,
+                      time_created: rec?.time_created ?? Date.now(),
+                      time_updated: Date.now(),
+                    })
+                  const fresh = OM.get(sessionID)
+                  if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
+                    OMBuf.setReflecting(true)
+                    try {
+                      await Reflector.run(sessionID)
+                    } finally {
+                      OMBuf.setReflecting(false)
+                    }
+                  }
+                } finally {
+                  OMBuf.setObserving(false)
+                }
               }).pipe(Effect.ignore, Effect.forkIn(scope))
             }
             if (sig === "force") {
               yield* Effect.promise(async () => {
-                const rec = OM.get(sessionID)
-                const boundary = rec?.last_observed_at ?? 0
-                const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
-                const obs = await Observer.run({
-                  sid: sessionID,
-                  msgs: unobserved,
-                  prev: rec?.observations ?? undefined,
-                })
-                if (obs)
-                  OM.upsert({
-                    id: sessionID,
-                    session_id: sessionID,
-                    observations: obs,
-                    reflections: null,
-                    last_observed_at: Date.now(),
-                    generation_count: (rec?.generation_count ?? 0) + 1,
-                    observation_tokens: obs.length >> 2,
-                    time_created: rec?.time_created ?? Date.now(),
-                    time_updated: Date.now(),
+                OMBuf.setObserving(true)
+                try {
+                  const rec = OM.get(sessionID)
+                  const boundary = rec?.last_observed_at ?? 0
+                  const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
+                  const obs = await Observer.run({
+                    sid: sessionID,
+                    msgs: unobserved,
+                    prev: rec?.observations ?? undefined,
                   })
-                const fresh = OM.get(sessionID)
-                if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) await Reflector.run(sessionID)
+                  if (obs)
+                    OM.upsert({
+                      id: sessionID,
+                      session_id: sessionID,
+                      observations: obs,
+                      reflections: null,
+                      last_observed_at: Date.now(),
+                      generation_count: (rec?.generation_count ?? 0) + 1,
+                      observation_tokens: obs.length >> 2,
+                      time_created: rec?.time_created ?? Date.now(),
+                      time_updated: Date.now(),
+                    })
+                  const fresh = OM.get(sessionID)
+                  if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
+                    OMBuf.setReflecting(true)
+                    try {
+                      await Reflector.run(sessionID)
+                    } finally {
+                      OMBuf.setReflecting(false)
+                    }
+                  }
+                } finally {
+                  OMBuf.setObserving(false)
+                }
               }).pipe(Effect.ignore)
             }
 

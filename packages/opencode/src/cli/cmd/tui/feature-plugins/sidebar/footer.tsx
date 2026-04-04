@@ -2,6 +2,7 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plug
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Global } from "@/global"
 import { AutoDream } from "@/dream"
+import { OMBuf } from "@/session/om/buffer"
 
 const DREAM_FRAMES = [
   "☁     dreaming   ",
@@ -18,6 +19,28 @@ const DREAM_FRAMES = [
   "☁     dreaming   ",
 ]
 
+const OBSERVE_FRAMES = [
+  "◎ observing   ",
+  "◎ observing.  ",
+  "◎ observing.. ",
+  "◎ observing...",
+  "◉ observing.. ",
+  "◉ observing.  ",
+  "◉ observing   ",
+  "◉ observing.  ",
+]
+
+const REFLECT_FRAMES = [
+  "◈ reflecting   ",
+  "◈ reflecting.  ",
+  "◈ reflecting.. ",
+  "◈ reflecting...",
+  "◇ reflecting.. ",
+  "◇ reflecting.  ",
+  "◇ reflecting   ",
+  "◇ reflecting.  ",
+]
+
 const id = "internal:sidebar-footer"
 
 function View(props: { api: TuiPluginApi }) {
@@ -30,13 +53,23 @@ function View(props: { api: TuiPluginApi }) {
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
   const [isDreaming, setIsDreaming] = createSignal(false)
+  const [isObserving, setIsObserving] = createSignal(false)
+  const [isReflecting, setIsReflecting] = createSignal(false)
   const [frame, setFrame] = createSignal(0)
+  const [obsFrame, setObsFrame] = createSignal(0)
+  const [refFrame, setRefFrame] = createSignal(0)
 
   onMount(() => {
     const poll = setInterval(() => {
-      const active = AutoDream.dreaming()
-      setIsDreaming(active)
-      if (active) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
+      const dream = AutoDream.dreaming()
+      const obs = OMBuf.observing()
+      const ref = OMBuf.reflecting()
+      setIsDreaming(dream)
+      setIsObserving(obs)
+      setIsReflecting(ref)
+      if (dream) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
+      if (obs) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
+      if (ref) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
     }, 400)
     onCleanup(() => clearInterval(poll))
   })
@@ -90,6 +123,12 @@ function View(props: { api: TuiPluginApi }) {
         <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
+      <Show when={isReflecting()}>
+        <text fg={theme().warning ?? theme().accent}>{REFLECT_FRAMES[refFrame()]}</text>
+      </Show>
+      <Show when={isObserving() && !isReflecting()}>
+        <text fg={theme().textMuted}>{OBSERVE_FRAMES[obsFrame()]}</text>
+      </Show>
       <Show when={isDreaming()}>
         <text fg={theme().accent}>{DREAM_FRAMES[frame()]}</text>
       </Show>

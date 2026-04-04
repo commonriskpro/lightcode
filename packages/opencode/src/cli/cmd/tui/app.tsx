@@ -34,6 +34,7 @@ import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogFeature } from "./component/dialog-feature"
 import { DialogDreamModel } from "./component/dialog-dream-model"
+import { DialogMemory } from "./component/dialog-memory"
 import { AutoDream } from "@/dream"
 import { Engram } from "@/dream/engram"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
@@ -705,6 +706,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogFeature />)
+      },
+      category: "System",
+    },
+    {
+      title: "Memory",
+      value: "memory.view",
+      slash: {
+        name: "memory",
+        aliases: ["mem"],
+      },
+      enabled: route.data.type === "session",
+      description: "View session memory state (Observer observations + Reflector)",
+      onSelect: () => {
+        const r = route.data
+        if (r.type !== "session") return
+        dialog.replace(() => <DialogMemory sessionID={r.sessionID} />)
       },
       category: "System",
     },
