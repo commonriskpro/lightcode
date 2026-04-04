@@ -1066,8 +1066,8 @@ export namespace Config {
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Config") {}
 
   function globalConfigFile() {
-    const candidates = ["lightcode.jsonc", "lightcode.json", "opencode.jsonc", "opencode.json", "config.json"].map(
-      (file) => path.join(Global.Path.config, file),
+    const candidates = ["lightcode.jsonc", "lightcode.json", "config.json"].map((file) =>
+      path.join(Global.Path.config, file),
     )
     for (const file of candidates) {
       if (existsSync(file)) return file
@@ -1220,8 +1220,6 @@ export namespace Config {
           let result: Info = pipe(
             {},
             mergeDeep(yield* loadFile(path.join(Global.Path.config, "config.json"))),
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "opencode.json"))),
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"))),
             mergeDeep(yield* loadFile(path.join(Global.Path.config, "lightcode.json"))),
             mergeDeep(yield* loadFile(path.join(Global.Path.config, "lightcode.jsonc"))),
           )
@@ -1319,10 +1317,7 @@ export namespace Config {
 
           if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
             for (const file of yield* Effect.promise(() =>
-              ConfigPaths.projectFiles("lightcode", ctx.directory, ctx.worktree).then(async (files) => {
-                if (files.length) return files
-                return ConfigPaths.projectFiles("opencode", ctx.directory, ctx.worktree)
-              }),
+              ConfigPaths.projectFiles("lightcode", ctx.directory, ctx.worktree),
             )) {
               merge(file, yield* loadFile(file), "local")
             }
@@ -1341,8 +1336,8 @@ export namespace Config {
           const deps: Promise<void>[] = []
 
           for (const dir of unique(directories)) {
-            if (dir.endsWith(".lightcode") || dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
-              for (const file of ["lightcode.json", "lightcode.jsonc", "opencode.json", "opencode.jsonc"]) {
+            if (dir.endsWith(".lightcode") || dir === Flag.OPENCODE_CONFIG_DIR) {
+              for (const file of ["lightcode.json", "lightcode.jsonc"]) {
                 const source = path.join(dir, file)
                 log.debug(`loading config from ${source}`)
                 merge(source, yield* loadFile(source))

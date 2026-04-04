@@ -139,7 +139,7 @@ export function DialogFeature() {
         setLoading(option.value)
 
         try {
-          await sdk.client.config.update({
+          await sdk.client.global.config.update({
             config: {
               experimental: { [feature.config]: next },
             },
