@@ -1193,13 +1193,15 @@ export namespace SessionPrompt {
                 description: `Set to true to load the full tool definition via tool_search. This tool was deferred to save tokens.`,
               },
               tool_name: {
-                type: "boolean" as const,
+                type: "string" as const,
+                const: id,
                 description: `The name of this tool: '${id}'`,
               },
             },
             required: [],
+            additionalProperties: true,
           }
-          aiTool.inputSchema = deferredSchema as any
+          aiTool.inputSchema = jsonSchema(deferredSchema as any)
         }
       }
     }

@@ -944,11 +944,102 @@ router_only: true | false, // Disable augment, just filter
 
 ---
 
+---
+
+## 9. Latest Updates (2026-04)
+
+### 9.1 Nuevos Tools Agregados
+
+```
+Tool Registry (src/tool/)
+├── browser.ts      → Automatización de navegador (stub Puppeteer/Playwright)
+├── workflow.ts    → Workflows predefinidos (analyze-codebase, refactor, etc.)
+├── cron.ts        → Programación de tareas periódicas
+├── team.ts        → Herramientas de trabajo en equipo
+└── tool_search.ts → Búsqueda de herramientas disponibles
+```
+
+**Browser Tool**: Soporta goto, click, type, screenshot, extract. Stub implementation.
+
+**Workflow Tool**: Workflows predefinidos como:
+- `analyze-codebase`: Análisis completo del codebase
+- `refactor-module`: Refactorización de módulos
+- `test-coverage`: Coverage de tests
+
+**Cron Tool**: Programación de tareas con sintaxis cron.
+
+**Team Tool**: Collaborative features para equipos.
+
+### 9.2 Experimental Features Management
+
+```bash
+/features          # CLI: listar y togglear features
+# En TUI: Dialog de features con autocomplete
+```
+
+- `/features` command en CLI
+- `dialog-features.tsx` en TUI
+- Persistencia en `config.json`
+- Feature flags: `experimental.*`
+
+### 9.3 SDD Tool Permissions + Hard Gates
+
+```typescript
+// Agent permissions now include full permission surfaces
+experimental: {
+  tool_router: {
+    apply_hard_gates: true  // Default: true
+  }
+}
+
+// SDD agents now have granular permissions
+sdd-orchestrator, sdd-explore, sdd-propose, sdd-spec,
+sdd-design, sdd-tasks, sdd-apply, sdd-verify, sdd-archive, judgment-day
+```
+
+### 9.4 Tool Exposure Modes (5 modos)
+
+| Mode | Description |
+|------|-------------|
+| `per_turn_subset` | Default. Router output, no memory |
+| `memory_only_unlocked` | Router + reminder de unlockeds |
+| `stable_catalog_subset` | Persiste "unlocked" para futuro |
+| `subset_plus_memory_reminder` | Router + reminder line |
+| `session_accumulative_callable` | Merge previos + actual, widest set |
+
+### 9.5 Web Pair (Research Intent)
+
+```typescript
+// websearch + webfetch ahora aparecen juntos en intents de research
+intent prototypes:
+// "search the web for information"     → websearch + webfetch
+// "find documentation about X"         → websearch + webfetch
+// "look up how to do Y"               → websearch + webfetch
+```
+
+Hard gates más flexibles para webfetch cuando hay URL en el prompt.
+
+### 9.6 Config System Updates
+
+```typescript
+// Nuevos paths en config
+config.json -> paths.user, paths.project
+config.ts -> Feature persistence inmediata
+
+// Nuevas funcionalidades
+- Feature state updates apply immediately
+- Config parsing edge-cases resueltos
+```
+
+---
+
 This architecture demonstrates a sophisticated multi-agent system with:
 
-1. Flexible Tool System: Dynamic tool registration from built-in, custom, and plugin sources
-2. Intelligent Routing: Offline intent-based tool filtering using embeddings, keyword rules, and exact-match post-processing
-3. Tiered Context Building: Context-aware system prompt with conversation/minimal/full tiers
-4. Tool Exposure Memory: Multiple modes for tracking and persisting tool availability across turns
-5. Plugin Hooks: Extensible middleware for tools, chat, and events
-6. SDD Orchestration: Hierarchical agent teams with structured workflows
+1. **Flexible Tool System**: Dynamic tool registration from built-in, custom, plugin, and new workflow/team/browser sources
+2. **Intelligent Routing**: Offline intent-based tool filtering using embeddings, keyword rules, exact-match post-processing, and hard gates
+3. **Tiered Context Building**: Context-aware system prompt with conversation/minimal/full tiers
+4. **Tool Exposure Memory**: 5 different modes for tracking and persisting tool availability across turns
+5. **Plugin Hooks**: Extensible middleware for tools, chat, and events
+6. **SDD Orchestration**: Hierarchical agent teams with structured workflows + granular permissions
+7. **Experimental Features**: CLI/TUI management de feature flags
+8. **Team Collaboration**: Workflows, cron jobs, team tools para trabajo en equipo

@@ -4,11 +4,47 @@
     "agent_swarms": true,
     "workflow_scripts": true,
     "cron_jobs": true,
-    "web_browser": false,
+    "web_browser": true,
     "context_inspection": true,
-    "session_hooks": false,
-    "tool_deferral": {
+    "session_hooks": true,
+    "tool_router": {
       "enabled": false,
+      "apply_hard_gates": true,
+      "mode": "rules",
+      "local_embed_top_k": 4,
+      "auto_tool_selection": false,
+      "auto_score_ratio": 0.9,
+      "auto_token_budget": 1200,
+      "max_tools_cap": 100,
+      "local_embed_min_score": 0.34,
+      "rerank": false,
+      "rerank_candidates": 8,
+      "rerank_semantic_weight": 0.7,
+      "rerank_lexical_weight": 0.3,
+      "exact_match": {
+        "dynamic_ratio": true,
+        "two_pass": true
+      },
+      "local_intent_embed": false,
+      "local_intent_min_score": 0.38,
+      "intent_merge_margin": 0.04,
+      "intent_max_intents": 3,
+      "intent_conversation_gap": 0.05,
+      "llm_timeout_ms": 12000,
+      "apply_after_first_assistant": false,
+      "additive": false,
+      "max_tools": 12,
+      "keyword_rules": false,
+      "lexical_strong_seed": true,
+      "no_match_fallback": false,
+      "mcp_always_include": true,
+      "mcp_filter_by_intent": true,
+      "inject_prompt": true,
+      "sticky_previous_turn_tools": true,
+      "exposure_mode": "per_turn_subset"
+    },
+    "tool_deferral": {
+      "enabled": true,
       "search_tool": true
     }
   }

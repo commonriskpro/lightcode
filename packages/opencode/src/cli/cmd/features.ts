@@ -2,128 +2,111 @@ import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { Config } from "../../config/config"
 import { bootstrap } from "../bootstrap"
+import { allFlags, findFlag, FLAGS, get, mode, modePatch, MODES, set, type Mode } from "./features-model"
 
-interface FeatureInfo {
-  name: string
-  key: string
-  description: string
-  type: "boolean"
-  defaultValue: boolean
-}
-
-const FEATURES: FeatureInfo[] = [
-  {
-    name: "Tool Deferral",
-    key: "tool_deferral.enabled",
-    description: "Enable tool deferral mechanism (loads tools on-demand)",
-    type: "boolean",
-    defaultValue: false,
-  },
-  {
-    name: "Tool Search",
-    key: "tool_deferral.search_tool",
-    description: "Include ToolSearch tool for loading deferred tools",
-    type: "boolean",
-    defaultValue: true,
-  },
-  {
-    name: "Agent Swarms",
-    key: "agent_swarms",
-    description: "Enable agent swarm tools (team_create, send_message, list_peers)",
-    type: "boolean",
-    defaultValue: false,
-  },
-  {
-    name: "Workflow Scripts",
-    key: "workflow_scripts",
-    description: "Enable workflow automation scripts",
-    type: "boolean",
-    defaultValue: false,
-  },
-  {
-    name: "Cron Jobs",
-    key: "cron_jobs",
-    description: "Enable scheduled task tools",
-    type: "boolean",
-    defaultValue: false,
-  },
-  {
-    name: "Web Browser",
-    key: "web_browser",
-    description: "Enable browser automation tool",
-    type: "boolean",
-    defaultValue: false,
-  },
-  {
-    name: "Context Inspection",
-    key: "context_inspection",
-    description: "Enable context inspection tool for debugging",
-    type: "boolean",
-    defaultValue: false,
-  },
-  {
-    name: "Session Hooks",
-    key: "session_hooks",
-    description: "Enable session-scoped ephemeral hooks",
-    type: "boolean",
-    defaultValue: false,
-  },
-]
-
-function getNestedValue(obj: any, path: string): any {
-  const parts = path.split(".")
-  let current = obj
-  for (const part of parts) {
-    if (current === undefined || current === null) return undefined
-    current = current[part]
+function printSection(title: string, flags: ReturnType<typeof allFlags>) {
+  console.log(title)
+  for (const item of flags) {
+    console.log(`  - ${item.name}`)
+    console.log(`    ${item.desc}`)
+    console.log(`    experimental.${item.key}`)
   }
-  return current
-}
-
-function setNestedValue(obj: any, path: string, value: any): void {
-  const parts = path.split(".")
-  let current = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!current[parts[i]]) current[parts[i]] = {}
-    current = current[parts[i]]
-  }
-  current[parts[parts.length - 1]] = value
+  console.log()
 }
 
 export const FeaturesCommand = cmd({
   command: "features",
-  describe: "list and manage experimental features",
+  describe: "list and manage experimental modes and flags",
   builder: (yargs: Argv) =>
-    yargs.command(FeaturesListCommand).command(FeaturesEnableCommand).command(FeaturesDisableCommand).demandCommand(),
+    yargs
+      .command(FeaturesListCommand)
+      .command(FeaturesModeCommand)
+      .command(FeaturesEnableCommand)
+      .command(FeaturesDisableCommand)
+      .demandCommand(),
   async handler() {},
 })
 
 const FeaturesListCommand = cmd({
   command: "list",
   aliases: ["ls"],
-  describe: "List all experimental features",
+  describe: "List mode and experimental flags",
   async handler() {
     await bootstrap(process.cwd(), async () => {
       const config = await Config.get()
       const experimental = config.experimental ?? {}
+      const current = mode(experimental)
+      const currentMode = MODES.find((item) => item.mode === current)!
 
-      console.log("\n📦 Experimental Features\n")
+      console.log("\nExperimental Mode\n")
+      console.log(`  ${currentMode.name}`)
+      console.log(`  ${currentMode.desc}`)
+      console.log()
 
-      for (const feature of FEATURES) {
-        const currentValue = getNestedValue(experimental, feature.key)
-        const isEnabled = currentValue === true
-        const status = isEnabled ? "● enabled" : "○ disabled"
-        const defaultNote =
-          currentValue === undefined ? ` (default: ${feature.defaultValue ? "enabled" : "disabled"})` : ""
+      console.log("Available modes:")
+      for (const item of MODES) {
+        const active = item.mode === current ? "[x]" : "[ ]"
+        console.log(`  ${active} ${item.mode}`)
+      }
+      console.log()
 
-        console.log(`${status} ${feature.name}`)
-        console.log(`   ${feature.description}${defaultNote}`)
-        console.log(`   ${feature.key}`)
+      printSection("Mode: xenova (experimental.tool_router.*)", FLAGS.xenova)
+      printSection("Mode: deferred (experimental.tool_deferral.*)", FLAGS.deferred)
+      printSection("Extra experimental tools", FLAGS.extra)
+
+      const modeFlags = current === "deferred" ? FLAGS.deferred : current === "xenova" ? FLAGS.xenova : []
+      if (modeFlags.length > 0) {
+        console.log("Current mode flags:")
+        for (const item of modeFlags) {
+          const value = get(experimental, item.key)
+          const enabled = value === true
+          const note = value === undefined ? ` (default: ${item.defaultValue ? "enabled" : "disabled"})` : ""
+          console.log(`  ${enabled ? "[x]" : "[ ]"} ${item.name}${note}`)
+          console.log(`    experimental.${item.key}`)
+        }
         console.log()
       }
 
-      console.log("Use 'opencode features enable <name>' to enable a feature")
-      console.log("Use 'opencode features disable <name>' to disable a feature")
+      console.log("Extra flags:")
+      for (const item of FLAGS.extra) {
+        const value = get(experimental, item.key)
+        const enabled = value === true
+        const note = value === undefined ? ` (default: ${item.defaultValue ? "enabled" : "disabled"})` : ""
+        console.log(`  ${enabled ? "[x]" : "[ ]"} ${item.name}${note}`)
+        console.log(`    experimental.${item.key}`)
+      }
+      console.log()
+
+      console.log("Use 'opencode features mode <vanilla|xenova|deferred>' to switch mode")
+      console.log("Use 'opencode features enable <flag>' to enable a flag")
+      console.log("Use 'opencode features disable <flag>' to disable a flag")
+      console.log()
+    })
+  },
+})
+
+const FeaturesModeCommand = cmd({
+  command: "mode <name>",
+  describe: "Switch tool mode: vanilla, xenova, deferred",
+  builder: (yargs: Argv) =>
+    yargs.positional("name", {
+      describe: "Mode name",
+      type: "string",
+      demandOption: true,
+      choices: MODES.map((item) => item.mode),
+    }),
+  async handler(args) {
+    const next = args.name as Mode
+    await bootstrap(process.cwd(), async () => {
+      const patch: any = { experimental: {} }
+      for (const [key, value] of Object.entries(modePatch(next))) {
+        set(patch.experimental, key, value)
+      }
+      await Config.update(patch)
+      const label = MODES.find((item) => item.mode === next)!
+      console.log(`✓ Mode: ${label.name}`)
+      console.log(`  ${label.desc}`)
+      console.log("  Restart OpenCode for changes to take effect.")
       console.log()
     })
   },
@@ -131,7 +114,7 @@ const FeaturesListCommand = cmd({
 
 export const FeaturesEnableCommand = cmd({
   command: "enable <name>",
-  describe: "Enable an experimental feature",
+  describe: "Enable an experimental flag",
   builder: (yargs: Argv) =>
     yargs.positional("name", {
       describe: "Feature name to enable",
@@ -139,38 +122,24 @@ export const FeaturesEnableCommand = cmd({
       demandOption: true,
     }),
   async handler(args) {
-    const featureName = args.name as string
+    const name = args.name as string
+    const matched = findFlag(name)
 
-    // Normalize the input name to match feature key
-    let matchedFeature: FeatureInfo | undefined
-    for (const feature of FEATURES) {
-      const normalized = feature.key.replace(/^experimental\./, "").replace(/[^a-z]/g, "")
-      const inputNormalized = featureName.toLowerCase().replace(/[^a-z]/g, "")
-      if (normalized === inputNormalized || feature.name.toLowerCase().replace(/\s/g, "") === inputNormalized) {
-        matchedFeature = feature
-        break
-      }
-    }
-
-    if (!matchedFeature) {
-      console.error(`Unknown feature: ${featureName}`)
-      console.log("Available features:")
-      for (const f of FEATURES) {
-        console.log(`  - ${f.name}`)
+    if (!matched) {
+      console.error(`Unknown flag: ${name}`)
+      console.log("Available flags:")
+      for (const item of allFlags()) {
+        console.log(`  - ${item.name}`)
       }
       process.exit(1)
     }
 
     await bootstrap(process.cwd(), async () => {
-      const config = await Config.get()
-      const experimental = config.experimental ?? {}
-
-      setNestedValue(experimental, matchedFeature!.key, true)
-
-      await Config.update({ experimental })
-
-      console.log(`✓ Enabled: ${matchedFeature.name}`)
-      console.log(`  Key: ${matchedFeature.key}`)
+      const patch: any = { experimental: {} }
+      set(patch.experimental, matched.key, true)
+      await Config.update(patch)
+      console.log(`✓ Enabled: ${matched.name}`)
+      console.log(`  Key: experimental.${matched.key}`)
       console.log()
       console.log("Restart OpenCode for changes to take effect.")
     })
@@ -179,7 +148,7 @@ export const FeaturesEnableCommand = cmd({
 
 export const FeaturesDisableCommand = cmd({
   command: "disable <name>",
-  describe: "Disable an experimental feature",
+  describe: "Disable an experimental flag",
   builder: (yargs: Argv) =>
     yargs.positional("name", {
       describe: "Feature name to disable",
@@ -187,38 +156,24 @@ export const FeaturesDisableCommand = cmd({
       demandOption: true,
     }),
   async handler(args) {
-    const featureName = args.name as string
+    const name = args.name as string
+    const matched = findFlag(name)
 
-    // Normalize the input name to match feature key
-    let matchedFeature: FeatureInfo | undefined
-    for (const feature of FEATURES) {
-      const normalized = feature.key.replace(/^experimental\./, "").replace(/[^a-z]/g, "")
-      const inputNormalized = featureName.toLowerCase().replace(/[^a-z]/g, "")
-      if (normalized === inputNormalized || feature.name.toLowerCase().replace(/\s/g, "") === inputNormalized) {
-        matchedFeature = feature
-        break
-      }
-    }
-
-    if (!matchedFeature) {
-      console.error(`Unknown feature: ${featureName}`)
-      console.log("Available features:")
-      for (const f of FEATURES) {
-        console.log(`  - ${f.name}`)
+    if (!matched) {
+      console.error(`Unknown flag: ${name}`)
+      console.log("Available flags:")
+      for (const item of allFlags()) {
+        console.log(`  - ${item.name}`)
       }
       process.exit(1)
     }
 
     await bootstrap(process.cwd(), async () => {
-      const config = await Config.get()
-      const experimental = config.experimental ?? {}
-
-      setNestedValue(experimental, matchedFeature!.key, false)
-
-      await Config.update({ experimental })
-
-      console.log(`✓ Disabled: ${matchedFeature.name}`)
-      console.log(`  Key: ${matchedFeature.key}`)
+      const patch: any = { experimental: {} }
+      set(patch.experimental, matched.key, false)
+      await Config.update(patch)
+      console.log(`✓ Disabled: ${matched.name}`)
+      console.log(`  Key: experimental.${matched.key}`)
       console.log()
       console.log("Restart OpenCode for changes to take effect.")
     })

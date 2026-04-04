@@ -137,7 +137,7 @@ export namespace ToolRegistry {
           ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
           ...(cfg.experimental?.batch_tool === true ? [BatchTool] : []),
           ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [PlanExitTool] : []),
-          ...(cfg.experimental?.tool_deferral?.enabled !== false &&
+          ...(cfg.experimental?.tool_deferral?.enabled === true &&
           cfg.experimental?.tool_deferral?.search_tool !== false
             ? [ToolSearchTool]
             : []),

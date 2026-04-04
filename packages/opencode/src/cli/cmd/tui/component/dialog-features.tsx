@@ -4,43 +4,11 @@ import { useSync } from "@tui/context/sync"
 import { useSDK } from "@tui/context/sdk"
 import { Keybind } from "@/util/keybind"
 import { createMemo, createSignal } from "solid-js"
+import { FLAGS, get, mode, modePatch, MODES, set, type Mode } from "@/cli/cmd/features-model"
 
-type Feature = {
-  name: string
-  key: string
-  desc: string
-}
-
-const list: Feature[] = [
-  { name: "Tool Deferral", key: "tool_deferral.enabled", desc: "Load tools on-demand" },
-  { name: "Tool Search", key: "tool_deferral.search_tool", desc: "Enable tool_search helper" },
-  { name: "Agent Swarms", key: "agent_swarms", desc: "team_create / send_message / list_peers" },
-  { name: "Workflow Scripts", key: "workflow_scripts", desc: "workflow_run / workflow_list" },
-  { name: "Cron Jobs", key: "cron_jobs", desc: "cron_create / cron_list / cron_delete" },
-  { name: "Web Browser", key: "web_browser", desc: "browser automation tool" },
-  { name: "Context Inspection", key: "context_inspection", desc: "ctx_inspect tool" },
-  { name: "Session Hooks", key: "session_hooks", desc: "ephemeral per-session hooks" },
-]
-
-function get(obj: any, path: string) {
-  let cur = obj
-  for (const item of path.split(".")) {
-    if (cur == null) return undefined
-    cur = cur[item]
-  }
-  return cur
-}
-
-function set(obj: any, path: string, value: boolean) {
-  const parts = path.split(".")
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    const key = parts[i]
-    if (cur[key] == null || typeof cur[key] !== "object") cur[key] = {}
-    cur = cur[key]
-  }
-  cur[parts[parts.length - 1]] = value
-}
+type Item =
+  | { kind: "mode"; mode: Mode; name: string; desc: string }
+  | { kind: "flag"; key: string; name: string; desc: string; category: string; defaultValue: boolean }
 
 function fail(err: unknown) {
   if (err instanceof Error) return err.message
@@ -66,39 +34,94 @@ export function DialogFeatures() {
   let busy = false
 
   const exp = () => (cfg().experimental ?? {}) as any
+  const active = createMemo(() => mode(exp()))
+  const flags = createMemo(() => {
+    if (active() === "deferred") return FLAGS.deferred
+    if (active() === "xenova") return FLAGS.xenova
+    return []
+  })
 
   const options = createMemo(() =>
-    list.map((item) => {
+    [
+      ...MODES.map((item): Item => ({ kind: "mode", mode: item.mode, name: item.name, desc: item.desc })),
+      ...flags().map(
+        (item): Item => ({
+          kind: "flag",
+          key: item.key,
+          name: item.name,
+          desc: item.desc,
+          defaultValue: item.defaultValue,
+          category: `Mode: ${active()}`,
+        }),
+      ),
+      ...FLAGS.extra.map(
+        (item): Item => ({
+          kind: "flag",
+          key: item.key,
+          name: item.name,
+          desc: item.desc,
+          defaultValue: item.defaultValue,
+          category: "Extra",
+        }),
+      ),
+    ].map((item) => {
+      if (item.kind === "mode") {
+        const enabled = active() === item.mode
+        return {
+          title: `${enabled ? "[x]" : "[ ]"} ${item.name}`,
+          description: `${item.desc} · mode.${item.mode}`,
+          value: item,
+          category: "Mode",
+        }
+      }
       const enabled = get(exp(), item.key) === true
+      const note = get(exp(), item.key) === undefined ? ` (default: ${item.defaultValue ? "on" : "off"})` : ""
       return {
-        title: `${enabled ? "[x]" : "[ ]"} ${item.name}`,
-        description: `${item.desc} · ${item.key}`,
+        title: `${enabled ? "[x]" : "[ ]"} ${item.name}${note}`,
+        description: `${item.desc} · experimental.${item.key}`,
         value: item,
+        category: item.category,
       }
     }),
   )
 
-  async function toggle(item: Feature) {
+  async function toggle(item: Item) {
     if (busy) return
     busy = true
     try {
       const base = (await sdk.client.config.get({}, { throwOnError: true })).data as any
-      const cur = get(base?.experimental ?? {}, item.key) === true
-      const next = !cur
       const patch: any = { experimental: {} }
-      set(patch, `experimental.${item.key}`, next)
+      if (item.kind === "mode") {
+        for (const [key, value] of Object.entries(modePatch(item.mode))) {
+          set(patch.experimental, key, value)
+        }
+      }
+      if (item.kind === "flag") {
+        const cur = get(base?.experimental ?? {}, item.key) === true
+        set(patch.experimental, item.key, !cur)
+      }
       try {
         await sdk.client.config.update({ config: patch }, { throwOnError: true })
       } catch (err) {
         await sdk.client.config.update(patch, { throwOnError: true }).catch(() => Promise.reject(err))
       }
       const fresh = (await sdk.client.config.get({}, { throwOnError: true })).data as any
-      const value = get(fresh?.experimental ?? {}, item.key) === true
-      if (value !== next) throw new Error("Config update did not persist")
+      if (item.kind === "mode") {
+        const next = mode(fresh?.experimental ?? {})
+        if (next !== item.mode) throw new Error("Config update did not persist")
+      }
+      if (item.kind === "flag") {
+        const baseValue = get(base?.experimental ?? {}, item.key) === true
+        const nextValue = get(fresh?.experimental ?? {}, item.key) === true
+        if (nextValue === baseValue) throw new Error("Config update did not persist")
+      }
       if (fresh) setCfg(fresh)
       toast.show({
         variant: "success",
-        message: `${item.name}: ${next ? "enabled" : "disabled"}`,
+        message:
+          item.kind === "mode"
+            ? `Mode: ${MODES.find((entry) => entry.mode === item.mode)?.name ?? item.mode}`
+            : `${item.name}: ${get(fresh?.experimental ?? {}, item.key) === true ? "enabled" : "disabled"}`,
       })
     } catch (err) {
       toast.show({
@@ -111,8 +134,8 @@ export function DialogFeatures() {
   }
 
   return (
-    <DialogSelect<Feature>
-      title="Experimental features"
+    <DialogSelect<Item>
+      title="Features"
       options={options()}
       keybind={[
         {

@@ -113,31 +113,35 @@ export namespace Command {
 
 ## EXPERIMENTAL FEATURES (Config Flags)
 
-These can be enabled/disabled with 'opencode features enable/disable':
+Modes are switched with 'opencode features mode <vanilla|xenova|deferred>':
 
-1. Tool Deferral (tool_deferral.enabled) - DEFAULT: disabled
-   Enable tool deferral mechanism that loads tools on-demand instead of sending all at once.
-   When enabled, uses Claude Code's approach instead of OpenCode's Xenova router.
+1. vanilla
+   No router and no tool deferral. All tools are available directly.
 
-2. Tool Search (tool_deferral.search_tool) - DEFAULT: enabled
-   Include ToolSearch tool for loading deferred tools on-demand.
+2. xenova
+   Offline router path enabled (tool_router.*).
 
-3. Agent Swarms (agent_swarms) - DEFAULT: disabled
+3. deferred
+   Tool deferral enabled (tool_deferral.*), tools loaded on-demand via tool_search.
+
+Extra flags can be enabled/disabled with 'opencode features enable/disable <flag>':
+
+1. Agent Swarms (agent_swarms) - DEFAULT: disabled
    Enable team_create, send_message, list_peers tools for multi-agent coordination.
 
-4. Workflow Scripts (workflow_scripts) - DEFAULT: disabled
+2. Workflow Scripts (workflow_scripts) - DEFAULT: disabled
    Enable workflow_run, workflow_list tools for automation scripts.
 
-5. Cron Jobs (cron_jobs) - DEFAULT: disabled
+3. Cron Jobs (cron_jobs) - DEFAULT: disabled
    Enable cron_create, cron_list, cron_delete tools for scheduled tasks.
 
-6. Web Browser (web_browser) - DEFAULT: disabled
+4. Web Browser (web_browser) - DEFAULT: disabled
    Enable browser automation tool for web interaction.
 
-7. Context Inspection (context_inspection) - DEFAULT: disabled
+5. Context Inspection (context_inspection) - DEFAULT: disabled
    Enable ctx_inspect tool for debugging context state.
 
-8. Session Hooks (session_hooks) - DEFAULT: disabled
+6. Session Hooks (session_hooks) - DEFAULT: disabled
    Enable session-scoped ephemeral hooks system.
 
 ## EXPERIMENTAL TOOLS
@@ -164,11 +168,11 @@ These tools are available when their corresponding features are enabled:
 ### Context Inspection (enable context_inspection):
 - ctx_inspect: Inspect current context state for debugging
 
-### Tool Deferral (enable tool_deferral):
+### Deferred mode (opencode features mode deferred):
 - tool_search: Search and load deferred tool definitions on-demand
 
 Ask the user which feature they want to enable or disable.
-Tell them they can use 'opencode features enable <feature>' or 'opencode features disable <feature>' from the terminal.`
+Tell them they can use 'opencode features mode <mode>', 'opencode features enable <flag>' and 'opencode features disable <flag>' from the terminal.`
           },
           hints: [],
         }

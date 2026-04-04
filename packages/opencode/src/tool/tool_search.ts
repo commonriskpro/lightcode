@@ -52,6 +52,16 @@ export const ToolSearchTool: Tool.Info<
       }
 
       const truncated = await Truncate.output(toolDef.description, {}, ctx.extra?.agent as any)
+      const schema = z.toJSONSchema(toolDef.parameters)
+      const fn = JSON.stringify(
+        {
+          name: toolDef.id,
+          description: truncated.content,
+          parameters: schema,
+        },
+        null,
+        2,
+      )
 
       return {
         title: "Tool Loaded",
@@ -61,9 +71,9 @@ export const ToolSearchTool: Tool.Info<
           "",
           "## Tool Definition",
           "",
-          `**Description**: ${truncated.content}`,
-          "",
-          `**Parameters**: ${JSON.stringify(toolDef.parameters._def, null, 2)}`,
+          "<functions>",
+          `<function>${fn}</function>`,
+          "</functions>",
           "",
           reason ? `**Reason**: ${reason}` : "",
           "",
