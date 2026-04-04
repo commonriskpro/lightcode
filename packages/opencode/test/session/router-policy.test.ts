@@ -68,6 +68,33 @@ describe("lexicalSignals question edge", () => {
   })
 })
 
+describe("lexicalSignals strongDelete ES", () => {
+  test("borralo and ahora borralo", () => {
+    expect(lexicalSignals("borralo").strongDelete).toBe(true)
+    expect(lexicalSignals("ahora borralo").strongDelete).toBe(true)
+    expect(lexicalSignals("elimínalo").strongDelete).toBe(true)
+  })
+
+  test("false for casual chat", () => {
+    expect(lexicalSignals("hola qué tal").strongDelete).toBe(false)
+  })
+})
+
+describe("applyRouterPolicy bash keeps delete imperative", () => {
+  test("keeps bash for borralo when strongDelete", () => {
+    const ids = new Set(["bash", "read", "glob"])
+    const available = new Set(["bash", "read", "glob"])
+    const out = applyRouterPolicy({
+      ids,
+      text: "borralo",
+      fullText: "borralo",
+      available,
+      max: 12,
+    })
+    expect(out.includes("bash")).toBe(true)
+  })
+})
+
 describe("lexicalSignals seed write/edit cues", () => {
   test("create a new test file triggers strongWrite", () => {
     expect(

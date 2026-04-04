@@ -44,6 +44,8 @@ export type LexicalSignals = {
   strongEdit: boolean
   strongWrite: boolean
   strongModify: boolean
+  /** ES/EN delete file or rm — not covered by English-only strongEdit. */
+  strongDelete: boolean
   webResearch: boolean
   literalSearch: boolean
   semanticSearch: boolean
@@ -78,6 +80,7 @@ export function lexicalSignalsMerged(fullText: string, clauses: string[]): Lexic
     acc.strongEdit = acc.strongEdit || s.strongEdit
     acc.strongWrite = acc.strongWrite || s.strongWrite
     acc.strongModify = acc.strongModify || s.strongModify
+    acc.strongDelete = acc.strongDelete || s.strongDelete
     acc.webResearch = acc.webResearch || s.webResearch
     acc.literalSearch = acc.literalSearch || s.literalSearch
     acc.semanticSearch = acc.semanticSearch || s.semanticSearch
@@ -134,6 +137,10 @@ export function lexicalSignals(text: string): LexicalSignals {
       /\b(code\s*search|codesearch|semantic\s+(?:search|codebase)|busqueda\s+semantica|búsqueda\s+sem[aá]ntica|find\s+by\s+meaning|por\s+significado|search\s+the\s+codebase\s+for)\b/i.test(
         u,
       ),
+    strongDelete:
+      /\b(borr(?:a|alo|ala|ar|as|ame|án|an|ad|adlo|adla)|elimin(?:a|ar|alo|ala|me)?|suprim|rm\s+[-\w./]|unlink|delete\s+(?:this|the|that)\s+file|remove\s+(?:this|the|that)\s+file)\b/i.test(
+        u,
+      ) || /^(borralo|borrala|borralos|borralas|eliminalo|elimínalo|borrálo|borrála)\b/i.test(u.trim()),
   }
 }
 
@@ -197,10 +204,10 @@ function applyHardGates(
       /\blist\s+markdown\s+files\b/i.test(text)
     if (listOrGlobListing) out.delete("bash")
     else if (forbidsShellExecution(text)) out.delete("bash")
-    else if (!sig.strongBash && !BASH_ALLOW(text)) out.delete("bash")
+    else if (!sig.strongBash && !BASH_ALLOW(text) && !sig.strongDelete) out.delete("bash")
   }
 
-  if (out.has("edit") && !sig.strongEdit && !sig.strongModify) {
+  if (out.has("edit") && !sig.strongEdit && !sig.strongModify && !sig.strongDelete) {
     if (!(multiClause && sig.strongWrite)) out.delete("edit")
   }
   if (out.has("write") && !sig.strongWrite && !sig.strongModify) out.delete("write")

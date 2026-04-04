@@ -409,6 +409,16 @@ export namespace ToolRouter {
       }
     }
 
+    const sig = lexicalSignals(text)
+    if (sig.strongDelete) {
+      conversationExclusive = false
+      if (intentPrimary === CONVERSATION_INTENT_LABEL) {
+        intentPrimary = ""
+        intentMerged = []
+        intentEmbedWeb = false
+      }
+    }
+
     if (!additive && tr?.apply_after_first_assistant === true && !hasAssistant) {
       const ids = Object.keys(input.tools).sort()
       const hint = `## Offline tool router\nMode: first turn (all tools).\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
@@ -541,12 +551,20 @@ export namespace ToolRouter {
     let lexicalHint = false
     let strongWriteSeed = false
     if (!conversationExclusive) {
-      const sig = lexicalSignals(text)
       if (sig.strongWrite && builtinAvailable.has("write")) {
         matched.add("write")
         semanticIds.add("write")
         strongWriteSeed = true
         if (!labels.some((l) => l === "lexical/strong_write")) labels.push("lexical/strong_write")
+      }
+      if (sig.strongDelete) {
+        for (const id of ["bash", "edit", "write", "read", "glob"]) {
+          if (builtinAvailable.has(id)) {
+            matched.add(id)
+            semanticIds.add(id)
+          }
+        }
+        if (!labels.some((l) => l === "lexical/strong_delete")) labels.push("lexical/strong_delete")
       }
       const lead = text.trim()
       if (/^ask\s+me\b/i.test(lead) || /^pregúntame\b/i.test(lead)) {
