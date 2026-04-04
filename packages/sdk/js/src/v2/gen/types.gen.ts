@@ -1601,6 +1601,10 @@ export type Config = {
      */
     batch_tool?: boolean
     /**
+     * Enable deferred tool loading to reduce context usage
+     */
+    deferred_tools?: boolean
+    /**
      * Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)
      */
     openTelemetry?: boolean

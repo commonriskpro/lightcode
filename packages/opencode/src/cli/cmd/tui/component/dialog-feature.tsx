@@ -35,7 +35,7 @@ export function DialogFeature() {
 
   const features = createMemo((): Feature[] => {
     const cfg = sync.data.config
-    const exp = cfg?.experimental as Record<string, unknown> | undefined
+    const exp = cfg?.experimental
     const ov = overrides()
     return [
       {
@@ -124,7 +124,8 @@ export function DialogFeature() {
         setLoading(option.value)
         try {
           const cfg = sync.data.config
-          const current = (cfg?.experimental as Record<string, unknown> | undefined)?.[feature.config] === true
+          const key = feature.config as keyof NonNullable<typeof cfg.experimental>
+          const current = cfg?.experimental?.[key] === true
           const next = !current
 
           await sdk.client.config.update({
