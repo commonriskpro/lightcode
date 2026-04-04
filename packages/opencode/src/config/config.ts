@@ -1035,6 +1035,7 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
+          autodream: z.boolean().optional().describe("Enable automatic memory consolidation via Engram after sessions"),
         })
         .optional(),
     })

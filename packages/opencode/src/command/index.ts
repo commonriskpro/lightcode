@@ -10,6 +10,7 @@ import { Skill } from "../skill"
 import { Log } from "../util/log"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import PROMPT_DREAM from "./template/dream.txt"
 
 export namespace Command {
   const log = Log.create({ service: "command" })
@@ -63,6 +64,7 @@ export namespace Command {
   export const Default = {
     INIT: "init",
     REVIEW: "review",
+    DREAM: "dream",
   } as const
 
   export interface Interface {
@@ -101,6 +103,17 @@ export namespace Command {
           },
           subtask: true,
           hints: hints(PROMPT_REVIEW),
+        }
+        commands[Default.DREAM] = {
+          name: Default.DREAM,
+          description: "consolidate and organize persistent memory",
+          source: "command",
+          agent: "dream",
+          subtask: true,
+          get template() {
+            return PROMPT_DREAM
+          },
+          hints: hints(PROMPT_DREAM),
         }
 
         for (const [name, command] of Object.entries(cfg.command ?? {})) {

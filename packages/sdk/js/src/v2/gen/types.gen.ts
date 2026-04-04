@@ -1620,6 +1620,10 @@ export type Config = {
      * Timeout in milliseconds for model context protocol (MCP) requests
      */
     mcp_timeout?: number
+    /**
+     * Enable automatic memory consolidation via Engram after sessions
+     */
+    autodream?: boolean
   }
 }
 
