@@ -4,7 +4,7 @@ import { Global } from "../global"
 import { Filesystem } from "../util/filesystem"
 import { Process } from "../util/process"
 import { which } from "../util/which"
-import { lazy } from "../util/lazy"
+
 import { MCP } from "../mcp"
 import { Log } from "@/util/log"
 import { NamedError } from "@opencode-ai/util/error"
@@ -53,10 +53,19 @@ export namespace Engram {
 
   async function register(bin: string): Promise<void> {
     log.info("auto-registering engram MCP", { bin })
-    await MCP.add(MCP_NAME, {
-      type: "local" as const,
-      command: [bin, "mcp", "--tools=agent"],
-    })
+    try {
+      await MCP.add(MCP_NAME, {
+        type: "local" as const,
+        command: [bin, "mcp", "--tools=agent"],
+      })
+      log.info("engram MCP registered successfully")
+    } catch (err) {
+      log.error("engram MCP registration failed", {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      })
+      throw err
+    }
   }
 
   async function download(): Promise<string> {
@@ -99,8 +108,9 @@ export namespace Engram {
     return bin
   }
 
-  const state = lazy(async () => {
+  async function resolve() {
     // 1. Already connected as MCP client?
+    log.info("checking engram MCP connection")
     if (await connected()) {
       log.info("engram MCP already connected")
       return { bin: "engram", registered: false }
@@ -108,9 +118,11 @@ export namespace Engram {
 
     // 2. In PATH?
     const system = which("engram")
+    log.info("which engram", { result: system })
     if (system) {
       const stat = await fs.stat(system).catch(() => undefined)
       if (stat?.isFile()) {
+        log.info("found engram in PATH", { path: system })
         await register(system)
         return { bin: system, registered: true }
       }
@@ -118,29 +130,37 @@ export namespace Engram {
 
     // 3. In cache?
     const cached = path.join(Global.Path.bin, "engram")
-    if (await Filesystem.exists(cached)) {
+    const exists = await Filesystem.exists(cached)
+    log.info("checking cache", { path: cached, exists })
+    if (exists) {
       await register(cached)
       return { bin: cached, registered: true }
     }
 
     // 4. Download
+    log.info("downloading engram")
     const bin = await download()
     await register(bin)
     return { bin, registered: true }
-  })
+  }
+
+  let resolved: { bin: string; registered: boolean } | undefined
+  let failed = false
 
   export async function ensure(): Promise<boolean> {
+    if (resolved) return true
+    if (failed) return false
     try {
-      await state()
+      resolved = await resolve()
       return true
     } catch (err) {
+      failed = true
       log.warn("engram not available", { error: err instanceof Error ? err.message : String(err) })
       return false
     }
   }
 
-  export async function bin(): Promise<string> {
-    const s = await state()
-    return s.bin
+  export function bin(): string | undefined {
+    return resolved?.bin
   }
 }
