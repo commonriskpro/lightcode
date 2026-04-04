@@ -171,7 +171,9 @@ export namespace ToolRegistry {
             ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(lsp, "Language server diagnostics and hover")] : []),
             ...(cfg.experimental?.batch_tool === true ? [defer(batch, "Run multiple tools in parallel")] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [plan] : []),
-            ...(Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS ? [toolSearch] : []),
+            ...(Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS || cfg.experimental?.deferred_tools === true
+              ? [toolSearch]
+              : []),
             ...custom,
           ]
         })
