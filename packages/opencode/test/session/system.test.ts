@@ -5,6 +5,42 @@ import { Instance } from "../../src/project/instance"
 import { SystemPrompt } from "../../src/session/system"
 import { tmpdir } from "../fixture/fixture"
 
+describe("session.system.volatile", () => {
+  test("volatile returns date and model name", () => {
+    const model = { api: { id: "claude-sonnet-4" }, providerID: "anthropic" } as any
+    const result = SystemPrompt.volatile(model)
+    expect(result).toContain("claude-sonnet-4")
+    expect(result).toContain("anthropic/claude-sonnet-4")
+    expect(result).toContain("Today's date:")
+  })
+
+  test("volatile changes when model changes", () => {
+    const a = SystemPrompt.volatile({ api: { id: "claude-sonnet-4" }, providerID: "anthropic" } as any)
+    const b = SystemPrompt.volatile({ api: { id: "gpt-5.4" }, providerID: "openai" } as any)
+    expect(a).not.toBe(b)
+    expect(a).toContain("claude-sonnet-4")
+    expect(b).toContain("gpt-5.4")
+  })
+
+  test("environment does NOT contain date or model name", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const model = { api: { id: "claude-sonnet-4" }, providerID: "anthropic" } as any
+        const env = await SystemPrompt.environment(model)
+        const text = env.join("\n")
+        expect(text).not.toContain("Today's date")
+        expect(text).not.toContain("claude-sonnet-4")
+        expect(text).not.toContain("You are powered by")
+        expect(text).toContain("<env>")
+        expect(text).toContain("Working directory")
+        expect(text).toContain("Platform:")
+      },
+    })
+  })
+})
+
 describe("session.system", () => {
   test("skills output is sorted by name and stable across calls", async () => {
     await using tmp = await tmpdir({

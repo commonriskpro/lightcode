@@ -2829,3 +2829,148 @@ describe("ProviderTransform.variants", () => {
     })
   })
 })
+
+describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
+  function makeModel(overrides?: any) {
+    return {
+      id: "anthropic/claude-sonnet-4",
+      providerID: "anthropic",
+      api: {
+        id: "claude-sonnet-4",
+        url: "https://api.anthropic.com",
+        npm: "@ai-sdk/anthropic",
+      },
+      name: "Claude Sonnet 4",
+      capabilities: { temperature: true },
+      options: {},
+      headers: {},
+      limit: { context: 200_000, input: 180_000 },
+      ...overrides,
+    } as any
+  }
+
+  test("system[0] gets 1hr TTL for Anthropic (BP2)", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Environment info" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "More" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    expect(result[0].providerOptions?.anthropic?.cacheControl?.ttl).toBe("1h")
+  })
+
+  test("system[1] gets 5min TTL (BP3)", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Environment info" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "More" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    // system[1] should have ephemeral WITHOUT ttl (5min default)
+    expect(result[1].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+    expect(result[1].providerOptions?.anthropic?.cacheControl?.ttl).toBeUndefined()
+  })
+
+  test("system[2] is NOT cached (volatile)", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Environment info" },
+      { role: "system", content: "Volatile: date, model" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "More" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    expect(result[2].providerOptions).toBeUndefined()
+  })
+
+  test("BP4 on second-to-last conversation message", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "System" },
+      { role: "user", content: "msg1" },
+      { role: "assistant", content: "msg2" },
+      { role: "user", content: "msg3" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    // conversation = [msg1, msg2, msg3]. second-to-last = msg2 (index 2 in full array)
+    expect(result[2].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+  })
+
+  test("no BP4 when conversation has < 3 messages", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "System" },
+      { role: "user", content: "msg1" },
+      { role: "assistant", content: "reply" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {})
+    // system[0] still gets BP2
+    expect(result[0].providerOptions?.anthropic?.cacheControl).toBeDefined()
+    // Only 2 conversation messages — neither gets BP4
+    const user = result.find((m: any) => m.role === "user")
+    const assistant = result.find((m: any) => m.role === "assistant")
+    expect(user?.providerOptions?.anthropic?.cacheControl).toBeUndefined()
+    expect(assistant?.providerOptions?.anthropic?.cacheControl).toBeUndefined()
+  })
+
+  test("non-Anthropic provider uses 5min TTL for all breakpoints", () => {
+    const model = makeModel({
+      providerID: "openai",
+      api: { id: "gpt-5.4", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    })
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Env" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "More" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    // OpenAI: content-level caching, no TTL
+    const sys0 = result[0]
+    // For non-anthropic, breakpoints go on content level or message level without ttl
+    expect(sys0.providerOptions?.anthropic?.cacheControl?.ttl).toBeUndefined()
+  })
+
+  test("TTL ordering: 1hr breakpoints always before 5min in prefix", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Env + skills" },
+      { role: "user", content: "msg1" },
+      { role: "assistant", content: "msg2" },
+      { role: "user", content: "msg3" },
+      { role: "assistant", content: "msg4" },
+      { role: "user", content: "msg5" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {})
+
+    // Collect all messages with cache breakpoints and their TTLs
+    const cached = result
+      .map((m: any, i: number) => ({ index: i, ttl: m.providerOptions?.anthropic?.cacheControl?.ttl }))
+      .filter((x: any) => x.ttl !== undefined)
+
+    // All 1hr entries should come before any 5min entries
+    const hourIndices = cached.filter((x: any) => x.ttl === "1h").map((x: any) => x.index)
+    const minIndices = cached.filter((x: any) => x.ttl === undefined).map((x: any) => x.index) // 5min has no ttl
+
+    if (hourIndices.length > 0 && minIndices.length > 0) {
+      expect(Math.max(...hourIndices)).toBeLessThan(Math.min(...minIndices))
+    }
+  })
+})

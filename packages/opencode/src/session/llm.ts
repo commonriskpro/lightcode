@@ -277,6 +277,18 @@ export namespace LLM {
     Object.keys(tools).forEach((k) => delete tools[k])
     Object.assign(tools, sorted)
 
+    // BP1: Cache breakpoint on last tool definition (1hr TTL for Anthropic)
+    // Tools are the first element in Anthropic's prefix order (tools → system → messages)
+    const keys = Object.keys(tools)
+    const last = keys[keys.length - 1]
+    if (last && tools[last]) {
+      const tool = tools[last] as any
+      tool.providerOptions = {
+        ...(tool.providerOptions ?? {}),
+        anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } },
+      }
+    }
+
     return streamText({
       stopWhen: stepCountIs(input.maxSteps ?? 1),
       prepareStep() {
