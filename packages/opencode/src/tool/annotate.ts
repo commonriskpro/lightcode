@@ -31,7 +31,15 @@ const schema = z.object({
 const store = new Map<string, StoredPick[]>()
 let seq = 1
 
-let live: { page: Page; started: number; mode: "picker" | "etch"; etchSelectors?: string[] } | undefined
+let live:
+  | {
+      page: Page
+      started: number
+      mode: "picker" | "etch"
+      etchSelectors?: string[]
+      etchBefore?: Awaited<ReturnType<typeof take>>
+    }
+  | undefined
 
 function meta(input: { status?: string; mode?: string; url?: string; count?: number; session_ms?: number }) {
   return {
@@ -964,16 +972,21 @@ export const AnnotateTool = Tool.define("annotate", {
         }
       })
 
+      // For etch mode: capture before-state and start watching BEFORE user edits
+      let etchBefore: Awaited<ReturnType<typeof take>> | undefined
+      if (args.mode === "etch") {
+        const etchTargets = args.track ?? args.selectors
+        const resolved = etchTargets?.length ? etchTargets : (await pick(page, undefined, 20)).map((e) => e.selector)
+        await watch(page)
+        etchBefore = await take(page, resolved)
+      }
+
       live = {
         page,
         started: Date.now(),
         mode: args.mode,
         etchSelectors: args.track ?? args.selectors,
-      }
-
-      // For etch mode: start watching mutations immediately
-      if (args.mode === "etch") {
-        await watch(page)
+        etchBefore,
       }
       return {
         title: "annotate:start",
@@ -1006,11 +1019,11 @@ export const AnnotateTool = Tool.define("annotate", {
           stop(live.page),
           live.page.title(),
         ])
-        // before snapshot was taken at watch() time — reconstruct via styles diff
-        const before = await take(live.page, target).catch(() => ({
+        // Use the before-state captured at session start — never the current state
+        const before = live.etchBefore ?? {
           screenshot: afterShot,
           styles: Object.fromEntries(target.map((s) => [s, {} as Record<string, string>])),
-        }))
+        }
         const result: EtchResult = {
           type: "etch",
           url: live.page.url(),
