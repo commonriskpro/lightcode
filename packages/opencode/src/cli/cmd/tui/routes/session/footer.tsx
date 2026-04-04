@@ -1,10 +1,11 @@
-import { createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
 import { useDirectory } from "../../context/directory"
 import { useConnected } from "../../component/dialog-model"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
+import { AutoDream } from "@/dream"
 
 export function Footer() {
   const { theme } = useTheme()
@@ -19,6 +20,7 @@ export function Footer() {
   })
   const directory = useDirectory()
   const connected = useConnected()
+  const [isDreaming, setIsDreaming] = createSignal(false)
 
   const [store, setStore] = createStore({
     welcome: false,
@@ -44,8 +46,12 @@ export function Footer() {
     }
     timeouts.push(setTimeout(() => tick(), 10_000))
 
+    // Poll dreaming state every 2s
+    const dreamPoll = setInterval(() => setIsDreaming(AutoDream.dreaming()), 2000)
+
     onCleanup(() => {
       timeouts.forEach(clearTimeout)
+      clearInterval(dreamPoll)
     })
   })
 
@@ -60,6 +66,9 @@ export function Footer() {
             </text>
           </Match>
           <Match when={connected()}>
+            <Show when={isDreaming()}>
+              <text fg={theme.warning}>◉ dreaming…</text>
+            </Show>
             <Show when={permissions().length > 0}>
               <text fg={theme.warning}>
                 <span style={{ fg: theme.warning }}>△</span> {permissions().length} Permission

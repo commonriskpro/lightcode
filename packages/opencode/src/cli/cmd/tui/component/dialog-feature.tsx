@@ -107,6 +107,14 @@ export function DialogFeature() {
         config: "openTelemetry",
         enabled: () => isEnabled("openTelemetry", false),
       },
+      {
+        id: "autodream",
+        title: "AutoDream",
+        description: "Automatic memory consolidation via Engram",
+        env: "OPENCODE_EXPERIMENTAL_AUTODREAM",
+        config: "autodream",
+        enabled: () => isEnabled("autodream", Flag.OPENCODE_EXPERIMENTAL_AUTODREAM),
+      },
     ]
   })
 
