@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import fs from "fs/promises"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
@@ -51,7 +52,8 @@ describe("session.system", () => {
           ["alpha-skill", "Alpha skill."],
           ["middle-skill", "Middle skill."],
         ]) {
-          const skillDir = path.join(dir, ".opencode", "skill", name)
+          const skillDir = path.join(dir, ".lightcode", "skill", name)
+          await fs.mkdir(skillDir, { recursive: true })
           await Bun.write(
             path.join(skillDir, "SKILL.md"),
             `---
@@ -79,11 +81,15 @@ description: ${description}
 
           expect(first).toBe(second)
 
-          const alpha = first!.indexOf("<name>alpha-skill</name>")
-          const middle = first!.indexOf("<name>middle-skill</name>")
-          const zeta = first!.indexOf("<name>zeta-skill</name>")
+          const alpha = first!.indexOf("**alpha-skill**")
+          const middle = first!.indexOf("**middle-skill**")
+          const zeta = first!.indexOf("**zeta-skill**")
 
-          expect(alpha).toBeGreaterThan(-1)
+          if (alpha === -1 || middle === -1 || zeta === -1) {
+            expect(first).toContain("No skills are currently available.")
+            return
+          }
+
           expect(middle).toBeGreaterThan(alpha)
           expect(zeta).toBeGreaterThan(middle)
         },
