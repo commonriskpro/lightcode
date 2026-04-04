@@ -7,6 +7,10 @@ import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
+import { MCP } from "@/mcp"
+import { Token } from "@/util/token"
+import { OM } from "./om"
+import type { SessionID } from "./schema"
 
 export namespace SystemPrompt {
   export function provider(_model: Provider.Model) {
@@ -57,5 +61,49 @@ export namespace SystemPrompt {
       "Use the skill tool to load a skill when a task matches its description.",
       Skill.fmt(list, { verbose: false }),
     ].join("\n")
+  }
+
+  export function capRecallBody(txt: string): string {
+    const cap = 2000
+    return Token.estimate(txt) > cap ? txt.slice(0, cap * 4) : txt
+  }
+
+  export function wrapRecall(body: string): string {
+    return `<engram-recall>\n${body}\n</engram-recall>`
+  }
+
+  export function wrapObservations(body: string): string {
+    return `<local-observations>\n${capRecallBody(body)}\n</local-observations>`
+  }
+
+  export async function observations(sid: SessionID): Promise<string | undefined> {
+    const rec = OM.get(sid)
+    if (!rec?.observations) return undefined
+    return wrapObservations(rec.observations)
+  }
+
+  export async function recall(pid: string): Promise<string | undefined> {
+    try {
+      const all = await MCP.tools()
+      const key = Object.keys(all).find((k) => k.includes("engram") && k.includes("mem_context"))
+      if (!key) return undefined
+      const tool = all[key]
+      if (!tool.execute) return undefined
+      const res = await tool.execute({ limit: 30, project: pid } as any, {
+        toolCallId: "recall",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      })
+      const parts = (res as any)?.content
+      if (!Array.isArray(parts) || parts.length === 0) return undefined
+      const txt = parts
+        .filter((p: any) => p.type === "text" && p.text)
+        .map((p: any) => p.text as string)
+        .join("\n")
+      if (!txt.trim()) return undefined
+      return wrapRecall(capRecallBody(txt))
+    } catch {
+      return undefined
+    }
   }
 }

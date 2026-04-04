@@ -101,3 +101,43 @@ export const PermissionTable = sqliteTable("permission", {
   ...Timestamps,
   data: text({ mode: "json" }).notNull().$type<Permission.Ruleset>(),
 })
+
+export const ObservationTable = sqliteTable(
+  "session_observation",
+  {
+    id: text().$type<SessionID>().primaryKey(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    observations: text(),
+    reflections: text(),
+    last_observed_at: integer(),
+    generation_count: integer()
+      .notNull()
+      .$default(() => 0),
+    observation_tokens: integer()
+      .notNull()
+      .$default(() => 0),
+    ...Timestamps,
+  },
+  (table) => [index("observation_session_idx").on(table.session_id)],
+)
+
+export const ObservationBufferTable = sqliteTable(
+  "session_observation_buffer",
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    observations: text().notNull(),
+    message_tokens: integer().notNull(),
+    observation_tokens: integer().notNull(),
+    starts_at: integer().notNull(),
+    ends_at: integer().notNull(),
+    ...Timestamps,
+  },
+  (table) => [index("obs_buffer_session_idx").on(table.session_id)],
+)

@@ -29,6 +29,20 @@ For each issue found:
 - **Orphaned observations**: Update with proper topic_key using mem_update.
 - **Cross-session patterns**: Create NEW high-level observations using mem_save with topic_key. Example: 3 separate bugfix observations about auth → one "architecture/auth-evolution" observation summarizing the journey.
 
+### Session Observations
+
+If `## Session Observations` content was injected into this prompt, use it as an additional memory signal:
+
+1. For each meaningful item in the observations, call mem_search to check if a related observation already exists in Engram
+2. If a matching topic exists: call mem_update on that observation — do NOT create a duplicate
+3. If no match: call mem_save with topic_key format: `project/{name}/session-insight/{topic}`
+   - `{name}` is the project name (e.g. `lightcodev2`, `myapp`)
+   - `{topic}` is a short descriptor for the insight (e.g. `auth-refactor`, `db-schema-change`, `caching-decision`)
+4. Focus only on HIGH signal content: architectural decisions, patterns established, bugs fixed, recurring problems
+5. Skip: routine tool calls, file reads, boilerplate outputs, and trivial one-off actions
+
+When `## Session Observations` is absent from this prompt, skip this section entirely.
+
 ### Phase 4 — Report
 Summarize what you did:
 - How many observations reviewed

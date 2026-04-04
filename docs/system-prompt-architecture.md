@@ -32,9 +32,12 @@ const system = [
 ]
 // Then Plugin.trigger("experimental.chat.system.transform") can modify it
 // If header unchanged after plugin, splits into 2 parts for prompt caching
+// Phase 1: recall inserted explicitly at system[1] via splice
+// Phase 2: observations inserted at system[2] via splice (after recall)
+// Volatile content shifts to system[3]
 ```
 
-**File:** `src/session/llm.ts`, lines 103-128
+**File:** `src/session/llm.ts`, lines 103-134
 
 ## Content of Each Part
 
@@ -175,6 +178,19 @@ This ensures the agent prompt (which rarely changes) gets cached by the provider
 
 **File:** `src/session/llm.ts`, lines 124-128
 
+After this split, two additional segments are spliced in:
+
+```typescript
+// Phase 1 (cross-session recall from Engram)
+if (input.recall) system.splice(1, 0, input.recall)
+// Phase 2 (local intra-session observations from ObservationTable)
+if (input.observations) system.splice(input.recall ? 2 : 1, 0, input.observations)
+// Volatile (date, model identity) — always last, never cached
+system.push(SystemPrompt.volatile(model))
+```
+
+**File:** `src/session/llm.ts`, lines 130-134
+
 ## Final Wire Format
 
 Sent to `streamText` as system messages:
@@ -190,61 +206,64 @@ Exception: OpenAI OAuth uses `options.instructions` instead of system messages.
 
 **File:** `src/session/llm.ts`, lines 146-162
 
+## Final `system[]` Layout (with memory features)
+
+```
+system[0]  — BP2 (1h cache)   Agent prompt + input.system joined
+system[1]  — BP3 (5min cache) Engram recall <engram-recall>...</engram-recall>  [Phase 1]
+system[2]  — BP3 (5min cache) Local observations <local-observations>...</local-observations>  [Phase 2]
+system[3]  — NOT cached       Volatile: date + model identity
+```
+
+`applyCaching()` in `transform.ts` places breakpoints only on `system[0]` (1h) and `system[1]` (5min). Slots [2] and [3] are inert with respect to caching — adding them does not invalidate BP2 or BP3.
+
 ## Full Example (assembled)
 
 ```
-[System Message 1 — cached]:
+[System Message 0 — BP2, 1h cache]:
 You are OpenCode, the best coding agent on the planet.
 You are an interactive CLI tool that helps users with software engineering tasks...
 <tone and style rules>
-<professional objectivity>
-<task management>
-<proactive tool use>
 ...
+[joined with env + skills + instructions]
 
-[System Message 2 — dynamic]:
-You are powered by the model named claude-sonnet-4-6...
-<env>
-  Working directory: /Users/dev/lightcodev2
-  ...
-</env>
-<directories>
-</directories>
+[System Message 1 — BP3, 5min cache]:
+<engram-recall>
+## Recent project context
+- 🔴 Architecture uses Effect for all service layers
+- 🔴 DB: snake_case columns, no string column names
+- 🟡 Pending: migrate auth to JWT (mentioned 2026-04-01)
+</engram-recall>
 
-Skills provide specialized instructions and workflows...
-<available_skills>
-  <skill>
-    <name>typescript</name>
-    ...
-  </skill>
-</available_skills>
+[System Message 2 — BP3, 5min cache]:
+<local-observations>
+## Observations
 
-Instructions from: /Users/dev/lightcodev2/AGENTS.md
-<AGENTS.md content>
+- 🔴 14:23 User is refactoring the session module
+- 🔴 14:25 New ObservationTable added to session.sql.ts
+- 🟡 14:30 User asked about Effect.forkIn pattern
+</local-observations>
 
-Instructions from: /Users/saturno/.config/lightcode/AGENTS.md
-<global AGENTS.md content>
-
-<deferred-tools>
-The following tools are available but not loaded. Use tool_search to load them:
-- websearch: Web search via Exa
-- webfetch: Fetch URL content as markdown or text
-- codesearch: Search code via Context7
-</deferred-tools>
+[System Message 3 — NOT cached]:
+You are powered by the model named claude-sonnet-4-6. The exact model ID is anthropic/claude-sonnet-4-6
+Today's date: Sat Apr 04 2026
 ```
 
 ## Related Files
 
-| File                               | Purpose                                                    |
-| ---------------------------------- | ---------------------------------------------------------- |
-| `src/session/prompt.ts:1588-1602`  | Stage 1: builds system array                               |
-| `src/session/llm.ts:100-162`       | Stage 2: assembles with agent prompt, caching, wire format |
-| `src/session/system.ts`            | `SystemPrompt.provider()`, `environment()`, `skills()`     |
-| `src/session/instruction.ts`       | `Instruction.system()` — AGENTS.md/CLAUDE.md loading       |
-| `src/session/prompt/anthropic.txt` | Claude provider prompt                                     |
-| `src/session/prompt/beast.txt`     | GPT-4/o1/o3 provider prompt                                |
-| `src/session/prompt/gpt.txt`       | GPT generic provider prompt                                |
-| `src/session/prompt/gemini.txt`    | Gemini provider prompt                                     |
-| `src/session/prompt/kimi.txt`      | Kimi provider prompt                                       |
-| `src/session/prompt/default.txt`   | Default fallback prompt                                    |
-| `src/tool/search.ts:61-69`         | `ToolSearch.fmt()` — deferred tools section                |
+| File                               | Purpose                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `src/session/prompt.ts:1588-1602`  | Stage 1: builds system array                                                         |
+| `src/session/llm.ts:100-162`       | Stage 2: assembles with agent prompt, caching, wire format, recall+obs splice        |
+| `src/session/system.ts`            | `SystemPrompt.provider()`, `environment()`, `skills()`, `recall()`, `observations()` |
+| `src/session/instruction.ts`       | `Instruction.system()` — AGENTS.md/CLAUDE.md loading                                 |
+| `src/session/om/record.ts`         | `OM` namespace — ObservationTable CRUD                                               |
+| `src/session/om/observer.ts`       | `Observer.run()` — background LLM call for intra-session compression                 |
+| `src/session/om/buffer.ts`         | `Buffer` state machine — 6k/30k/36k token thresholds                                 |
+| `src/session/prompt/anthropic.txt` | Claude provider prompt                                                               |
+| `src/session/prompt/beast.txt`     | GPT-4/o1/o3 provider prompt                                                          |
+| `src/session/prompt/gpt.txt`       | GPT generic provider prompt                                                          |
+| `src/session/prompt/gemini.txt`    | Gemini provider prompt                                                               |
+| `src/session/prompt/kimi.txt`      | Kimi provider prompt                                                                 |
+| `src/session/prompt/default.txt`   | Default fallback prompt                                                              |
+| `src/tool/search.ts:61-69`         | `ToolSearch.fmt()` — deferred tools section                                          |

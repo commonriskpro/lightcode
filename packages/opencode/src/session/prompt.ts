@@ -52,6 +52,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
+import { OM, Observer, Buffer as OMBuffer } from "./om"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1459,6 +1460,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           const ctx = yield* InstanceState.context
           let structured: unknown | undefined
           let step = 0
+          let recall: string | undefined
+          let obs: string | undefined
           const session = yield* sessions.get(sessionID)
 
           while (true) {
@@ -1508,6 +1511,58 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 providerID: lastUser.model.providerID,
                 history: msgs,
               }).pipe(Effect.ignore, Effect.forkIn(scope))
+
+            // Observer buffer trigger — accumulate tokens and fire Observer if threshold reached
+            const tok = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
+            const sig = OMBuffer.check(sessionID, tok)
+            if (sig === "buffer" || sig === "activate") {
+              yield* Effect.promise(async () => {
+                const rec = OM.get(sessionID)
+                const boundary = rec?.last_observed_at ?? 0
+                const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
+                const obs = await Observer.run({
+                  sid: sessionID,
+                  msgs: unobserved,
+                  prev: rec?.observations ?? undefined,
+                })
+                if (obs)
+                  OM.upsert({
+                    id: sessionID,
+                    session_id: sessionID,
+                    observations: obs,
+                    reflections: null,
+                    last_observed_at: Date.now(),
+                    generation_count: (rec?.generation_count ?? 0) + 1,
+                    observation_tokens: obs.length >> 2,
+                    time_created: rec?.time_created ?? Date.now(),
+                    time_updated: Date.now(),
+                  })
+              }).pipe(Effect.ignore, Effect.forkIn(scope))
+            }
+            if (sig === "force") {
+              yield* Effect.promise(async () => {
+                const rec = OM.get(sessionID)
+                const boundary = rec?.last_observed_at ?? 0
+                const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
+                const obs = await Observer.run({
+                  sid: sessionID,
+                  msgs: unobserved,
+                  prev: rec?.observations ?? undefined,
+                })
+                if (obs)
+                  OM.upsert({
+                    id: sessionID,
+                    session_id: sessionID,
+                    observations: obs,
+                    reflections: null,
+                    last_observed_at: Date.now(),
+                    generation_count: (rec?.generation_count ?? 0) + 1,
+                    observation_tokens: obs.length >> 2,
+                    time_created: rec?.time_created ?? Date.now(),
+                    time_updated: Date.now(),
+                  })
+              }).pipe(Effect.ignore)
+            }
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
             const task = tasks.pop()
@@ -1589,6 +1644,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 tools: fork.tools,
                 model,
                 maxSteps: 5,
+                recall,
+                observations: obs,
               })
 
               if (result === "stop") break
@@ -1676,6 +1733,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
                 yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+                if (step === 1) {
+                  recall = yield* Effect.promise(() => SystemPrompt.recall(Instance.project.id))
+                }
+
+                // Load observations every turn — they update during the session
+                obs = yield* Effect.promise(() => SystemPrompt.observations(sessionID))
+
                 const [skills, env, instructions, modelMsgs] = yield* Effect.all([
                   Effect.promise(() => SystemPrompt.skills(agent)),
                   Effect.promise(() => SystemPrompt.environment(model)),
@@ -1707,6 +1771,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   model,
                   toolChoice: format.type === "json_schema" ? "required" : undefined,
                   maxSteps: format.type === "json_schema" ? 1 : 5,
+                  recall,
+                  observations: obs,
                 })
 
                 if (structured !== undefined) {

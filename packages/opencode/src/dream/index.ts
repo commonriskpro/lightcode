@@ -4,6 +4,11 @@ import { Log } from "@/util/log"
 import { Engram } from "./engram"
 import { Bus } from "../bus"
 import { SessionStatus } from "../session/status"
+import { Session } from "../session"
+import { MessageV2 } from "../session/message-v2"
+import { Token } from "../util/token"
+import { OM } from "../session/om"
+import type { SessionID } from "../session/schema"
 
 import PROMPT from "./prompt.txt"
 
@@ -57,7 +62,60 @@ export namespace AutoDream {
     configuredModel = model
   }
 
-  async function spawn(focus?: string): Promise<string> {
+  function isText(p: MessageV2.Part): p is MessageV2.TextPart {
+    return p.type === "text"
+  }
+
+  export async function summaries(sid: string): Promise<string> {
+    // Priority 1: local observations from ObservationTable (dense, high-quality)
+    const rec = OM.get(sid as SessionID)
+    if (rec?.observations) {
+      const est = Token.estimate(rec.observations)
+      if (est <= 4000) return rec.observations
+      return rec.observations.slice(0, 4000 * 4)
+    }
+
+    const msgs = await Session.messages({ sessionID: sid as any })
+    const acc: string[] = []
+    let cap = 0
+    const sum = msgs
+      .filter((x) => x.info.role === "assistant" && x.info.summary)
+      .flatMap((x) => x.parts)
+      .filter(isText)
+      .map((x) => x.text)
+    if (sum.length > 0) {
+      for (const txt of sum) {
+        const est = Token.estimate(txt)
+        if (cap + est > 4000) break
+        acc.push(txt)
+        cap += est
+      }
+      return acc.join("\n---\n")
+    }
+
+    const back = msgs
+      .filter((x) => x.info.role === "user" || x.info.role === "assistant")
+      .flatMap((x) => x.parts)
+      .filter(isText)
+      .map((x) => x.text)
+      .slice(-10)
+    cap = 0
+    for (const txt of back) {
+      const est = Token.estimate(txt)
+      if (cap + est > 2000) break
+      acc.push(txt)
+      cap += est
+    }
+    return acc.join("\n---\n")
+  }
+
+  export function buildSpawnPrompt(base: string, focus?: string, obs?: string): string {
+    let prompt = focus ? `${base}\n\n## Focus\nPrioritize observations related to: ${focus}` : base
+    if (obs && Token.estimate(obs) > 0) prompt = `${prompt}\n\n## Session Observations\n${obs}`
+    return prompt
+  }
+
+  async function spawn(focus?: string, obs?: string): Promise<string> {
     if (!sdk) throw new Error("AutoDream SDK not initialized")
 
     if (!configuredModel) throw new Error("No model configured. Use /dreammodel first")
@@ -67,7 +125,7 @@ export namespace AutoDream {
     const sessionID = res.data?.id
     if (!sessionID) throw new Error("Failed to create dream session")
 
-    const prompt = focus ? `${PROMPT}\n\n## Focus\nPrioritize observations related to: ${focus}` : PROMPT
+    const prompt = buildSpawnPrompt(PROMPT, focus, obs)
     const parts = configuredModel.split("/")
     const providerID = parts[0]
     const modelID = parts.slice(1).join("/")
@@ -121,12 +179,28 @@ export namespace AutoDream {
     }
   }
 
+  async function idle(sid: string): Promise<void> {
+    const available = await Engram.ensure()
+    if (!available) return
+    if (!configuredModel) return
+    try {
+      _dreaming = true
+      log.info("idle dream started", { sid })
+      const obs = await summaries(sid)
+      await spawn(undefined, obs)
+      await writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: 0 })
+      log.info("idle dream completed")
+    } catch (err) {
+      log.error("idle dream failed", { error: err instanceof Error ? err.message : String(err) })
+    } finally {
+      _dreaming = false
+    }
+  }
+
   /** Subscribe to session idle events. Call at app startup. */
   export function init(): () => void {
-    return Bus.subscribe(SessionStatus.Event.Idle, () => {
-      // Auto-trigger is gated by model being configured
-      if (!configuredModel) return
-      void run().catch((err) => {
+    return Bus.subscribe(SessionStatus.Event.Idle, (event) => {
+      void idle(event.properties.sessionID).catch((err) => {
         log.error("autodream failed", { error: err instanceof Error ? err.message : String(err) })
       })
     })

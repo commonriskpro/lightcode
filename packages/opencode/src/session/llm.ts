@@ -36,6 +36,8 @@ export namespace LLM {
     retries?: number
     toolChoice?: "auto" | "required" | "none"
     maxSteps?: number
+    recall?: string
+    observations?: string
   }
 
   export type StreamRequest = StreamInput & {
@@ -126,7 +128,11 @@ export namespace LLM {
       system.length = 0
       system.push(header, rest.join("\n"))
     }
-    // Append volatile context as system[2] — NOT cached by applyCaching
+    // Insert recall context at system[1] — 5min cache boundary, stable per session
+    if (input.recall) system.splice(1, 0, input.recall)
+    // Insert observations at system[2] — after recall, before volatile
+    if (input.observations) system.splice(input.recall ? 2 : 1, 0, input.observations)
+    // Append volatile context as last — NOT cached by applyCaching
     // (applyCaching only places breakpoints on system[0] and system[1])
     system.push(SystemPrompt.volatile(input.model))
 

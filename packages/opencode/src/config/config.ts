@@ -1046,6 +1046,12 @@ export namespace Config {
             .string()
             .optional()
             .describe("Model to use for AutoDream consolidation (format: provider/model). Defaults to session model."),
+          observer_model: z
+            .string()
+            .optional()
+            .describe(
+              "Model to use for background observational memory (format: provider/model). Defaults to google/gemini-2.5-flash.",
+            ),
         })
         .optional(),
     })

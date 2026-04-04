@@ -65,13 +65,28 @@ They are complementary. Two distinct layers:
 
 ## Current State in LightCode
 
-We have Engram (the library) but **no librarian**. All organization depends on the model in each session calling `mem_save` correctly. Problems:
+The memory system is implemented across two phases:
 
-1. **If the model forgets to save something, it's lost** — no safety net
-2. **If duplicates are saved, nobody merges them** — DB grows with noise
-3. **If a decision is reverted, nobody deletes the old one** — obsolete info persists
-4. **No cross-session connections** — each session saves in isolation
-5. **No high-level summaries** — only atomic observations
+### Phase 1 — Cross-session recall (shipped)
+
+- `SystemPrompt.recall(pid)` in `system.ts` fetches recent Engram context at session start (step === 1)
+- Result injected at `system[1]` (BP3 5min cache) so the agent knows past session context
+- AutoDream wired to session idle events — reads compaction summaries + last N messages → `mem_save` to Engram
+- `dream/prompt.txt` includes `### Session Observations` section with `topic_key` convention
+
+### Phase 2 — Intra-session observation (shipped)
+
+- Background Observer LLM fires at 30k unobserved tokens via `Effect.forkIn(scope)` in `runLoop`
+- Pre-computes observation chunks every 6k tokens (buffered, non-blocking)
+- Results stored in local `ObservationTable` (SQLite, session-scoped)
+- Observations injected at `system[2]` each turn (dense, fact-level with 🔴🟡 priority)
+- AutoDream's `summaries()` reads ObservationTable first for high-quality cross-session signal
+
+### Remaining gaps (Phase 3)
+
+1. **No Reflector** — observations accumulate but never get cross-session pattern detection
+2. **ObservationTable is session-local** — once session ends, signal depends on AutoDream picking it up
+3. **No semantic search** — Engram recall uses `mem_context` (recency), not vector similarity
 
 ---
 

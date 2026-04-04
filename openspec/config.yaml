@@ -1,0 +1,72 @@
+schema: spec-driven
+
+context: |
+  Runtime: Bun, Language: TypeScript (strict, tsgo type checker)
+  Framework: Effect (Effect.gen, Effect.fn, Layer, ServiceMap)
+  DB: SQLite via Drizzle ORM (snake_case columns, *.sql.ts files)
+  API: Vercel AI SDK (streamText, ModelMessage, Tool)
+  Monorepo: Turborepo — packages/opencode is the main backend
+  Patterns: Namespace (not classes), InstanceState/ScopedCache, Bus/pub-sub, Effect Services
+  Naming: single-word vars, dot notation over destructuring, no else, early returns
+
+strict_tdd: true
+
+testing:
+  runner:
+    command: "bun test --timeout 30000"
+    framework: bun
+  layers:
+    unit:
+      available: true
+      tool: bun test
+    integration:
+      available: false
+    e2e:
+      available: false
+  coverage:
+    available: true
+    command: "bun test --coverage"
+  quality:
+    type_checker:
+      available: true
+      command: "bun typecheck"  # uses tsgo --noEmit
+    linter:
+      available: false
+    formatter:
+      available: false
+  notes:
+    - Run tests from packages/opencode, NOT repo root (guard: do-not-run-tests-from-root)
+    - Avoid mocks — test actual implementation
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
+    - Assess impact on prompt caching (BP1-BP4 must stay intact)
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Reference Effect types explicitly (Effect<A, E, R>)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Prefer Effect.fn / Effect.fnUntraced for named traces
+    - Use InstanceState for per-project scoped state
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow AGENTS.md naming conventions strictly (single-word vars)
+    - Load relevant coding skills: typescript, ai-sdk-5 when touching LLM code
+    - No try/catch — use Effect error channels
+    - No explicit type annotations unless exported or ambiguous
+    tdd: true
+    test_command: "bun test --timeout 30000"
+  verify:
+    test_command: "bun test --timeout 30000"
+    build_command: "bun typecheck"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas (large removals)
+    - Verify prompt caching (BP1-BP4) not broken after changes to llm.ts / transform.ts
