@@ -169,9 +169,9 @@ export function DialogFeature() {
 
   function openModelDialog(id: string) {
     if (id === "autodream") {
-      dialog.replace(() => <DialogDreamModel />)
+      dialog.push(() => <DialogDreamModel />)
     } else if (id === "observer") {
-      dialog.replace(() => <DialogObserverModel />)
+      dialog.push(() => <DialogObserverModel />)
     }
   }
 
