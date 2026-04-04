@@ -40,6 +40,16 @@ export interface Mark {
   screenshot?: string
 }
 
+// Persisted pick: stored in Node context so it survives page navigation
+export interface StoredPick {
+  id: number
+  selector: string
+  note: string
+  ts: number
+  url: string
+  element?: Elem
+}
+
 export interface AnnotationResult {
   type: "annotation"
   url: string

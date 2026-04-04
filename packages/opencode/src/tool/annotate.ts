@@ -1,10 +1,10 @@
 import z from "zod"
 import { Tool } from "./tool"
 import DESCRIPTION from "./annotate.txt"
-import { close, crop, open, shot } from "./browser"
+import { close, closeBrowser, crop, open, shot, validateUrl } from "./browser"
 import { diff, stop, styles, take, watch } from "./etch"
 import { pick } from "./picker"
-import type { AnnotationResult, EtchResult, Mark } from "./annotate-types"
+import type { AnnotationResult, EtchResult, Mark, StoredPick } from "./annotate-types"
 import type { Page } from "puppeteer"
 
 const schema = z.object({
@@ -27,10 +27,11 @@ const schema = z.object({
 })
 
 // Per-URL annotation store: survives navigation between pages in a session
-const store = new Map<string, { id: number; selector: string; note: string; ts: number }[]>()
+// Stores full element snapshots so /annotate-complete works cross-page
+const store = new Map<string, StoredPick[]>()
 let seq = 1
 
-let live: { page: Page; started: number } | undefined
+let live: { page: Page; started: number; mode: "picker" | "etch"; etchSelectors?: string[] } | undefined
 
 function meta(input: { status?: string; mode?: string; url?: string; count?: number; session_ms?: number }) {
   return {
@@ -50,7 +51,9 @@ function notes(value: z.infer<typeof schema>["notes"], selector: string) {
 }
 
 function normalize(url: string) {
-  if (url.startsWith("http://") || url.startsWith("https://")) return url
+  if (/^https?:\/\//i.test(url)) return url
+  // If already has some scheme (non-http), leave it — validateUrl will reject it
+  if (/^[a-zA-Z][a-zA-Z0-9+\-.]*:\/\//.test(url)) return url
   return `https://${url}`
 }
 
@@ -58,7 +61,7 @@ function unique(list: string[]) {
   return [...new Set(list)]
 }
 
-function urlKey(raw: string) {
+export function urlKey(raw: string) {
   try {
     const u = new URL(raw)
     return `${u.origin}${u.pathname}`
@@ -67,15 +70,38 @@ function urlKey(raw: string) {
   }
 }
 
-async function save(page: Page) {
+async function save(page: Page, knownUrl?: string) {
   try {
-    const key = urlKey(page.url())
-    const items = await page.evaluate(() => {
+    const pageUrl = knownUrl ?? page.url()
+    const key = urlKey(pageUrl)
+    const raw = await page.evaluate(() => {
       const win = window as {
         __annotate_state?: { elements: { id: number; selector: string; note: string; ts: number }[] }
       }
       return win.__annotate_state?.elements ?? []
     })
+    // Resolve element snapshots for selectors on the current page
+    const items: StoredPick[] = await Promise.all(
+      raw.map(async (item) => {
+        if (store.has(key)) {
+          const prev = store.get(key)!.find((p) => p.id === item.id)
+          if (prev?.element) {
+            // Update note only — preserve snapshot
+            return { ...prev, note: item.note }
+          }
+        }
+        // Resolve fresh element snapshot
+        const elem = await (async () => {
+          try {
+            const list = await pick(page, [item.selector], 1)
+            return list[0] ?? undefined
+          } catch {
+            return undefined
+          }
+        })()
+        return { ...item, url: pageUrl, element: elem }
+      }),
+    )
     store.set(key, items)
     if (items.length) {
       const max = Math.max(0, ...items.map((x) => x.id))
@@ -749,34 +775,43 @@ async function collect(page: Page, args: z.infer<typeof schema>) {
     }
   })
 
-  // Merge current-page picks into store so collect sees everything
-  store.set(urlKey(raw.url), raw.picks)
+  // Merge current-page picks into store (note updates only — snapshots were resolved at save time)
+  const curKey = urlKey(raw.url)
+  const curStored = store.get(curKey) ?? []
+  const merged: StoredPick[] = raw.picks.map((p) => {
+    const prev = curStored.find((s) => s.id === p.id)
+    return prev ? { ...prev, note: p.note } : { ...p, url: raw.url }
+  })
+  store.set(curKey, merged)
 
-  // Flatten all picks from all visited pages for this session
+  // Flatten all picks from all visited pages — use stored element snapshots cross-page
   const allPicks = [...store.values()].flat()
+  const currentKey = urlKey(raw.url)
 
-  const map = new Map<string, string[]>()
+  const marks: Mark[] = []
   for (const item of allPicks) {
-    const list = map.get(item.selector) ?? []
-    if (item.note) list.push(item.note)
-    map.set(item.selector, list)
+    const noteList = [item.note, ...notes(args.notes, item.selector)].filter(Boolean)
+    if (item.element) {
+      // Snapshot was captured at pick time — use it directly
+      marks.push({ element: item.element, notes: noteList })
+      continue
+    }
+    // Fallback: re-query only if on current page
+    if (urlKey(item.url ?? "") !== currentKey) continue
+    const list = await pick(page, [item.selector], 1)
+    if (list[0]) marks.push({ element: list[0], notes: noteList })
   }
-  const selectors = unique(allPicks.map((item) => item.selector)).filter(Boolean)
-  const list = await pick(page, selectors, args.max)
-  const marks: Mark[] = list.map((item) => ({
-    element: item,
-    notes: [...(map.get(item.selector) ?? []), ...notes(args.notes, item.selector)],
-  }))
 
   if (args.elementScreenshots) {
-    const all = await Promise.allSettled(marks.map((item) => crop(page, item.element.selector)))
+    const onCurrent = marks.filter((m) => {
+      const stored = allPicks.find((p) => p.selector === m.element.selector)
+      return !stored?.url || urlKey(stored.url) === currentKey
+    })
+    const all = await Promise.allSettled(onCurrent.map((m) => crop(page, m.element.selector)))
     for (const [i, item] of all.entries()) {
-      if (item.status !== "fulfilled") continue
-      if (!item.value) continue
-      marks[i] = {
-        ...marks[i],
-        screenshot: item.value,
-      }
+      if (item.status !== "fulfilled" || !item.value) continue
+      const idx = marks.indexOf(onCurrent[i])
+      if (idx !== -1) marks[idx] = { ...marks[idx], screenshot: item.value }
     }
   }
 
@@ -884,6 +919,7 @@ export const AnnotateTool = Tool.define("annotate", {
         }
       }
       await close(live.page)
+      await closeBrowser()
       live = undefined
       store.clear()
       seq = 1
@@ -909,22 +945,36 @@ export const AnnotateTool = Tool.define("annotate", {
       const page = await open(url ?? "about:blank", 30_000, { headless: !args.headed })
       await install(page)
 
-      // Save current page annotations then re-install on the new page
+      // Track previous URL so we can key the save correctly before navigation commits
       let prevUrl = page.url()
+      page.on("request", (req) => {
+        if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
+          prevUrl = page.url()
+        }
+      })
       page.on("framenavigated", async (frame) => {
         if (frame !== page.mainFrame()) return
         try {
-          // Save annotations from previous page before DOM is replaced
-          await save(page)
+          // Save using the captured pre-navigation URL
+          await save(page, prevUrl)
           prevUrl = page.url()
           await install(page)
         } catch {
           // page may be mid-navigation, ignore
         }
       })
-      void prevUrl // used above to track
 
-      live = { page, started: Date.now() }
+      live = {
+        page,
+        started: Date.now(),
+        mode: args.mode,
+        etchSelectors: args.track ?? args.selectors,
+      }
+
+      // For etch mode: start watching mutations immediately
+      if (args.mode === "etch") {
+        await watch(page)
+      }
       return {
         title: "annotate:start",
         output: JSON.stringify(
@@ -944,10 +994,53 @@ export const AnnotateTool = Tool.define("annotate", {
 
     if (args.action === "complete") {
       if (!live) throw new Error("No live annotate session. Start with action=start first.")
+      const duration = Date.now() - live.started
+
+      if (live.mode === "etch") {
+        const target = live.etchSelectors?.length
+          ? live.etchSelectors
+          : (await pick(live.page, undefined, 20)).map((e) => e.selector)
+        const [afterShot, afterStyles, mutations, title] = await Promise.all([
+          shot(live.page, true, "png"),
+          styles(live.page, target),
+          stop(live.page),
+          live.page.title(),
+        ])
+        // before snapshot was taken at watch() time — reconstruct via styles diff
+        const before = await take(live.page, target).catch(() => ({
+          screenshot: afterShot,
+          styles: Object.fromEntries(target.map((s) => [s, {} as Record<string, string>])),
+        }))
+        const result: EtchResult = {
+          type: "etch",
+          url: live.page.url(),
+          title,
+          timestamp: Date.now(),
+          mode: "etch",
+          before,
+          after: { screenshot: afterShot, styles: afterStyles },
+          changes: diff(before.styles, afterStyles),
+          mutations,
+        }
+        if (args.closeOnComplete) {
+          await close(live.page)
+          await closeBrowser()
+          live = undefined
+          store.clear()
+          seq = 1
+        }
+        return {
+          title: `annotate:complete:etch:${result.url}`,
+          output: JSON.stringify(result, null, 2),
+          metadata: meta({ mode: "etch", url: result.url, count: result.changes.length, session_ms: duration }),
+        }
+      }
+
       await save(live.page)
       const out = await collect(live.page, args)
       if (args.closeOnComplete) {
         await close(live.page)
+        await closeBrowser()
         live = undefined
         store.clear()
         seq = 1
@@ -959,12 +1052,13 @@ export const AnnotateTool = Tool.define("annotate", {
           mode: "picker",
           url: out.url,
           count: out.elements.length,
-          session_ms: live ? Date.now() - live.started : 0,
+          session_ms: duration,
         }),
       }
     }
 
     if (!url) throw new Error("url is required when action=once")
+    validateUrl(url)
 
     await ctx.ask({
       permission: "webfetch",
@@ -990,6 +1084,7 @@ export const AnnotateTool = Tool.define("annotate", {
       }
     } finally {
       await close(page)
+      await closeBrowser()
     }
   },
 })

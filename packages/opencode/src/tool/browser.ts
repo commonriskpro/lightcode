@@ -36,15 +36,50 @@ export async function getBrowser(opts?: { headless?: boolean; slow?: number }) {
   return browser
 }
 
+export class NavigationError extends Error {
+  constructor(
+    public readonly kind: "invalid_url" | "timeout" | "load_failed",
+    public readonly url: string,
+    cause?: unknown,
+  ) {
+    const msg =
+      kind === "invalid_url"
+        ? `Invalid URL: "${url}". Make sure it starts with http:// or https://.`
+        : kind === "timeout"
+          ? `Timed out loading "${url}". The page took too long to respond.`
+          : `Failed to load "${url}". Check the URL is reachable and try again.`
+    super(msg, { cause })
+    this.name = "NavigationError"
+  }
+}
+
+export function validateUrl(url: string): void {
+  try {
+    const parsed = new URL(url)
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("bad protocol")
+  } catch {
+    throw new NavigationError("invalid_url", url)
+  }
+}
+
 export async function open(url: string, timeout = 30_000, opts?: { headless?: boolean; slow?: number }) {
+  validateUrl(url)
+
   const app = await getBrowser(opts)
 
-  // Close the default blank tab Puppeteer opens on launch so we don't leak tabs
+  // Reuse the default blank tab Puppeteer opens on launch so we don't leak tabs
   const pages = await app.pages()
   const blank = pages.find((p) => p.url() === "about:blank")
-
   const page = blank ?? (await app.newPage())
-  await page.goto(url, { waitUntil: "networkidle2", timeout })
+
+  try {
+    await page.goto(url, { waitUntil: "networkidle2", timeout })
+  } catch (err) {
+    const msg = String(err)
+    if (msg.includes("TimeoutError") || msg.includes("timeout")) throw new NavigationError("timeout", url, err)
+    throw new NavigationError("load_failed", url, err)
+  }
+
   return page
 }
 

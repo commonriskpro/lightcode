@@ -1799,19 +1799,37 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           throw err
         }
 
-        const args = input.arguments.match(argsRegex) ?? []
-        const first = args[0]?.replace(quoteTrimRegex, "")
+        const rawArgs: string[] = input.arguments.match(argsRegex) ?? []
         const action =
           input.command === "annotate" ? "start" : input.command === "annotate-complete" ? "complete" : "cancel"
+
+        // Parse flags: --mode etch, --headless, --max N, --track sel1,sel2
+        const flag = (name: string) => {
+          const i = rawArgs.findIndex((a) => a === `--${name}`)
+          return i !== -1 ? rawArgs[i + 1]?.replace(quoteTrimRegex, "") : undefined
+        }
+        const has = (name: string) => (rawArgs as string[]).includes(`--${name}`)
+        const mode = (flag("mode") ?? "picker") as "picker" | "etch"
+        const trackRaw = flag("track")
+        const track = trackRaw ? trackRaw.split(",").map((s) => s.trim()) : undefined
+        const maxRaw = flag("max")
+        const maxVal = maxRaw ? Number.parseInt(maxRaw, 10) : 100
+        const headed = !has("headless")
+        const positional = rawArgs.filter(
+          (a) => !a.startsWith("--") && a !== flag("mode") && a !== flag("track") && a !== flag("max"),
+        )
+        const first = positional[0]?.replace(quoteTrimRegex, "")
+
         const data = {
           action,
-          mode: "picker",
-          headed: true,
-          elementScreenshots: false,
+          mode,
+          headed,
+          elementScreenshots: has("shots"),
           fullPage: true,
-          max: 100,
+          max: Number.isNaN(maxVal) ? 100 : maxVal,
           wait: 1500,
           closeOnComplete: true,
+          ...(track ? { track } : {}),
           ...(first && action === "start" ? { url: first } : {}),
         }
 

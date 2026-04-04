@@ -74,7 +74,7 @@ async function info(page: Page, selector: string): Promise<Omit<Elem, "box"> | n
 
     return {
       selector,
-      xpath: `/${chain.join("/")}`,
+      xpath: `//${chain.join("/")}`,
       tag,
       text,
       attributes: attrs,
