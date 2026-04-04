@@ -409,8 +409,9 @@ export namespace ToolRouter {
       }
     }
 
+    const strongSeed = trLlm?.lexical_strong_seed !== false
     const sig = lexicalSignals(text)
-    if (sig.strongDelete) {
+    if (strongSeed && sig.strongDelete) {
       conversationExclusive = false
       if (intentPrimary === CONVERSATION_INTENT_LABEL) {
         intentPrimary = ""
@@ -551,13 +552,13 @@ export namespace ToolRouter {
     let lexicalHint = false
     let strongWriteSeed = false
     if (!conversationExclusive) {
-      if (sig.strongWrite && builtinAvailable.has("write")) {
+      if (strongSeed && sig.strongWrite && builtinAvailable.has("write")) {
         matched.add("write")
         semanticIds.add("write")
         strongWriteSeed = true
         if (!labels.some((l) => l === "lexical/strong_write")) labels.push("lexical/strong_write")
       }
-      if (sig.strongDelete) {
+      if (strongSeed && sig.strongDelete) {
         for (const id of ["bash", "edit", "write", "read", "glob"]) {
           if (builtinAvailable.has(id)) {
             matched.add(id)
@@ -668,6 +669,7 @@ export namespace ToolRouter {
       available: builtinAvailable,
       max,
       intentEmbedWeb: intentEmbedWeb || undefined,
+      applyHardGates: tr?.apply_hard_gates !== false,
     })
     const ordered = policyIds.filter((id) => builtinAvailable.has(id))
 

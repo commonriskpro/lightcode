@@ -1125,6 +1125,13 @@ export namespace Config {
                 .describe(
                   "When true (or OPENCODE_TOOL_ROUTER_ONLY): disable no_match_fallback bundles; only attach MCP after intent/rules/hybrid augmented something; empty selection can fall back to the full allowed pool per fallback config. Conversation tier uses local intent embed only (hybrid + local_intent_embed).",
                 ),
+              apply_hard_gates: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe(
+                  "When false, skip applyHardGates in router-policy (lexical filters for task/bash/edit/write/web/question/todowrite/codesearch). Web pairing, resolveConflicts, and read deps still run.",
+                ),
               mode: z
                 .enum(["rules", "hybrid"])
                 .optional()
@@ -1325,6 +1332,13 @@ export namespace Config {
                 .default(false)
                 .describe(
                   "When false (default): no regex RULES union; routing uses local intent/embed + augmentMatchedEmbed + router-policy gates. Set true to also apply regex RULES in tool-router.ts to the user text (after intent merge).",
+                ),
+              lexical_strong_seed: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe(
+                  "When true (default): seed tools from lexical strongWrite/strongDelete (crear archivo, borralo, …). Set false to skip those seeds and use embed augment, intent, rules, sticky, and fallback only.",
                 ),
               no_match_fallback: z
                 .boolean()

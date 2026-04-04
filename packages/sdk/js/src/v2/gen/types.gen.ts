@@ -1656,6 +1656,10 @@ export type Config = {
        */
       router_only?: boolean
       /**
+       * When false, skip applyHardGates in router-policy (lexical filters for task/bash/edit/write/web/question/todowrite/codesearch). Web pairing, resolveConflicts, and read deps still run.
+       */
+      apply_hard_gates?: boolean
+      /**
        * rules: keyword router only. hybrid: after rules, augment with either local embeddings (local_embed / local_embed_model) or a remote small LLM (router_model, small_model, getSmallModel).
        */
       mode?: "rules" | "hybrid"
@@ -1785,6 +1789,10 @@ export type Config = {
        * When false (default): no regex RULES union; routing uses local intent/embed + augmentMatchedEmbed + router-policy gates. Set true to also apply regex RULES in tool-router.ts to the user text (after intent merge).
        */
       keyword_rules?: boolean
+      /**
+       * When true (default): seed tools from lexical strongWrite/strongDelete (crear archivo, borralo, …). Set false to skip those seeds and use embed augment, intent, rules, sticky, and fallback only.
+       */
+      lexical_strong_seed?: boolean
       /**
        * When no rule/intent/embed signal matches, still add no_match_fallback_tools so the model gets glob/grep/read (etc.).
        */

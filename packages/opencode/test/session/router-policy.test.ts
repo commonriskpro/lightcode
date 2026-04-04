@@ -75,6 +75,11 @@ describe("lexicalSignals strongDelete ES", () => {
     expect(lexicalSignals("elimínalo").strongDelete).toBe(true)
   })
 
+  test("subjunctive borres / borre (que lo borres)", () => {
+    expect(lexicalSignals("y finalmente lo borres").strongDelete).toBe(true)
+    expect(lexicalSignals("que lo borre el sistema").strongDelete).toBe(true)
+  })
+
   test("false for casual chat", () => {
     expect(lexicalSignals("hola qué tal").strongDelete).toBe(false)
   })
@@ -145,6 +150,23 @@ describe("lexicalSignalsMerged", () => {
   })
 })
 
+describe("applyRouterPolicy applyHardGates false", () => {
+  test("skips lexical gates when applyHardGates is false", () => {
+    const ids = new Set(["read", "grep", "glob", "websearch", "webfetch", "skill", "task"])
+    const available = new Set(["read", "grep", "glob", "websearch", "webfetch", "skill", "task"])
+    const t = "solo menciono internet sin buscar nada"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+      applyHardGates: false,
+    })
+    expect(out.includes("websearch")).toBe(true)
+  })
+})
+
 describe("applyRouterPolicy websearch weak internet", () => {
   test("strips websearch when candidate set includes it but prompt only mentions internet weakly", () => {
     const ids = new Set(["read", "grep", "glob", "websearch", "webfetch", "skill", "task"])
@@ -192,6 +214,53 @@ describe("applyRouterPolicy intent embed web", () => {
     })
     expect(out.includes("websearch")).toBe(false)
     expect(out.includes("webfetch")).toBe(false)
+  })
+})
+
+describe("applyRouterPolicy websearch webfetch pair", () => {
+  test("adds webfetch when only websearch was selected for web research", () => {
+    const ids = new Set(["read", "websearch", "grep"])
+    const available = new Set(["read", "websearch", "webfetch", "grep"])
+    const t = "Search the web for the latest Bun release notes"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+    })
+    expect(out.includes("webfetch")).toBe(true)
+    expect(out.includes("websearch")).toBe(true)
+  })
+
+  test("adds websearch when only webfetch was selected for web research", () => {
+    const ids = new Set(["read", "webfetch"])
+    const available = new Set(["read", "websearch", "webfetch"])
+    const t = "Look up online documentation for Zod 4 breaking changes"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+    })
+    expect(out.includes("webfetch")).toBe(true)
+    expect(out.includes("websearch")).toBe(true)
+  })
+
+  test("URL-only fetch keeps webfetch and drops websearch", () => {
+    const ids = new Set(["read", "webfetch"])
+    const available = new Set(["read", "websearch", "webfetch"])
+    const t = "Fetch https://example.com/api and summarize the JSON"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+    })
+    expect(out.includes("webfetch")).toBe(true)
+    expect(out.includes("websearch")).toBe(false)
   })
 })
 

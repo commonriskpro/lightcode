@@ -138,7 +138,7 @@ export function lexicalSignals(text: string): LexicalSignals {
         u,
       ),
     strongDelete:
-      /\b(borr(?:a|alo|ala|ar|as|ame|án|an|ad|adlo|adla)|elimin(?:a|ar|alo|ala|me)?|suprim|rm\s+[-\w./]|unlink|delete\s+(?:this|the|that)\s+file|remove\s+(?:this|the|that)\s+file)\b/i.test(
+      /\b(borr(?:a|alo|ala|ar|as|ame|án|an|ad|adlo|adla|e|es|en|emos)|elimin(?:a|ar|alo|ala|me)?|suprim|rm\s+[-\w./]|unlink|delete\s+(?:this|the|that)\s+file|remove\s+(?:this|the|that)\s+file|(?:delete|remove)\s+it\b)\b/i.test(
         u,
       ) || /^(borralo|borrala|borralos|borralas|eliminalo|elimínalo|borrálo|borrála)\b/i.test(u.trim()),
   }
@@ -160,6 +160,19 @@ export function negatesTaskDelegation(text: string): boolean {
     /\bnever\s+spawn\s+(?:a\s+)?subagent\b/i.test(u) ||
     /\bno\s+delegation\b/i.test(u) ||
     /\bno\s+subagent\b/i.test(u)
+  )
+}
+
+/** Matches the same research phrasing used for websearch hard gate (minus intent embed). */
+function webResearchTextOk(text: string): boolean {
+  return (
+    /\b(search|lookup|find)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online)\b/i.test(text) ||
+    /\b(documentation|docs|reference)\s+(?:for|about|on)\b/i.test(text) ||
+    /\b(busca|buscar)\s+en\s+(?:internet|la\s+web)\b/i.test(text) ||
+    /\blook\s+up\s+online\b/i.test(text) ||
+    /\bdocumentaci[oó]n\s+(oficial|online|externa|pública)\b/i.test(text) ||
+    /\bdocumentaci[oó]n\s+sobre\b/i.test(text) ||
+    /\bbusca\s+documentaci[oó]n\b/i.test(text)
   )
 }
 
@@ -216,7 +229,9 @@ function applyHardGates(
     const ok =
       intentEmbedWeb ||
       sig.hasUrl ||
-      /\b(fetch|curl|download)\s+(?:the\s+)?(?:page|url|site|content)\b/i.test(text)
+      /\b(fetch|curl|download)\s+(?:the\s+)?(?:page|url|site|content)\b/i.test(text) ||
+      sig.webResearch ||
+      webResearchTextOk(text)
     if (!ok) out.delete("webfetch")
   }
 
@@ -253,12 +268,19 @@ function resolveConflicts(
   text: string,
   sig: LexicalSignals,
   multiClause?: boolean,
+  intentEmbedWeb?: boolean,
 ): Set<string> {
   const out = new Set(ids)
   if (out.has("webfetch") && out.has("websearch")) {
-    if (sig.hasUrl) out.delete("websearch")
-    else if (sig.webResearch || /\b(search|find|lookup)\b/i.test(text)) out.delete("webfetch")
-    else out.delete("webfetch")
+    const researchPhrasing =
+      intentEmbedWeb === true ||
+      sig.webResearch ||
+      webResearchTextOk(text) ||
+      /\b(search|find|lookup|busca|buscar|web\s+search|investigaci[oó]n|research\s+on|third[- ]party|external\s+(api|tool|library))\b/i.test(
+        text,
+      )
+    const pureUrlFetch = sig.hasUrl && !researchPhrasing
+    if (pureUrlFetch) out.delete("websearch")
   }
 
   if (out.has("edit") && out.has("write")) {
@@ -337,6 +359,8 @@ export type RouterPolicyInput = {
   max: number
   /** Intent embed classified web/url or web/research — do not strip websearch/webfetch for weak "internet" phrasing alone. */
   intentEmbedWeb?: boolean
+  /** When false, skip applyHardGates (default true). */
+  applyHardGates?: boolean
 }
 
 export function applyRouterPolicy(input: RouterPolicyInput): string[] {
@@ -347,8 +371,19 @@ export function applyRouterPolicy(input: RouterPolicyInput): string[] {
   if (sig.hasUrl && s.has("websearch") && !s.has("webfetch") && input.available.has("webfetch")) {
     s.add("webfetch")
   }
-  s = applyHardGates(s, input.fullText, sig, multi, intentEmbed)
-  s = resolveConflicts(s, input.fullText, sig, multi)
+  const expandWeb =
+    intentEmbed ||
+    sig.webResearch ||
+    sig.hasUrl ||
+    webResearchTextOk(input.fullText)
+  if ((s.has("websearch") || s.has("webfetch")) && expandWeb) {
+    if (input.available.has("webfetch")) s.add("webfetch")
+    if (input.available.has("websearch")) s.add("websearch")
+  }
+  if (input.applyHardGates !== false) {
+    s = applyHardGates(s, input.fullText, sig, multi, intentEmbed)
+  }
+  s = resolveConflicts(s, input.fullText, sig, multi, intentEmbed)
   s = addReadDeps(s, input.available)
   const filtered = [...s].filter((id) => input.available.has(id))
   const ordered = orderByPolicy(filtered)
