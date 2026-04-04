@@ -236,10 +236,14 @@ createEffect(() => {
 | `2567c04` | fix: eliminate ALL direct Effect service calls from AutoDream          |
 | `d1ba154` | fix: move dream indicator to sidebar footer (visible during sessions)  |
 | `39e5866` | fix: poll session status to keep dreaming indicator alive              |
+| `01ab0d5` | docs: complete session changelog with all integrations and learnings   |
+| `f0bd72e` | chore: remove orphaned footer.tsx and dream.txt files                  |
+| `db5d52e` | docs: performance features spec                                        |
+| `797f614` | feat: tool concurrency safety, cache stability sorting, fork subagent  |
 
 ---
 
-## 6. Known Issues / Next Steps
+## 8. Known Issues / Next Steps
 
 ### Engram MCP not available to main agent
 
@@ -253,7 +257,21 @@ The engram MCP server registers dynamically when `/dream` runs, but the main age
 
 - **Phase 3: extractMemories** — per-turn memory extraction from current session (catches things the protocol missed)
 - **Flock locking** — removed due to InstanceState; need SDK-based or Bun-native locking
-- **Orphaned files** — `routes/session/footer.tsx` (never imported), `src/command/template/dream.txt` (unused after TUI conversion)
+- **Cost Tracker** — spec exists in `docs/cost-tracker-arch.md`, single file change, entire pipeline exists
+- **Reactive Compact** — spec exists in `docs/reactive-compact-arch.md`, ~30 lines of changes
+
+### From Gentle-AI (still to port)
+
+- **SDD Workflow** — 10 SKILL.md + orchestrator + 9 commands + 2 overlays
+- **Judgment Day** — parallel adversarial review (1 SKILL.md)
+- **Strict TDD Module** — RED→GREEN→TRIANGULATE→REFACTOR (1 markdown)
+- **Per-phase model routing** — config mapping phase → provider/model
+- **Skill Registry + Resolver** — auto-detect skills by context
+
+### From Claude Code (remaining)
+
+- **StreamingToolExecutor** — start tool execution before full message streamed (AI SDK handles internally, lower priority)
+- **Coordinator mode** — parallel worker orchestration (high complexity, low priority for CLI)
 
 ### Config for always-on Engram
 

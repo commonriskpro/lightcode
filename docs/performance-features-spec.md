@@ -306,16 +306,12 @@ For a session with 3 subagent calls: **30,000-180,000 tokens saved** per session
 
 ---
 
-## Implementation Priority
+## Implementation Status
 
-| Order | Feature                            | Effort                                           | Impact                      |
-| ----- | ---------------------------------- | ------------------------------------------------ | --------------------------- |
-| 1     | **Prompt cache stability sorting** | 15 min — single line sort                        | Immediate cache improvement |
-| 2     | **Tool concurrency safety**        | 1-2 hours — semaphore + classify tools           | Prevents race conditions    |
-| 3     | **Fork subagent**                  | 3-4 hours — context passing + loop modifications | Massive cache savings       |
+| #   | Feature                            | Status         | Commit    |
+| --- | ---------------------------------- | -------------- | --------- |
+| 1   | **Prompt cache stability sorting** | ✅ IMPLEMENTED | `797f614` |
+| 2   | **Tool concurrency safety**        | ✅ IMPLEMENTED | `797f614` |
+| 3   | **Fork subagent**                  | ✅ IMPLEMENTED | `797f614` |
 
-### Phase 1: Cache stability (this session)
-
-### Phase 2: Tool concurrency (this session)
-
-### Phase 3: Fork subagent (next session — needs careful testing)
+All three features implemented in a single commit. Typecheck passes across all 13 packages.

@@ -384,9 +384,13 @@ Agents can be resumed via `SendMessageTool`:
 
 - Effect-based service architecture
 - Multi-step streaming (`stopWhen: stepCountIs(5)`)
-- Agent system (build, plan, general, explore, compaction, title, summary)
+- Agent system (build, plan, general, explore, compaction, title, summary, dream)
 - Plugin system with hooks
 - MCP integration
+- ✅ Fork subagent (prompt cache sharing with parent)
+- ✅ Tool concurrency safety (serializer for unsafe tools)
+- ✅ Prompt cache stability sorting (alphabetical tool order)
+- ✅ AutoDream + Engram (background memory consolidation)
 
 **From Gentle-AI:**
 
@@ -399,13 +403,13 @@ Agents can be resumed via `SendMessageTool`:
 
 #### From Claude Code (high impact)
 
-| Feature                            | Impact                                                   | Complexity | Notes                                                                      |
-| ---------------------------------- | -------------------------------------------------------- | ---------- | -------------------------------------------------------------------------- |
-| **Fork Subagent**                  | Massive prompt cache savings for subagents               | Medium     | Inherit parent's system prompt + messages, skip redundant context building |
-| **Concurrent tool partitioning**   | Faster multi-tool steps                                  | Low        | Add `isConcurrencySafe` flag, batch concurrent-safe tools                  |
-| **StreamingToolExecutor**          | Lower latency — tools start before full message streamed | Medium     | Start tool execution as soon as input is fully streamed                    |
-| **Prompt cache stability sorting** | Better cache hit rate                                    | Low        | Sort tool pool deterministically for stable API prefixes                   |
-| **DreamTask**                      | Auto-consolidate memory between sessions                 | Medium     | Background agent that reviews past sessions and updates memory files       |
+| Feature                            | Impact                                                   | Complexity | Status                                                        |
+| ---------------------------------- | -------------------------------------------------------- | ---------- | ------------------------------------------------------------- |
+| **Fork Subagent**                  | Massive prompt cache savings for subagents               | Medium     | ✅ IMPLEMENTED — parent stashes context, child skips rebuild  |
+| **Concurrent tool partitioning**   | Safer multi-tool execution                               | Low        | ✅ IMPLEMENTED — unsafe tools serialized, safe tools parallel |
+| **StreamingToolExecutor**          | Lower latency — tools start before full message streamed | Medium     | Not yet — AI SDK handles tool parallelism internally          |
+| **Prompt cache stability sorting** | Better cache hit rate                                    | Low        | ✅ IMPLEMENTED — alphabetical sort before streamText()        |
+| **DreamTask**                      | Auto-consolidate memory between sessions                 | Medium     | ✅ IMPLEMENTED — AutoDream + Engram as backend                |
 
 #### From Gentle-AI (high impact)
 
@@ -428,9 +432,9 @@ Agents can be resumed via `SendMessageTool`:
 | `compaction`    | Auto-compaction in `query.ts`              | N/A                                | Both handle context overflow                            |
 | `title`         | Title generation (inline)                  | N/A                                | LightCode uses dedicated agent, Claude Code does inline |
 | `summary`       | Summary generation (inline)                | Session summary in Engram protocol | Different mechanisms, same goal                         |
-| N/A             | `fork` subagent                            | N/A                                | **Missing in LightCode** — cache sharing opportunity    |
+| `fork` (auto)   | `fork` subagent                            | N/A                                | ✅ Auto-fork when same model — shares parent context    |
 | N/A             | Coordinator + workers                      | SDD Orchestrator                   | **Missing in LightCode** — parallel task execution      |
-| N/A             | `dream` (DreamTask)                        | Engram proactive saves             | Different approaches to memory persistence              |
+| `dream`         | `dream` (DreamTask)                        | Engram proactive saves             | ✅ AutoDream + Engram (4-phase consolidation)           |
 | N/A             | `in_process_teammate`                      | N/A                                | **Missing** — swarm model for large tasks               |
 | N/A             | `remote_agent` (CCR)                       | N/A                                | **Missing** — cloud execution delegation                |
 | N/A             | N/A                                        | SDD Verify agent                   | **Missing in Claude Code** — quality gate               |
