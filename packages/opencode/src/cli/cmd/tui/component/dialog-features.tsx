@@ -68,17 +68,14 @@ export function DialogFeatures() {
   const exp = () => (cfg().experimental ?? {}) as any
 
   const options = createMemo(() =>
-    list
-      .map((item) => {
-        const enabled = get(exp(), item.key) === true
-        return {
-          title: `${enabled ? "[x]" : "[ ]"} ${item.name}`,
-          description: `${item.desc} · ${item.key}`,
-          value: item,
-          rank: enabled ? 0 : 1,
-        }
-      })
-      .toSorted((a, b) => (a.rank === b.rank ? a.title.localeCompare(b.title) : a.rank - b.rank)),
+    list.map((item) => {
+      const enabled = get(exp(), item.key) === true
+      return {
+        title: `${enabled ? "[x]" : "[ ]"} ${item.name}`,
+        description: `${item.desc} · ${item.key}`,
+        value: item,
+      }
+    }),
   )
 
   async function toggle(item: Feature) {
