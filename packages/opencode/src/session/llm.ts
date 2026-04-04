@@ -265,11 +265,22 @@ export namespace LLM {
       }
     }
 
+    // Sort tools alphabetically for prompt cache stability —
+    // deterministic order regardless of MCP/plugin/deferred registration order
+    const sorted: typeof tools = {}
+    for (const key of Object.keys(tools).sort()) {
+      sorted[key] = tools[key]
+    }
+    Object.keys(tools).forEach((k) => delete tools[k])
+    Object.assign(tools, sorted)
+
     return streamText({
       stopWhen: stepCountIs(input.maxSteps ?? 1),
       prepareStep() {
         return {
-          activeTools: Object.keys(tools).filter((x) => x !== "invalid" && !x.startsWith("_")),
+          activeTools: Object.keys(tools)
+            .filter((x) => x !== "invalid" && !x.startsWith("_"))
+            .sort(),
         }
       },
       onError(error) {

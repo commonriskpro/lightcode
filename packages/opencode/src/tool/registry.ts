@@ -53,7 +53,7 @@ export namespace ToolRegistry {
     readonly tools: (
       model: { providerID: ProviderID; modelID: ModelID },
       agent?: Agent.Info,
-    ) => Effect.Effect<(Tool.Def & { id: string })[]>
+    ) => Effect.Effect<(Tool.Def & { id: string; concurrent?: boolean })[]>
   }
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/ToolRegistry") {}
@@ -147,32 +147,36 @@ export namespace ToolRegistry {
           return { ...tool, shouldDefer: true, searchHint: hint }
         }
 
+        function safe(tool: Tool.Info): Tool.Info {
+          return { ...tool, concurrent: true }
+        }
+
         const all = Effect.fn("ToolRegistry.all")(function* (custom: Tool.Info[]) {
           const cfg = yield* config.get()
           const question =
             ["app", "cli", "desktop"].includes(Flag.OPENCODE_CLIENT) || Flag.OPENCODE_ENABLE_QUESTION_TOOL
 
           return [
-            invalid,
+            safe(invalid),
             ...(question ? [ask] : []),
             bash,
-            read,
-            glob,
-            grep,
+            safe(read),
+            safe(glob),
+            safe(grep),
             edit,
             defer(write, "Create or overwrite entire files"),
             defer(task, "Delegate focused subtasks to subagents for parallel work"),
-            defer(skill, "Load specialized workflow instructions for specific tasks"),
-            defer(fetch, "Fetch URL content as markdown or text"),
+            defer(safe(skill), "Load specialized workflow instructions for specific tasks"),
+            defer(safe(fetch), "Fetch URL content as markdown or text"),
             defer(todo, "Create and manage todo lists"),
-            defer(search, "Web search via Exa"),
-            defer(code, "Search code via Context7"),
+            defer(safe(search), "Web search via Exa"),
+            defer(safe(code), "Search code via Context7"),
             defer(patch, "Apply unified diff patches"),
-            ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(lsp, "Language server diagnostics and hover")] : []),
+            ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(safe(lsp), "Language server diagnostics and hover")] : []),
             ...(cfg.experimental?.batch_tool === true ? [defer(batch, "Run multiple tools in parallel")] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [plan] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS || cfg.experimental?.deferred_tools === true
-              ? [toolSearch]
+              ? [safe(toolSearch)]
               : []),
             ...custom,
           ]
@@ -217,6 +221,7 @@ export namespace ToolRegistry {
                 formatValidationError: next.formatValidationError,
                 shouldDefer: tool.shouldDefer,
                 searchHint: tool.searchHint,
+                concurrent: tool.concurrent,
               }
             }),
             { concurrency: "unbounded" },

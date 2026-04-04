@@ -11,6 +11,9 @@ import { iife } from "@/util/iife"
 import { defer } from "@/util/defer"
 import { Config } from "../config/config"
 import { Permission } from "@/permission"
+import { Log } from "@/util/log"
+
+const log = Log.create({ service: "task" })
 
 const parameters = z.object({
   description: z.string().describe("A short (3-5 words) description of the task"),
@@ -108,6 +111,17 @@ export const TaskTool = Tool.define("task", async (ctx) => {
       const model = agent.model ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
+      }
+
+      // Fork mode: when using same model as parent, share context for cache hits
+      const sameModel = model.modelID === msg.info.modelID && model.providerID === msg.info.providerID
+      const isFork = sameModel && !ctx.extra?.isFork
+      if (isFork) {
+        const parent = SessionPrompt.getActiveContext(ctx.sessionID)
+        if (parent) {
+          log.info("fork subagent", { parent: ctx.sessionID, child: session.id })
+          SessionPrompt.setForkContext(session.id, parent)
+        }
       }
 
       ctx.metadata({

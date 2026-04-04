@@ -47,6 +47,7 @@ export namespace Tool {
     id: string
     shouldDefer?: boolean
     searchHint?: string
+    concurrent?: boolean
     init: (ctx?: InitContext) => Promise<Def<Parameters, M>>
   }
 

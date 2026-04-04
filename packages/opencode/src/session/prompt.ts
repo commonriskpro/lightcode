@@ -69,6 +69,24 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
 
+  // Fork context: parent passes pre-built state to child sessions for cache sharing
+  export interface ForkContext {
+    system: string[]
+    tools: Record<string, AITool>
+    messages: readonly any[]
+  }
+  const forks = new Map<string, ForkContext>()
+  const activeContexts = new Map<string, ForkContext>()
+
+  export function setForkContext(sessionID: string, ctx: ForkContext) {
+    forks.set(sessionID, ctx)
+  }
+
+  /** Get parent session's current context for fork subagent */
+  export function getActiveContext(sessionID: string): ForkContext | undefined {
+    return activeContexts.get(sessionID)
+  }
+
   export interface Interface {
     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -399,6 +417,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         using _ = log.time("resolveTools")
         const tools: Record<string, AITool> = {}
 
+        // Semaphore for unsafe (non-concurrent) tools — only one at a time
+        let pending = Promise.resolve()
+        function serialize<T>(fn: () => Promise<T>): Promise<T> {
+          const next = pending.then(fn, fn)
+          pending = next.then(
+            () => {},
+            () => {},
+          )
+          return next
+        }
+
         const context = (args: any, options: ToolExecutionOptions): Tool.Context => ({
           sessionID: input.session.id,
           abort: options.abortSignal!,
@@ -440,38 +469,42 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           input.agent,
         )) {
           const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
+          const isConcurrent = item.concurrent === true
+
+          function doExecute(args: any, options: ToolExecutionOptions) {
+            return Effect.runPromise(
+              Effect.gen(function* () {
+                const ctx = context(args, options)
+                yield* plugin.trigger(
+                  "tool.execute.before",
+                  { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
+                  { args },
+                )
+                const result = yield* Effect.promise(() => item.execute(args, ctx))
+                const output = {
+                  ...result,
+                  attachments: result.attachments?.map((attachment) => ({
+                    ...attachment,
+                    id: PartID.ascending(),
+                    sessionID: ctx.sessionID,
+                    messageID: input.processor.message.id,
+                  })),
+                }
+                yield* plugin.trigger(
+                  "tool.execute.after",
+                  { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
+                  output,
+                )
+                return output
+              }),
+            )
+          }
+
           const wrapped = tool({
             id: item.id as any,
             description: item.description,
             inputSchema: jsonSchema(schema as any),
-            execute(args, options) {
-              return Effect.runPromise(
-                Effect.gen(function* () {
-                  const ctx = context(args, options)
-                  yield* plugin.trigger(
-                    "tool.execute.before",
-                    { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-                    { args },
-                  )
-                  const result = yield* Effect.promise(() => item.execute(args, ctx))
-                  const output = {
-                    ...result,
-                    attachments: result.attachments?.map((attachment) => ({
-                      ...attachment,
-                      id: PartID.ascending(),
-                      sessionID: ctx.sessionID,
-                      messageID: input.processor.message.id,
-                    })),
-                  }
-                  yield* plugin.trigger(
-                    "tool.execute.after",
-                    { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
-                    output,
-                  )
-                  return output
-                }),
-              )
-            },
+            execute: isConcurrent ? doExecute : (args, options) => serialize(() => doExecute(args, options)),
           })
           if (item.shouldDefer) {
             ;(wrapped as any)._shouldDefer = true
@@ -1513,6 +1546,64 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
               throw error
             }
+
+            // Fork path: use pre-built context from parent session
+            const fork = forks.get(sessionID)
+            if (fork && step === 0) {
+              forks.delete(sessionID)
+              log.info("using fork context", { sessionID })
+
+              const msg: MessageV2.Assistant = {
+                id: MessageID.ascending(),
+                parentID: lastUser.id,
+                role: "assistant",
+                mode: agent.name,
+                agent: agent.name,
+                variant: lastUser.variant,
+                path: { cwd: ctx.directory, root: ctx.worktree },
+                cost: 0,
+                tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                modelID: model.id,
+                providerID: model.providerID,
+                time: { created: Date.now() },
+                sessionID,
+              }
+              yield* sessions.updateMessage(msg)
+              const handle = yield* processor.create({
+                assistantMessage: msg,
+                sessionID,
+                model,
+              })
+
+              const childMsgs = yield* Effect.promise(() => MessageV2.toModelMessages(msgs, model))
+              const allMsgs = [...fork.messages, ...childMsgs]
+
+              const result = yield* handle.process({
+                user: lastUser,
+                agent,
+                permission: session.permission,
+                sessionID,
+                parentSessionID: session.parentID,
+                system: fork.system,
+                messages: allMsgs,
+                tools: fork.tools,
+                model,
+                maxSteps: 5,
+              })
+
+              if (result === "stop") break
+              if (result === "compact") {
+                yield* compaction.create({
+                  sessionID,
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                  auto: true,
+                  overflow: true,
+                })
+              }
+              continue
+            }
+
             const maxSteps = agent.steps ?? Infinity
             const isLastStep = step >= maxSteps
             msgs = yield* insertReminders({ messages: msgs, agent, session })
@@ -1600,6 +1691,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 ]
                 const format = lastUser.format ?? { type: "text" as const }
                 if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+
+                // Stash active context for fork subagents to inherit
+                activeContexts.set(sessionID, { system, tools, messages: modelMsgs })
+
                 const result = yield* handle.process({
                   user: lastUser,
                   agent,
