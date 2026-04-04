@@ -29,6 +29,7 @@ import { SyncProvider, useSync } from "@tui/context/sync"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel, useConnected } from "@tui/component/dialog-model"
 import { DialogSddModels } from "@tui/component/dialog-sdd-models"
+import { DialogFeatures } from "@tui/component/dialog-features"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
@@ -683,6 +684,17 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       onSelect: () => {
         open("https://opencode.ai/docs").catch(() => {})
         dialog.clear()
+      },
+      category: "System",
+    },
+    {
+      title: "Show experimental features",
+      value: "features.show",
+      slash: {
+        name: "features",
+      },
+      onSelect: (dialog) => {
+        dialog.replace(() => <DialogFeatures />)
       },
       category: "System",
     },

@@ -76,18 +76,13 @@ const SLIM_DESC: Record<string, string> = {
  * similarity matches real user phrasing. Not used for on-wire tool descriptions.
  */
 const EMBED_PHRASE: Record<string, string> = {
-  read:
-    "Read-only: open file or directory and view contents. Summarize, extract, explain defaults from file text without modifying. Leer y explicar; revisa contenido y dime; solo lectura.",
+  read: "Read-only: open file or directory and view contents. Summarize, extract, explain defaults from file text without modifying. Leer y explicar; revisa contenido y dime; solo lectura.",
   task: "Delegate a task to a subagent. Spawn agent. Delegar subtarea. Otro agente.",
   skill: "Load a named skill. Activate skill by name. Cargar skill.",
-  glob:
-    "List file paths by glob mask (*.ts **/test). Find files by name pattern. Not searching text inside files. Archivos por patrón; rutas que coinciden.",
-  grep:
-    "Ripgrep: literal or regex search inside file contents. Find string TODO in sources. Not semantic meaning search. Texto literal en archivos.",
-  bash:
-    "Run a shell command in terminal: npm run, bun, pnpm, git status, cargo test, typecheck. ejecuta comando consola. Not reading a file.",
-  edit:
-    "Change an existing file in place: patch, refactor lines already on disk. Editar archivo existente. Not creating a brand-new file from scratch.",
+  glob: "List file paths by glob mask (*.ts **/test). Find files by name pattern. Not searching text inside files. Archivos por patrón; rutas que coinciden.",
+  grep: "Ripgrep: literal or regex search inside file contents. Find string TODO in sources. Not semantic meaning search. Texto literal en archivos.",
+  bash: "Run a shell command in terminal: npm run, bun, pnpm, git status, cargo test, typecheck. ejecuta comando consola. Not reading a file.",
+  edit: "Change an existing file in place: patch, refactor lines already on disk. Editar archivo existente. Not creating a brand-new file from scratch.",
   write:
     "Create new file or overwrite whole file: changelog entry, plan.md, save report. crear archivo nuevo; escribir markdown nuevo; rollout doc file.",
   webfetch: "Fetch a URL. Download HTTP page. Descargar página web. GET url.",
@@ -101,8 +96,7 @@ const EMBED_PHRASE: Record<string, string> = {
     "Begin/End Patch envelope to add, update, delete, or move files. Structured GPT-style diff; not search_replace or single-hunk edit/write for whole files.",
   batch:
     "Execute multiple independent tool calls in parallel (read many files, grep plus bash). Reduce latency; ordering not guaranteed between calls.",
-  lsp:
-    "Language Server: go to definition, find references, hover, workspace symbols. Navigate code; not ripgrep text search or plain read.",
+  lsp: "Language Server: go to definition, find references, hover, workspace symbols. Navigate code; not ripgrep text search or plain read.",
   plan_exit:
     "Exit plan agent after the plan file is ready. Ask user to switch to build agent for implementation. Not general edit/write; only when planning phase is complete.",
 }
@@ -177,10 +171,7 @@ const RULES: { re: RegExp; add: string[]; label: string }[] = [
   { re: /\b(skill|load skill)\b/i, add: ["skill", "read"], label: "skill" },
 ]
 
-function embedPhraseFor(
-  input: { tools: Record<string, AITool>; registryTools?: Record<string, AITool> },
-  id: string,
-) {
+function embedPhraseFor(input: { tools: Record<string, AITool>; registryTools?: Record<string, AITool> }, id: string) {
   const builtin = EMBED_PHRASE[id] ?? SLIM_DESC[id]
   if (builtin) return `${id}. ${builtin}`
   const t = input.registryTools?.[id] ?? input.tools[id]
@@ -340,8 +331,53 @@ export namespace ToolRouter {
     const start = performance.now()
     const ms = () => Math.round((performance.now() - start) * 100) / 100
     const tr = input.cfg.experimental?.tool_router
+    const deferral = input.cfg.experimental?.tool_deferral
     const routerOnly = Flag.OPENCODE_TOOL_ROUTER_ONLY || tr?.router_only === true
     const routerOn = Flag.OPENCODE_TOOL_ROUTER || tr?.enabled
+
+    // Tool Deferral mode - replaces all router logic
+    if (deferral?.enabled) {
+      const ids = Object.keys(input.tools).sort()
+      const deferredIds = new Set<string>()
+      const alwaysLoad = new Set(deferral.always_load ?? [])
+
+      // Build tool list with deferral markers
+      for (const [id, tool] of Object.entries(input.tools)) {
+        if (!alwaysLoad.has(id)) {
+          deferredIds.add(id)
+        }
+      }
+
+      const hint = [
+        "## Tool Deferral Mode",
+        `Enabled: true`,
+        `Tools: ${ids.length} total`,
+        `Deferred: ${[...deferredIds].join(", ")}`,
+        `Always loaded: ${[...alwaysLoad].join(", ")}`,
+        "",
+        "Tools marked as deferred will be loaded on-demand via ToolSearch.",
+        "Use tool_search when you need a deferred tool.",
+      ].join("\n")
+
+      log.info("tool_router", {
+        tier: "full",
+        selected: ids,
+        reason: "deferral",
+        deferred: [...deferredIds],
+        always_load: [...alwaysLoad],
+        tokens: { toolCount: ids.length },
+        duration_ms: ms(),
+      })
+
+      return {
+        tools: input.tools,
+        promptHint: hint,
+        contextTier: "full",
+      }
+    }
+
+    // Vanilla mode - no router, no filtering, no Xenova
+    // This is the default when tool_deferral is not enabled and router is off
     if (!routerOn || input.skip) {
       const ids = Object.keys(input.tools).sort()
       const hint = `## Offline tool router\nMode: disabled.\nAll ${ids.length} tools available: ${ids.join(", ")}.\nUse the tools that match the user's request.`
@@ -623,12 +659,7 @@ export namespace ToolRouter {
     }
 
     let hadRouterSignal =
-      intentLabels.length > 0 ||
-      ruleLabels.length > 0 ||
-      hybridAugmented ||
-      askMeLead ||
-      lexicalHint ||
-      strongWriteSeed
+      intentLabels.length > 0 || ruleLabels.length > 0 || hybridAugmented || askMeLead || lexicalHint || strongWriteSeed
 
     if (!hadRouterSignal && !routerOnly && tr?.no_match_fallback === true) {
       const fb = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]
@@ -708,8 +739,7 @@ export namespace ToolRouter {
       const used = input.fallback?.expansionsUsedThisTurn ?? 0
       const expandTo = input.fallback?.expandTo ?? fbCfg?.expand_to ?? "full"
       const recoverWithoutSignal = fbCfg?.recover_empty_without_signal === true
-      const canExpand =
-        fbOn && used < maxPer && available.size > 0 && (hadRouterSignal || recoverWithoutSignal)
+      const canExpand = fbOn && used < maxPer && available.size > 0 && (hadRouterSignal || recoverWithoutSignal)
 
       if (canExpand) {
         const idsToExpand = [...available].sort((a, b) => a.localeCompare(b))
@@ -812,7 +842,10 @@ export namespace ToolRouter {
     }
 
     if (Object.keys(out).length === 0) {
-      const hint = tr?.inject_prompt !== false ? promptHint({ ids: [], labels, additive, matched, allowed, availableKeys }) : undefined
+      const hint =
+        tr?.inject_prompt !== false
+          ? promptHint({ ids: [], labels, additive, matched, allowed, availableKeys })
+          : undefined
       log.info("tool_router", {
         tier: intentPrimary === CONVERSATION_INTENT_LABEL ? "conversation" : "minimal",
         selected: [],

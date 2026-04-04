@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { Keybind } from "../src/util/keybind"
+import type { ParsedKey } from "@opentui/core"
 
 describe("Keybind.toString", () => {
   test("should convert simple key to string", () => {
@@ -417,5 +418,39 @@ describe("Keybind.parse", () => {
         name: "z",
       },
     ])
+  })
+})
+
+describe("Keybind.fromParsedKey", () => {
+  test("normalizes literal space key name to 'space'", () => {
+    const key = {
+      name: " ",
+      ctrl: false,
+      meta: false,
+      shift: false,
+      super: false,
+    } as ParsedKey
+    const out = Keybind.fromParsedKey(key, false)
+    expect(out).toEqual({
+      name: "space",
+      ctrl: false,
+      meta: false,
+      shift: false,
+      super: false,
+      leader: false,
+    })
+  })
+
+  test("space key event matches parsed 'space' keybind", () => {
+    const bind = Keybind.parse("space")[0]
+    const key = {
+      name: " ",
+      ctrl: false,
+      meta: false,
+      shift: false,
+      super: false,
+    } as ParsedKey
+    const evt = Keybind.fromParsedKey(key, false)
+    expect(Keybind.match(bind, evt)).toBe(true)
   })
 })

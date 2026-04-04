@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "agent_swarms": false,
+    "workflow_scripts": false,
+    "cron_jobs": false,
+    "web_browser": false,
+    "context_inspection": false,
+    "session_hooks": false,
+    "tool_deferral": {
+      "enabled": false,
+      "search_tool": false
+    }
+  }
+}

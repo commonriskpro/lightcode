@@ -103,6 +103,76 @@ export namespace Command {
           hints: hints(PROMPT_REVIEW),
         }
 
+        // Features command - shows experimental features info
+        commands["features"] = {
+          name: "features",
+          description: "show experimental features status and toggle them",
+          source: "command",
+          get template() {
+            return `You are a helpful assistant. The user wants to know about experimental features and tools.
+
+## EXPERIMENTAL FEATURES (Config Flags)
+
+These can be enabled/disabled with 'opencode features enable/disable':
+
+1. Tool Deferral (tool_deferral.enabled) - DEFAULT: disabled
+   Enable tool deferral mechanism that loads tools on-demand instead of sending all at once.
+   When enabled, uses Claude Code's approach instead of OpenCode's Xenova router.
+
+2. Tool Search (tool_deferral.search_tool) - DEFAULT: enabled
+   Include ToolSearch tool for loading deferred tools on-demand.
+
+3. Agent Swarms (agent_swarms) - DEFAULT: disabled
+   Enable team_create, send_message, list_peers tools for multi-agent coordination.
+
+4. Workflow Scripts (workflow_scripts) - DEFAULT: disabled
+   Enable workflow_run, workflow_list tools for automation scripts.
+
+5. Cron Jobs (cron_jobs) - DEFAULT: disabled
+   Enable cron_create, cron_list, cron_delete tools for scheduled tasks.
+
+6. Web Browser (web_browser) - DEFAULT: disabled
+   Enable browser automation tool for web interaction.
+
+7. Context Inspection (context_inspection) - DEFAULT: disabled
+   Enable ctx_inspect tool for debugging context state.
+
+8. Session Hooks (session_hooks) - DEFAULT: disabled
+   Enable session-scoped ephemeral hooks system.
+
+## EXPERIMENTAL TOOLS
+
+These tools are available when their corresponding features are enabled:
+
+### Agent Swarms (enable agent_swarms):
+- team_create: Create a team of agents that can work together
+- send_message: Send a message to another agent in the team
+- list_peers: List all connected team members
+
+### Workflow Scripts (enable workflow_scripts):
+- workflow_run: Run a predefined workflow script
+- workflow_list: List available workflow scripts
+
+### Cron Jobs (enable cron_jobs):
+- cron_create: Create a scheduled task
+- cron_list: List scheduled tasks
+- cron_delete: Delete a scheduled task
+
+### Web Browser (enable web_browser):
+- browser: Control a web browser (goto, click, type, screenshot, extract)
+
+### Context Inspection (enable context_inspection):
+- ctx_inspect: Inspect current context state for debugging
+
+### Tool Deferral (enable tool_deferral):
+- tool_search: Search and load deferred tool definitions on-demand
+
+Ask the user which feature they want to enable or disable.
+Tell them they can use 'opencode features enable <feature>' or 'opencode features disable <feature>' from the terminal.`
+          },
+          hints: [],
+        }
+
         for (const [name, command] of Object.entries(cfg.command ?? {})) {
           commands[name] = {
             name,

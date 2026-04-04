@@ -110,7 +110,20 @@ export namespace ConfigPaths {
         continue
       }
 
+      const prev = text[index - 1]
+      const next = text[index + token.length]
+      if (prev === "`" && next === "`") {
+        out += token
+        cursor = index + token.length
+        continue
+      }
+
       let filePath = token.replace(/^\{file:/, "").replace(/\}$/, "")
+      if (filePath === "path/to/file" || filePath.startsWith("path/to/")) {
+        out += token
+        cursor = index + token.length
+        continue
+      }
       if (filePath.startsWith("~/")) {
         filePath = path.join(os.homedir(), filePath.slice(2))
       }

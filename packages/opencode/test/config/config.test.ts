@@ -2184,4 +2184,68 @@ describe("OPENCODE_CONFIG_CONTENT token substitution", () => {
       }
     }
   })
+
+  test("does not substitute inline-code {file:} examples in OPENCODE_CONFIG_CONTENT", async () => {
+    const originalEnv = process.env["OPENCODE_CONFIG_CONTENT"]
+
+    try {
+      await using tmp = await tmpdir({
+        init: async () => {
+          process.env["OPENCODE_CONFIG_CONTENT"] = JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            agent: {
+              translator: {
+                prompt: "Use `{file:path/to/file}` as an example token in docs.",
+              },
+            },
+          })
+        },
+      })
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const config = await Config.get()
+          expect(config.agent?.translator?.prompt).toContain("{file:path/to/file}")
+        },
+      })
+    } finally {
+      if (originalEnv !== undefined) {
+        process.env["OPENCODE_CONFIG_CONTENT"] = originalEnv
+      } else {
+        delete process.env["OPENCODE_CONFIG_CONTENT"]
+      }
+    }
+  })
+
+  test("does not substitute placeholder {file:path/to/file} examples in OPENCODE_CONFIG_CONTENT", async () => {
+    const originalEnv = process.env["OPENCODE_CONFIG_CONTENT"]
+
+    try {
+      await using tmp = await tmpdir({
+        init: async () => {
+          process.env["OPENCODE_CONFIG_CONTENT"] = JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            agent: {
+              translator: {
+                prompt: "Paths list:\n{file:path/to/file}\n**/*.js",
+              },
+            },
+          })
+        },
+      })
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const config = await Config.get()
+          expect(config.agent?.translator?.prompt).toContain("{file:path/to/file}")
+        },
+      })
+    } finally {
+      if (originalEnv !== undefined) {
+        process.env["OPENCODE_CONFIG_CONTENT"] = originalEnv
+      } else {
+        delete process.env["OPENCODE_CONFIG_CONTENT"]
+      }
+    }
+  })
 })

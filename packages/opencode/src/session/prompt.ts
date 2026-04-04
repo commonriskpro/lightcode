@@ -86,9 +86,10 @@ function estimateTokens(text: string): number {
 
 function compactAgentPrompt(agent: Agent.Info) {
   const opts = agent.options as Record<string, unknown> | undefined
-  const strategy = opts?.compact_strategy === "smart" || opts?.compact_strategy === "explicit"
-    ? (opts.compact_strategy as "smart" | "explicit")
-    : "smart"
+  const strategy =
+    opts?.compact_strategy === "smart" || opts?.compact_strategy === "explicit"
+      ? (opts.compact_strategy as "smart" | "explicit")
+      : "smart"
   const explicit = typeof opts?.compact_prompt === "string" ? opts.compact_prompt.trim() : ""
   if (strategy === "explicit" && explicit) return explicit.slice(0, 500)
   const raw = agent.prompt?.trim()
@@ -1167,6 +1168,7 @@ export namespace SessionPrompt {
     }
 
     const cfg = input.cfg ?? (await Config.get())
+    const deferral = cfg.experimental?.tool_deferral
     const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
     const disabled = Permission.disabled(Object.keys(tools), ruleset)
     const allowedToolIds = new Set(
@@ -1176,6 +1178,32 @@ export namespace SessionPrompt {
         return true
       }),
     )
+
+    // Apply deferral markers if tool_deferral is enabled
+    if (deferral?.enabled) {
+      const alwaysLoad = new Set(deferral.always_load ?? [])
+      for (const [id, aiTool] of Object.entries(tools)) {
+        if (!alwaysLoad.has(id) && id !== "tool_search") {
+          // Replace full schema with deferred hint schema
+          const deferredSchema = {
+            type: "object" as const,
+            properties: {
+              __deferred: {
+                type: "boolean" as const,
+                description: `Set to true to load the full tool definition via tool_search. This tool was deferred to save tokens.`,
+              },
+              tool_name: {
+                type: "boolean" as const,
+                description: `The name of this tool: '${id}'`,
+              },
+            },
+            required: [],
+          }
+          aiTool.inputSchema = deferredSchema as any
+        }
+      }
+    }
+
     const routeStart = performance.now()
     const stickyToolIds =
       cfg.experimental?.tool_router?.sticky_previous_turn_tools === false

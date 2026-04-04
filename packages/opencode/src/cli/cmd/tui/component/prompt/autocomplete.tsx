@@ -334,11 +334,7 @@ export function Autocomplete(props: {
   const agents = createMemo(() => {
     const agents = sync.data.agent
     return agents
-      .filter(
-        (agent) =>
-          !agent.hidden &&
-          (agent.mode !== "primary" || agent.name === "sdd-orchestrator"),
-      )
+      .filter((agent) => !agent.hidden && (agent.mode !== "primary" || agent.name === "sdd-orchestrator"))
       .map(
         (agent): AutocompleteOption => ({
           display: "@" + agent.name,
@@ -360,9 +356,22 @@ export function Autocomplete(props: {
   const commands = createMemo((): AutocompleteOption[] => {
     const fromApp = command.slashes()
     const results: AutocompleteOption[] = [...fromApp]
-    const appSlashNames = new Set(
-      fromApp.map((o) => o.display.trim().replace(/^\/+/, "").split(":")[0] ?? ""),
-    )
+    const appSlashNames = new Set(fromApp.map((o) => o.display.trim().replace(/^\/+/, "").split(":")[0] ?? ""))
+
+    // Always include /features command
+    if (!appSlashNames.has("features")) {
+      results.push({
+        display: "/features",
+        description: "Show experimental features and tools",
+        onSelect: () => {
+          const newText = "/features"
+          const cursor = props.input().logicalCursor
+          props.input().deleteRange(0, 0, cursor.row, cursor.col)
+          props.input().insertText(newText)
+          props.input().cursorOffset = Bun.stringWidth(newText)
+        },
+      })
+    }
 
     for (const serverCommand of sync.data.command) {
       if (serverCommand.source === "skill") continue

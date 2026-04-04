@@ -21,6 +21,7 @@ import { useCommandDialog } from "../dialog-command"
 import { useKeyboard, useRenderer } from "@opentui/solid"
 import { Editor } from "@tui/util/editor"
 import { DialogSddModels } from "@tui/component/dialog-sdd-models"
+import { DialogFeatures } from "@tui/component/dialog-features"
 import { useExit } from "../../context/exit"
 import { Clipboard } from "../../util/clipboard"
 import type { AssistantMessage, FilePart } from "@opencode-ai/sdk/v2"
@@ -140,17 +141,11 @@ export function Prompt(props: PromptProps) {
   const usage = createMemo(() => {
     if (!props.sessionID) return
     const msg = sync.data.message[props.sessionID] ?? []
-    const last = msg.findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
-    )
+    const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
     if (!last) return
 
     const tokens =
-      last.tokens.input +
-      last.tokens.output +
-      last.tokens.reasoning +
-      last.tokens.cache.read +
-      last.tokens.cache.write
+      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
@@ -653,24 +648,48 @@ export function Prompt(props: PromptProps) {
         command: inputText,
       })
       setStore("mode", "normal")
-    } else if (
-      inputText.startsWith("/") &&
-      iife(() => {
-        const firstLine = inputText.split("\n")[0]
-        const command = firstLine.split(" ")[0].slice(1)
-        return sync.data.command.some((x) => x.name === command)
-      })
-    ) {
+    } else if (inputText.startsWith("/")) {
       // Parse command from first line, preserve multi-line content in arguments
       const firstLineEnd = inputText.indexOf("\n")
       const firstLine = firstLineEnd === -1 ? inputText : inputText.slice(0, firstLineEnd)
-      const [command, ...firstLineArgs] = firstLine.split(" ")
+      const [cmdToken, ...firstLineArgs] = firstLine.split(" ")
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
-      const cmdName = command.slice(1)
+      const cmdName = cmdToken.slice(1)
+      const slash = command
+        .slashes()
+        .find((x) => x.display.slice(1) === cmdName || x.aliases?.some((a) => a.slice(1) === cmdName))
+      const isServerCommand = sync.data.command.some((x) => x.name === cmdName)
 
-      if (cmdName === "profile") {
+      if (slash) {
+        slash.onSelect()
+      } else if (!isServerCommand) {
+        sdk.client.session
+          .prompt({
+            sessionID,
+            ...selectedModel,
+            messageID,
+            agent: local.agent.current().name,
+            model: selectedModel,
+            variant,
+            parts: [
+              {
+                id: PartID.ascending(),
+                type: "text",
+                text: inputText,
+              },
+              ...nonTextParts.map(assign),
+            ],
+          })
+          .catch((err) => {
+            Log.Default.error("prompt.submit.failed", {
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
+      } else if (cmdName === "profile") {
         dialog.replace(() => <DialogSddModels />)
+      } else if (cmdName === "features") {
+        dialog.replace(() => <DialogFeatures />)
       } else {
         sdk.client.session.command({
           sessionID,

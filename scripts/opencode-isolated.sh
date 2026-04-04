@@ -21,6 +21,12 @@ fi
 # packages/opencode/bin/opencode (Node) sets DYLD_FALLBACK_LIBRARY_PATH / LD_LIBRARY_PATH and copies
 # onnxruntime dylibs under OPENCODE_PORTABLE_ROOT/cache/onnxruntime-libs/ so @huggingface/transformers works with the compiled CLI.
 
+# In this repo, default to source runtime so local TS changes are reflected immediately
+# (no dist rebuild required). Set OPENCODE_ISOLATED_RUNTIME=binary to force compiled binary path.
+if [[ "${OPENCODE_ISOLATED_RUNTIME:-source}" == "source" ]]; then
+  exec bun run --cwd "$root/packages/opencode" --conditions=browser ./src/index.ts "$@"
+fi
+
 # Prefer a locally built CLI (bun run build -- --single → dist/opencode-<platform>/bin/opencode) so we do not rely on node_modules platform packages.
 if [[ -z "${OPENCODE_BIN_PATH:-}" ]]; then
   shopt -s nullglob

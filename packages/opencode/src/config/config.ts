@@ -1074,6 +1074,27 @@ export namespace Config {
         .object({
           disable_paste_summary: z.boolean().optional(),
           batch_tool: z.boolean().optional().describe("Enable the batch tool"),
+          // Agent Swarms
+          agent_swarms: z
+            .boolean()
+            .optional()
+            .describe("Enable agent swarm tools (team_create, send_message, list_peers)"),
+          // Workflow Scripts
+          workflow_scripts: z
+            .boolean()
+            .optional()
+            .describe("Enable workflow automation scripts (workflow_run, workflow_list)"),
+          // Cron Jobs
+          cron_jobs: z
+            .boolean()
+            .optional()
+            .describe("Enable scheduled task tools (cron_create, cron_list, cron_delete)"),
+          // Web Browser
+          web_browser: z.boolean().optional().describe("Enable browser automation tool"),
+          // Context Inspection
+          context_inspection: z.boolean().optional().describe("Enable context inspection tool for debugging"),
+          // Session Hooks
+          session_hooks: z.boolean().optional().describe("Enable session-scoped ephemeral hooks"),
           openTelemetry: z
             .boolean()
             .optional()
@@ -1192,9 +1213,7 @@ export namespace Config {
                 .max(200)
                 .optional()
                 .default(100)
-                .describe(
-                  "Hard safety cap for final routed tool count when automatic tool selection is enabled.",
-                ),
+                .describe("Hard safety cap for final routed tool count when automatic tool selection is enabled."),
               local_embed_min_score: z
                 .number()
                 .min(0)
@@ -1233,7 +1252,10 @@ export namespace Config {
                 .describe("Weight of lexical overlap score in reranking."),
               exact_match: z
                 .object({
-                  dynamic_ratio: z.boolean().optional().describe("Adaptive ratio vs best score (simple vs composite intent)."),
+                  dynamic_ratio: z
+                    .boolean()
+                    .optional()
+                    .describe("Adaptive ratio vs best score (simple vs composite intent)."),
                   dynamic_ratio_simple: z
                     .number()
                     .min(0)
@@ -1250,15 +1272,26 @@ export namespace Config {
                     .describe(
                       "When dynamic_ratio: multiplier for composite / multi-step prompts. Default 0.74 (offline benchmark).",
                     ),
-                  per_tool_min: z.boolean().optional().describe("Stricter minimum scores for destructive or costly tools."),
-                  intent_gating: z.boolean().optional().describe("Soften edit/bash when web intent wins without strong local evidence."),
+                  per_tool_min: z
+                    .boolean()
+                    .optional()
+                    .describe("Stricter minimum scores for destructive or costly tools."),
+                  intent_gating: z
+                    .boolean()
+                    .optional()
+                    .describe("Soften edit/bash when web intent wins without strong local evidence."),
                   redundancy: z.boolean().optional().describe("Drop near-duplicate web tools when evidence is weak."),
                   calibration: z.boolean().optional().describe("Map embed scores through a sigmoid before thresholds."),
-                  two_pass: z.boolean().optional().describe("Second pass: drop bash without run-like cues in the prompt."),
+                  two_pass: z
+                    .boolean()
+                    .optional()
+                    .describe("Second pass: drop bash without run-like cues in the prompt."),
                 })
                 .optional()
                 .default({ dynamic_ratio: true, two_pass: true })
-                .describe("Exact-match-oriented filters on embed-ranked tools (no fixed top-k cap). Defaults tuned via tool-router-config-benchmark."),
+                .describe(
+                  "Exact-match-oriented filters on embed-ranked tools (no fixed top-k cap). Defaults tuned via tool-router-config-benchmark.",
+                ),
               local_intent_embed: z
                 .boolean()
                 .optional()
@@ -1272,7 +1305,9 @@ export namespace Config {
                 .max(1)
                 .optional()
                 .default(0.38)
-                .describe("Minimum similarity to accept an intent prototype (typically slightly stricter than local_embed_min_score)."),
+                .describe(
+                  "Minimum similarity to accept an intent prototype (typically slightly stricter than local_embed_min_score).",
+                ),
               intent_merge_margin: z
                 .number()
                 .min(0)
@@ -1413,7 +1448,9 @@ export namespace Config {
                     .literal("full")
                     .optional()
                     .default("full")
-                    .describe("Recover empty router selection by expanding to all tools in the allowed pool for this request."),
+                    .describe(
+                      "Recover empty router selection by expanding to all tools in the allowed pool for this request.",
+                    ),
                   recover_empty_without_signal: z
                     .boolean()
                     .optional()
@@ -1423,6 +1460,32 @@ export namespace Config {
                     ),
                 })
                 .optional(),
+            })
+            .optional(),
+          tool_deferral: z
+            .object({
+              enabled: z
+                .boolean()
+                .optional()
+                .default(false)
+                .describe(
+                  "When true: disable all tool router optimizations and use Claude Code's tool deferral mechanism. " +
+                    "Tools are marked as deferrable (except always_load) and loaded on-demand via ToolSearch. " +
+                    "This replaces the entire tool_router config including Xenova embeddings, intent classification, " +
+                    "keyword rules, fallback, and exposure modes. When false (default), all tools are sent without filtering.",
+                ),
+              always_load: z
+                .array(z.string())
+                .optional()
+                .describe(
+                  "Tools that should always be loaded and never deferred. " +
+                    "These tools will always have their full schema sent to the LLM.",
+                ),
+              search_tool: z
+                .boolean()
+                .optional()
+                .default(true)
+                .describe("Include ToolSearch tool for discovering and loading deferred tools on-demand."),
             })
             .optional(),
         })
@@ -1905,9 +1968,22 @@ export namespace Config {
         })
 
         const update = Effect.fn("Config.update")(function* (config: Info) {
-          const file = path.join(Instance.directory, "config.json")
+          const jsonc = path.join(Instance.directory, "opencode.jsonc")
+          const json = path.join(Instance.directory, "opencode.json")
+          const legacy = path.join(Instance.directory, "config.json")
+          const file = existsSync(jsonc) ? jsonc : existsSync(json) ? json : existsSync(legacy) ? legacy : json
           const existing = yield* loadFile(file)
-          yield* fs.writeFileString(file, JSON.stringify(mergeDeep(existing, config), null, 2)).pipe(Effect.orDie)
+
+          if (file.endsWith(".jsonc")) {
+            const before = (yield* readConfigFile(file)) ?? "{}"
+            const updated = patchJsonc(before, config)
+            yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+            yield* Effect.promise(() => Instance.dispose())
+            return
+          }
+
+          const target = file.endsWith("config.json") ? json : file
+          yield* fs.writeFileString(target, JSON.stringify(mergeDeep(existing, config), null, 2)).pipe(Effect.orDie)
           yield* Effect.promise(() => Instance.dispose())
         })
 

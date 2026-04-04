@@ -31,6 +31,11 @@ import { pathToFileURL } from "url"
 import { Effect, Layer, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
+import { ToolSearchTool } from "./tool_search"
+import { TeamCreateTool, SendMessageTool, ListPeersTool } from "./team"
+import { WorkflowRunTool, WorkflowListTool } from "./workflow"
+import { CronCreateTool, CronListTool, CronDeleteTool } from "./cron"
+import { WebBrowserTool, CtxInspectTool } from "./browser"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -132,6 +137,20 @@ export namespace ToolRegistry {
           ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
           ...(cfg.experimental?.batch_tool === true ? [BatchTool] : []),
           ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [PlanExitTool] : []),
+          ...(cfg.experimental?.tool_deferral?.enabled !== false &&
+          cfg.experimental?.tool_deferral?.search_tool !== false
+            ? [ToolSearchTool]
+            : []),
+          // Agent Swarms
+          ...(cfg.experimental?.agent_swarms === true ? [TeamCreateTool, SendMessageTool, ListPeersTool] : []),
+          // Workflow Scripts
+          ...(cfg.experimental?.workflow_scripts === true ? [WorkflowRunTool, WorkflowListTool] : []),
+          // Cron Jobs
+          ...(cfg.experimental?.cron_jobs === true ? [CronCreateTool, CronListTool, CronDeleteTool] : []),
+          // Web Browser
+          ...(cfg.experimental?.web_browser === true ? [WebBrowserTool] : []),
+          // Context Inspection
+          ...(cfg.experimental?.context_inspection === true ? [CtxInspectTool] : []),
           ...custom,
         ]
       })

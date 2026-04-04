@@ -28,6 +28,7 @@ import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
+import { FeaturesCommand } from "./cli/cmd/features"
 import path from "path"
 import { Global } from "./global"
 import { JsonMigration } from "./storage/json-migration"
@@ -162,6 +163,7 @@ cli = cli
   .command(SessionCommand)
   .command(PluginCommand)
   .command(DbCommand)
+  .command(FeaturesCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

@@ -3,11 +3,7 @@
   // Perfil prueba: router híbrido (intención + embed Xenova + keyword_rules). El LLM solo recibe defs de tools que el router adjunta.
   // Arranque: ./scripts/opencode-isolated.sh desde la raíz del repo (tras build). Logs wire: debug_request + OPENCODE_DEBUG_REQUEST opcional.
   // Modelo: elige proveedor en la TUI; lmstudio abajo es ejemplo (cambia baseURL a tu LAN).
-  "plugin": [
-    "../gentle-ai/plugins/skill-registry-plugin.ts",
-    "../gentle-ai/plugins/background-agents.ts",
-    "opencode-lmstudio@latest",
-  ],
+  "plugin": ["../gentle-ai/plugins/skill-registry-plugin.ts", "../gentle-ai/plugins/background-agents.ts"],
   // build = write/edit/bash para probar tareas directas; sdd-orchestrator = delegar con task→sdd-*.
   "default_agent": "build",
   "skills": {
