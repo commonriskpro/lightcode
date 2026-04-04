@@ -41,6 +41,7 @@ export namespace AutoDream {
     session: {
       create: (params: Record<string, unknown>) => Promise<{ data?: { id: string } }>
       promptAsync: (params: Record<string, unknown>) => Promise<unknown>
+      status: (params?: Record<string, unknown>) => Promise<{ data?: Record<string, { type: string }> }>
     }
   }
   let sdk: SDKClient | undefined
@@ -73,6 +74,7 @@ export namespace AutoDream {
 
     log.info("spawning dream session", { sessionID, providerID, modelID })
 
+    // Fire the prompt (returns immediately)
     await sdk.session.promptAsync({
       sessionID,
       model: { providerID, modelID },
@@ -80,7 +82,23 @@ export namespace AutoDream {
       parts: [{ type: "text", text: prompt }],
     })
 
-    return "Dream consolidation started"
+    // Poll session status until dream finishes
+    for (let i = 0; i < 300; i++) {
+      await new Promise((r) => setTimeout(r, 2000))
+      try {
+        const res = await sdk.session.status()
+        const status = res.data?.[sessionID]
+        if (!status || status.type === "idle") {
+          log.info("dream session completed", { sessionID })
+          return "Dream consolidation completed"
+        }
+      } catch {
+        // status check failed, keep polling
+      }
+    }
+
+    log.warn("dream session timed out", { sessionID })
+    return "Dream consolidation timed out (10 min)"
   }
 
   /** Manual trigger from /dream command */
