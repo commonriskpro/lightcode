@@ -7,6 +7,8 @@ import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 import { AutoDream } from "@/dream"
 
+const DREAM_FRAMES = ["☁ dreaming", "☁ dreaming.", "☁ dreaming..", "☁ dreaming..."]
+
 export function Footer() {
   const { theme } = useTheme()
   const sync = useSync()
@@ -21,6 +23,7 @@ export function Footer() {
   const directory = useDirectory()
   const connected = useConnected()
   const [isDreaming, setIsDreaming] = createSignal(false)
+  const [frame, setFrame] = createSignal(0)
 
   const [store, setStore] = createStore({
     welcome: false,
@@ -46,8 +49,12 @@ export function Footer() {
     }
     timeouts.push(setTimeout(() => tick(), 10_000))
 
-    // Poll dreaming state every 2s
-    const dreamPoll = setInterval(() => setIsDreaming(AutoDream.dreaming()), 2000)
+    // Poll dreaming state + animate
+    const dreamPoll = setInterval(() => {
+      const active = AutoDream.dreaming()
+      setIsDreaming(active)
+      if (active) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
+    }, 500)
 
     onCleanup(() => {
       timeouts.forEach(clearTimeout)
@@ -57,7 +64,12 @@ export function Footer() {
 
   return (
     <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
-      <text fg={theme.textMuted}>{directory()}</text>
+      <box flexDirection="row" gap={1}>
+        <text fg={theme.textMuted}>{directory()}</text>
+        <Show when={isDreaming()}>
+          <text fg={theme.accent}>{DREAM_FRAMES[frame()]}</text>
+        </Show>
+      </box>
       <box gap={2} flexDirection="row" flexShrink={0}>
         <Switch>
           <Match when={store.welcome}>
@@ -66,9 +78,6 @@ export function Footer() {
             </text>
           </Match>
           <Match when={connected()}>
-            <Show when={isDreaming()}>
-              <text fg={theme.warning}>◉ dreaming…</text>
-            </Show>
             <Show when={permissions().length > 0}>
               <text fg={theme.warning}>
                 <span style={{ fg: theme.warning }}>△</span> {permissions().length} Permission

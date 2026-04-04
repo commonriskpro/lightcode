@@ -34,6 +34,7 @@ import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogFeature } from "./component/dialog-feature"
 import { DialogDreamModel } from "./component/dialog-dream-model"
+import { AutoDream } from "@/dream"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
@@ -693,6 +694,35 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogFeature />)
+      },
+      category: "System",
+    },
+    {
+      title: "Dream",
+      value: "dream.run",
+      slash: {
+        name: "dream",
+      },
+      onSelect: () => {
+        dialog.clear()
+        toast.show({
+          title: "AutoDream",
+          message: "Consolidation started in background…",
+          variant: "info",
+          duration: 3000,
+        })
+        void AutoDream.run()
+          .then((result) => {
+            toast.show({ title: "AutoDream", message: result, variant: "success", duration: 5000 })
+          })
+          .catch((err) => {
+            toast.show({
+              title: "AutoDream",
+              message: err instanceof Error ? err.message : String(err),
+              variant: "error",
+              duration: 5000,
+            })
+          })
       },
       category: "System",
     },
