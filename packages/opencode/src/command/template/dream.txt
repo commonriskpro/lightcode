@@ -1,5 +1,0 @@
-Consolidate and organize persistent memory using Engram.
-
-Review all stored observations, find duplicates, merge related topics, prune obsolete information, and create cross-session summaries.
-
-Focus: $ARGUMENTS
