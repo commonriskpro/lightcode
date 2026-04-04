@@ -29,6 +29,9 @@ export namespace OM {
     )
   }
 
+  // NOTE: addBuffer + activate implement the Mastra-style async pre-compute pattern.
+  // Currently runLoop writes directly via OM.upsert() — these exist for a future
+  // async buffering upgrade but are not called from the main observation path.
   export function addBuffer(buf: ObservationBuffer): void {
     Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
   }

@@ -115,10 +115,11 @@ export namespace AutoDream {
     return prompt
   }
 
-  async function spawn(focus?: string, obs?: string): Promise<string> {
+  async function spawn(focus?: string, obs?: string, model?: string): Promise<string> {
     if (!sdk) throw new Error("AutoDream SDK not initialized")
 
-    if (!configuredModel) throw new Error("No model configured. Use /dreammodel first")
+    const resolved = model ?? configuredModel
+    if (!resolved) throw new Error("No model configured. Use /dreammodel or set autodream_model in config.")
 
     const title = focus ? `Dream: ${focus}` : "AutoDream consolidation"
     const res = await sdk.session.create({ title })
@@ -126,7 +127,7 @@ export namespace AutoDream {
     if (!sessionID) throw new Error("Failed to create dream session")
 
     const prompt = buildSpawnPrompt(PROMPT, focus, obs)
-    const parts = configuredModel.split("/")
+    const parts = resolved.split("/")
     const providerID = parts[0]
     const modelID = parts.slice(1).join("/")
 
@@ -182,12 +183,18 @@ export namespace AutoDream {
   async function idle(sid: string): Promise<void> {
     const available = await Engram.ensure()
     if (!available) return
-    if (!configuredModel) return
+    // Respect experimental.autodream flag — if explicitly false, skip
+    const { Config } = await import("../config/config")
+    const cfg = await Config.get()
+    if (cfg.experimental?.autodream === false) return
+    // Use configured model or fall back to a sensible default
+    const model = configuredModel ?? cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
+    if (!sdk) return
     try {
       _dreaming = true
       log.info("idle dream started", { sid })
       const obs = await summaries(sid)
-      await spawn(undefined, obs)
+      await spawn(undefined, obs, model)
       await writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: 0 })
       log.info("idle dream completed")
     } catch (err) {
