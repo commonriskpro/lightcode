@@ -20,17 +20,19 @@ LightCode is OpenCode with performance optimizations, intelligent memory, and a 
 
 ## What's Different?
 
-| Feature                 | OpenCode                          | LightCode                                           |
-| ----------------------- | --------------------------------- | --------------------------------------------------- |
-| **Tool execution**      | Sequential per step               | Multi-step streaming + concurrency safety           |
-| **Prompt caching**      | Non-deterministic tool order      | Alphabetical sort → stable cache hits               |
-| **Subagent context**    | Fresh session (full cache miss)   | Fork mode → inherits parent context (90% cache hit) |
-| **LSP diagnostics**     | Per-tool blocking (150ms-3s each) | Batched at end-of-step (single pass)                |
-| **Deferred tools**      | Client-side only                  | Native Anthropic/OpenAI support + hybrid fallback   |
-| **System prompt**       | 8 provider-specific prompts       | 1 compact prompt (40% fewer tokens)                 |
-| **Memory**              | Passive (protocol in AGENTS.md)   | Active (AutoDream background consolidation)         |
-| **Reactive compaction** | Error flash + no loop guard       | Silent recovery + guard against infinite loops      |
-| **Filesystem**          | `~/.opencode/`                    | `~/.lightcode/` (runs alongside OpenCode)           |
+| Feature                  | OpenCode                            | LightCode                                           |
+| ------------------------ | ----------------------------------- | --------------------------------------------------- |
+| **Tool execution**       | Sequential per step                 | Multi-step streaming + concurrency safety           |
+| **Prompt caching**       | Non-deterministic tool order        | Alphabetical sort → stable cache hits (BP1–BP4)     |
+| **Subagent context**     | Fresh session (full cache miss)     | Fork mode → inherits parent context (90% cache hit) |
+| **LSP diagnostics**      | Per-tool blocking (150ms–3s each)   | Batched at end-of-step (single pass)                |
+| **Deferred tools**       | Client-side only                    | Native Anthropic/OpenAI support + hybrid fallback   |
+| **System prompt**        | 8 provider-specific prompts         | 1 compact prompt (~40% fewer tokens)                |
+| **Intra-session memory** | None (context grows until overflow) | Proactive Observer — compresses every 30k tokens    |
+| **Cross-session memory** | None (each session starts blind)    | Engram recall injected at session start             |
+| **Memory consolidation** | Passive (manual `mem_save`)         | AutoDream — automatic background consolidation      |
+| **Reactive compaction**  | Error flash + no loop guard         | Silent recovery + guard against infinite loops      |
+| **Filesystem**           | `~/.opencode/`                      | `~/.lightcode/` (runs alongside OpenCode)           |
 
 ## Installation
 
@@ -67,7 +69,7 @@ bun dev /path/to/your/project
 
 ### Multi-Step Streaming Tool Execution
 
-The AI SDK now handles multiple tool-use steps internally instead of returning to the outer loop after every step. This eliminates 200-500ms of per-step overhead (message re-gathering, tool re-resolution, context reconstruction).
+The AI SDK handles multiple tool-use steps internally instead of returning to the outer loop after every step. This eliminates 200–500ms of per-step overhead (message re-gathering, tool re-resolution, context reconstruction).
 
 ```
 Before: model → tools → [outer loop] → model → tools → [outer loop] → model → done
@@ -84,21 +86,31 @@ Tools are classified as **safe** (read-only) or **unsafe** (writes/side effects)
 | `webfetch`, `websearch`, `codesearch` | `bash`, `task`                 |
 | `lsp`, `skill`                        | `question`, `todowrite`        |
 
-### Prompt Cache Stability
+### Prompt Cache Stability (BP1–BP4)
 
-Tools are sorted alphabetically before being sent to the API. This makes the tool definition prefix deterministic across sessions, MCP reconnections, and deferred tool loading — maximizing prompt cache hits.
+Four deterministic cache breakpoints applied before every API call:
 
-For Anthropic models with 15+ tools: **3,000-6,000 tokens** of tool definitions cached at a 90% discount.
+| Breakpoint | Location                         | TTL  | What gets cached                                       |
+| ---------- | -------------------------------- | ---- | ------------------------------------------------------ |
+| **BP1**    | Last tool definition             | 1h   | Tool definitions (alphabetically sorted for stability) |
+| **BP2**    | `system[0]` — agent prompt       | 1h   | Agent prompt — only changes on agent switch            |
+| **BP3**    | `system[1]` — Engram recall      | 5min | Cross-session context from Engram                      |
+| **BP4**    | Penultimate conversation message | 5min | Always a cache READ on the next turn                   |
+
+Tools are sorted alphabetically before every call — deterministic order across sessions, MCP reconnections, and deferred tool loading. For Anthropic models with 15+ tools: **3,000–6,000 tokens** cached at 90% discount.
+
+### System Prompt Layout
+
+```
+system[0]  — BP2 (1h)    Agent prompt                          ← never changes mid-session
+system[1]  — BP3 (5min)  Engram recall <engram-recall>…        ← cross-session context
+system[2]  — BP3 (5min)  Local observations <local-obs>…       ← intra-session compression
+system[3]  — not cached  Volatile: date + model identity
+```
 
 ### Fork Subagent
 
-When the `task` tool spawns a subagent, it inherits the parent's:
-
-- System prompt (same text = same cache hash)
-- Tool set (no re-resolution)
-- Conversation history (full context)
-
-The result: the child's API call prefix is **identical** to the parent's. With 3 subagent calls per session: **30,000-180,000 tokens saved**.
+When the `task` tool spawns a subagent, it inherits the parent's system prompt, tool set, and conversation history. The child's API call prefix is **identical** to the parent's. With 3 subagent calls per session: **30,000–180,000 tokens saved**.
 
 Guards prevent fork-within-fork (exponential context explosion) and model mismatch.
 
@@ -122,35 +134,94 @@ Other models fall back to the existing hybrid mode automatically.
 
 A single `lightcode.txt` replaces 8 provider-specific prompt files. All models receive the same core instructions. ~40% reduction in system prompt tokens.
 
-### AutoDream — Background Memory Consolidation
+---
 
-When sessions go idle, a sandboxed `dream` agent:
+## Memory System
 
-1. Reviews knowledge stored in [Engram](https://github.com/nicobailon/engram) (persistent memory via MCP)
-2. Deduplicates observations
-3. Prunes stale data
-4. Creates cross-session summaries
+LightCode has a **3-layer memory system** that gives the agent continuous context across and within sessions.
 
-Trigger manually with `/dream` or enable automatic mode via config:
+### Layer 1 — Cross-Session Recall (via Engram)
+
+At the start of each session (step 1), `SystemPrompt.recall()` fetches recent project context from [Engram](https://github.com/nicobailon/engram) (persistent memory via MCP). The result is injected at `system[1]` (BP3, 5min cache) so the agent knows what happened in past sessions — architectual decisions, established patterns, bugs fixed, preferences.
+
+Engram must be installed and registered as an MCP server. LightCode handles this automatically:
 
 ```jsonc
-// ~/.config/lightcode/config.jsonc
+// No config needed — auto-installed on first use
+// Manual install: brew install gentleman-programming/tap/engram
+```
+
+### Layer 2 — Intra-Session Observer
+
+A background Observer LLM fires at a **30k unobserved token threshold** during active sessions. It compresses message history into a dense observation log stored in a local `ObservationTable` (SQLite). This prevents context rot without blocking the user.
+
+```
+Turn N (< 6k tokens):   idle — nothing happens
+Turn N (6k intervals):  background buffer pre-compute (non-blocking fiber)
+Turn N (30k tokens):    activate buffer → Observer LLM → ObservationTable
+Turn N (> 36k tokens):  force-sync (blocking — prevents runaway growth)
+```
+
+Observations use a priority system from the prompt:
+
+- 🔴 User assertions (hard facts): "the app uses PostgreSQL", "I work at Acme"
+- 🟡 User requests (not facts): "Can you help me refactor auth?"
+
+The observation log is injected at `system[2]` each turn. Configure the Observer model:
+
+```jsonc
 {
   "experimental": {
-    "autodream": true,
+    "observer_model": "google/gemini-2.5-flash",
   },
 }
 ```
 
-**Safety**: Read-only + Engram MCP tools only. Cheap model (haiku-class). Single-instance via Flock. Gated by time threshold, session count, and throttle.
+### Layer 3 — AutoDream (Memory Consolidation)
 
-### Reactive Compaction (Hardened)
+When sessions go idle, a sandboxed `dream` agent consolidates memory. It reads both local observations (Layer 2) and compaction summaries, then calls `mem_save` on Engram with structured observations under the project's topic namespace.
 
-When the LLM returns "prompt too long":
+The dream agent:
 
-- **No error flash** — the overflow is handled silently
-- **Loop guard** — max 3 compaction attempts before stopping
-- **Orphan cleanup** — empty assistant messages are removed before compacting
+1. **Reads** local ObservationTable observations + compaction summaries
+2. **Searches** Engram for related existing observations (`mem_search`)
+3. **Saves or updates** observations using `topic_key` convention: `project/{name}/session-insight/{topic}`
+4. **Deduplicates** — `mem_update` if a matching topic exists, `mem_save` otherwise
+
+Trigger manually with `/dream [focus]` or enable automatic mode:
+
+```jsonc
+{
+  "experimental": {
+    "autodream": true,
+    "autodream_model": "anthropic/claude-haiku-4-5",
+  },
+}
+```
+
+**Safety**: Read-only file access + Engram MCP tools only. Single-instance. Gated by session idle event.
+
+### Memory Pipeline
+
+```
+Active session
+  Every turn → OMBuffer.check(tokens)
+    → 6k:  fork Observer (background, non-blocking)
+    → 30k: activate → ObservationTable (system[2] next turn)
+    → 36k: force-sync (blocking)
+
+Session goes idle
+  → AutoDream fires
+      reads ObservationTable + summary messages
+      → dream agent → Engram mem_save
+
+Next session starts
+  → SystemPrompt.recall(pid)
+      → Engram mem_context(limit: 30)
+      → injected at system[1]
+```
+
+---
 
 ## Configuration
 
@@ -167,18 +238,22 @@ Project-level config works the same — `AGENTS.md` or `lightcode.jsonc` in your
 
 ### Feature Toggles
 
-All new features can be controlled:
-
 ```jsonc
 {
   "experimental": {
     "multi_step": true, // Multi-step streaming (default: true)
     "fork_subagent": true, // Fork subagent caching (default: true)
     "deferred_tools": true, // Deferred tools (default: auto-detected)
-    "autodream": false, // Background memory (default: false)
+    "autodream": false, // Background memory consolidation (default: false)
+    "autodream_model": "anthropic/claude-haiku-4-5", // Model for AutoDream
+    "observer_model": "google/gemini-2.5-flash", // Model for intra-session Observer
   },
 }
 ```
+
+If `observer_model` is not set, the Observer is disabled gracefully — sessions continue normally without intra-session compression.
+
+---
 
 ## Development
 
@@ -200,6 +275,9 @@ bun test --cwd packages/opencode
 
 # Type check
 bun turbo typecheck
+
+# Generate DB migration after schema changes
+bun run --cwd packages/opencode db generate --name <slug>
 ```
 
 ### Project Structure
@@ -216,59 +294,61 @@ packages/
 ├── web/               # Landing page
 ├── ui/                # Shared UI primitives
 ├── util/              # Shared utilities
-├── docs/              # Documentation site
-├── storybook/         # Component storybook
-├── enterprise/        # Enterprise features
-├── containers/        # Container images
-├── extensions/        # IDE extensions
-├── function/          # Serverless functions
-├── identity/          # Auth/identity
-├── script/            # Build scripts
-└── slack/             # Slack integration
+└── ...
 ```
 
 ### Key Directories in `packages/opencode/src/`
 
-| Directory      | Purpose                                                           |
-| -------------- | ----------------------------------------------------------------- |
-| `agent/`       | Agent definitions (build, plan, explore, dream, compaction)       |
-| `cli/cmd/tui/` | TUI application (SolidJS + opentui)                               |
-| `lsp/`         | LSP client/server management                                      |
-| `provider/`    | 30+ AI provider integrations                                      |
-| `session/`     | Session lifecycle, LLM streaming, compaction, prompting           |
-| `tool/`        | 25+ built-in tools (bash, edit, read, write, grep, glob, task...) |
-| `config/`      | Configuration loading and schema                                  |
-| `mcp/`         | Model Context Protocol client management                          |
-| `plugin/`      | Plugin system with GitHub Copilot, Codex, GitLab integrations     |
-| `permission/`  | Permission system (ask/allow/deny with pattern matching)          |
-| `snapshot/`    | Git-based snapshot tracking for undo/redo                         |
+| Directory      | Purpose                                                               |
+| -------------- | --------------------------------------------------------------------- |
+| `agent/`       | Agent definitions (build, plan, explore, dream, compaction, observer) |
+| `session/om/`  | Observational Memory: buffer state machine, Observer LLM, CRUD        |
+| `session/`     | Session lifecycle, LLM streaming, compaction, prompting               |
+| `dream/`       | AutoDream consolidation agent + Engram auto-install                   |
+| `cli/cmd/tui/` | TUI application (SolidJS + opentui)                                   |
+| `lsp/`         | LSP client/server management                                          |
+| `provider/`    | 30+ AI provider integrations                                          |
+| `tool/`        | 25+ built-in tools (bash, edit, read, write, grep, glob, task…)       |
+| `config/`      | Configuration loading and schema                                      |
+| `mcp/`         | Model Context Protocol client management                              |
+| `plugin/`      | Plugin system with GitHub Copilot, Codex, GitLab integrations         |
+| `permission/`  | Permission system (ask/allow/deny with pattern matching)              |
+| `snapshot/`    | Git-based snapshot tracking for undo/redo                             |
 
-## Documentation
-
-- **[Quickstart Guide](docs/QUICKSTART.md)** — Get running in under 5 minutes
-- **[Fork Proposal](docs/PROPOSAL.md)** — Complete technical proposal with all features
-- **[Architecture](fork-arch-v2.md)** — Full directory and file inventory
-- **[Performance Features](docs/performance-features-spec.md)** — Tool concurrency, cache sorting, fork subagent
-- **[Streaming Tool Execution](docs/streaming-tool-execution-arch.md)** — Multi-step architecture
-- **[Batched LSP Diagnostics](docs/batched-lsp-diagnostics-spec.md)** — End-of-step diagnostics
-- **[Native Deferred Tools](docs/native-deferred-tools-spec.md)** — Provider-native tool deferral
-- **[Reactive Compaction](docs/reactive-compact-arch.md)** — Overflow recovery hardening
-- **[AutoDream](docs/autodream-proposal.md)** — Background memory consolidation
-- **[System Prompt Architecture](docs/system-prompt-architecture.md)** — How the system prompt is built
-- **[Commands & TUI](docs/commands-tui-architecture.md)** — Slash commands and dialog patterns
+---
 
 ## Agents
 
 LightCode includes the same built-in agents as OpenCode, plus additions:
 
-| Agent       | Access             | Purpose                                         |
-| ----------- | ------------------ | ----------------------------------------------- |
-| **build**   | Full               | Default agent for development work              |
-| **plan**    | Read-only          | Analysis and code exploration                   |
-| **general** | Full               | Complex searches and multistep tasks (subagent) |
-| **dream**   | Engram + read-only | Background memory consolidation                 |
+| Agent          | Access             | Purpose                                         |
+| -------------- | ------------------ | ----------------------------------------------- |
+| **build**      | Full               | Default agent for development work              |
+| **plan**       | Read-only          | Analysis and code exploration                   |
+| **general**    | Full               | Complex searches and multistep tasks (subagent) |
+| **dream**      | Engram + read-only | Background memory consolidation                 |
+| **compaction** | Read-only          | Summarizes history on context overflow          |
 
 Switch between `build` and `plan` with the `Tab` key.
+
+---
+
+## Documentation
+
+- **[Quickstart Guide](docs/QUICKSTART.md)** — Get running in under 5 minutes
+- **[Fork Proposal](docs/PROPOSAL.md)** — Complete technical proposal with all features
+- **[System Prompt Architecture](docs/system-prompt-architecture.md)** — system[0–3] layout, cache breakpoints, memory injection
+- **[Mastra OM Architecture](docs/mastra-om-arch.md)** — Deep dive into the Observational Memory design (Mastra-inspired)
+- **[AutoDream + Engram Integration](docs/autodream-engram-integration.md)** — Memory pipeline design rationale
+- **[Performance Features](docs/performance-features-spec.md)** — Tool concurrency, cache sorting, fork subagent
+- **[Streaming Tool Execution](docs/streaming-tool-execution-arch.md)** — Multi-step architecture
+- **[Batched LSP Diagnostics](docs/batched-lsp-diagnostics-spec.md)** — End-of-step diagnostics
+- **[Native Deferred Tools](docs/native-deferred-tools-spec.md)** — Provider-native tool deferral
+- **[Reactive Compaction](docs/reactive-compact-arch.md)** — Overflow recovery hardening
+- **[Commands & TUI](docs/commands-tui-architecture.md)** — Slash commands and dialog patterns
+- **[Memory Spec](openspec/specs/memory/spec.md)** — Living specification for the memory system
+
+---
 
 ## Upstream Sync
 
@@ -278,6 +358,8 @@ LightCode tracks the `dev` branch of OpenCode. All changes are additive or behin
 - Filesystem isolation (`~/.lightcode/`) prevents conflicts
 - Periodic rebase onto upstream `dev`
 
+---
+
 ## Contributing
 
 Follow the same guidelines as upstream OpenCode — see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -285,6 +367,8 @@ Follow the same guidelines as upstream OpenCode — see [CONTRIBUTING.md](CONTRI
 **For fork-specific changes**: Open an issue first describing the problem and proposed approach.
 
 **Style guide**: See [AGENTS.md](AGENTS.md) for code conventions (single-word names, no destructuring, early returns, Bun APIs).
+
+---
 
 ## License
 
