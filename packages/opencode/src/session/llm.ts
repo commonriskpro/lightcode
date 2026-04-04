@@ -3,7 +3,7 @@ import { Log } from "@/util/log"
 import { Cause, Effect, Layer, Record, ServiceMap } from "effect"
 import * as Queue from "effect/Queue"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool, tool, jsonSchema } from "ai"
+import { streamText, wrapLanguageModel, stepCountIs, type ModelMessage, type Tool, tool, jsonSchema } from "ai"
 import { mergeDeep, pipe } from "remeda"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
 import { ProviderTransform } from "@/provider/transform"
@@ -35,6 +35,7 @@ export namespace LLM {
     tools: Record<string, Tool>
     retries?: number
     toolChoice?: "auto" | "required" | "none"
+    maxSteps?: number
   }
 
   export type StreamRequest = StreamInput & {
@@ -258,6 +259,7 @@ export namespace LLM {
     }
 
     return streamText({
+      stopWhen: stepCountIs(input.maxSteps ?? 1),
       onError(error) {
         l.error("stream error", {
           error,

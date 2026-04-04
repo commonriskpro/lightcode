@@ -1590,6 +1590,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   tools,
                   model,
                   toolChoice: format.type === "json_schema" ? "required" : undefined,
+                  maxSteps: format.type === "json_schema" ? 1 : 5,
                 })
 
                 if (structured !== undefined) {
