@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import fs from "fs/promises"
 import path from "path"
 import { pathToFileURL } from "url"
 import type { Permission } from "../../src/permission"
@@ -27,7 +28,8 @@ describe("tool.skill", () => {
     await using tmp = await tmpdir({
       git: true,
       init: async (dir) => {
-        const skillDir = path.join(dir, ".opencode", "skill", "tool-skill")
+        const skillDir = path.join(dir, ".lightcode", "skill", "tool-skill")
+        await fs.mkdir(skillDir, { recursive: true })
         await Bun.write(
           path.join(skillDir, "SKILL.md"),
           `---
@@ -49,7 +51,7 @@ description: Skill for tool tests.
         directory: tmp.path,
         fn: async () => {
           const tool = await SkillTool.init()
-          const skillPath = path.join(tmp.path, ".opencode", "skill", "tool-skill", "SKILL.md")
+          const skillPath = path.join(tmp.path, ".lightcode", "skill", "tool-skill", "SKILL.md")
           expect(tool.description).toContain(`**tool-skill**: Skill for tool tests.`)
         },
       })
@@ -67,7 +69,8 @@ description: Skill for tool tests.
           ["alpha-skill", "Alpha skill."],
           ["middle-skill", "Middle skill."],
         ]) {
-          const skillDir = path.join(dir, ".opencode", "skill", name)
+          const skillDir = path.join(dir, ".lightcode", "skill", name)
+          await fs.mkdir(skillDir, { recursive: true })
           await Bun.write(
             path.join(skillDir, "SKILL.md"),
             `---
@@ -112,7 +115,8 @@ description: ${description}
     await using tmp = await tmpdir({
       git: true,
       init: async (dir) => {
-        const skillDir = path.join(dir, ".opencode", "skill", "tool-skill")
+        const skillDir = path.join(dir, ".lightcode", "skill", "tool-skill")
+        await fs.mkdir(path.join(skillDir, "scripts"), { recursive: true })
         await Bun.write(
           path.join(skillDir, "SKILL.md"),
           `---
@@ -146,7 +150,7 @@ Use this skill.
           }
 
           const result = await tool.execute({ name: "tool-skill" }, ctx)
-          const dir = path.join(tmp.path, ".opencode", "skill", "tool-skill")
+          const dir = path.join(tmp.path, ".lightcode", "skill", "tool-skill")
           const file = path.resolve(dir, "scripts", "demo.txt")
 
           expect(requests.length).toBe(1)

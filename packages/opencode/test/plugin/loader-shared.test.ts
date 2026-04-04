@@ -76,7 +76,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
@@ -109,7 +109,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
@@ -145,7 +145,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
@@ -176,7 +176,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
@@ -215,7 +215,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
@@ -252,7 +252,7 @@ describe("plugin.loader.shared", () => {
         await Bun.write(path.join(scope, "index.js"), "export default { server: async () => ({}) }\n")
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: ["acme-plugin", "scope-plugin@2.3.4"] }, null, 2),
         )
 
@@ -314,7 +314,7 @@ describe("plugin.loader.shared", () => {
         )
         await Bun.write(path.join(mod, "tui.js"), "export default {}\n")
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
 
         return {
           mod,
@@ -371,7 +371,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
 
         return {
           mod,
@@ -424,7 +424,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
 
         return {
           mod,
@@ -473,7 +473,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
 
         return { mod, mark }
       },
@@ -534,7 +534,7 @@ describe("plugin.loader.shared", () => {
         )
         await fs.symlink(outside, path.join(mod, "escape"), process.platform === "win32" ? "junction" : "dir")
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["acme-plugin"] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: ["acme-plugin"] }, null, 2))
 
         return {
           mod,
@@ -562,7 +562,7 @@ describe("plugin.loader.shared", () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify(
             {
               plugin: ["opencode-openai-codex-auth@1.0.0", "opencode-copilot-auth@1.0.0", "regular-plugin@1.0.0"],
@@ -591,7 +591,7 @@ describe("plugin.loader.shared", () => {
   test("publishes session.error when install fails", async () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: ["broken-plugin@9.9.9"] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: ["broken-plugin@9.9.9"] }, null, 2))
       },
     })
 
@@ -625,7 +625,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: [file] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: [file] }, null, 2))
 
         return { file }
       },
@@ -645,7 +645,7 @@ describe("plugin.loader.shared", () => {
           ["export default {", '  id: "demo.invalid",', "  nope: true,", "}", ""].join("\n"),
         )
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: [file] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: [file] }, null, 2))
 
         return { file }
       },
@@ -660,7 +660,7 @@ describe("plugin.loader.shared", () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
         const missing = pathToFileURL(path.join(dir, "missing-plugin.ts")).href
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: [missing] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: [missing] }, null, 2))
 
         return { missing }
       },
@@ -692,7 +692,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
@@ -725,7 +725,7 @@ describe("plugin.loader.shared", () => {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [[pathToFileURL(file).href, { source: "tuple", enabled: true }]] }, null, 2),
         )
 
@@ -778,7 +778,7 @@ export default {
 `,
         )
 
-        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ plugin: [aSpec, bSpec] }, null, 2))
+        await Bun.write(path.join(dir, "lightcode.json"), JSON.stringify({ plugin: [aSpec, bSpec] }, null, 2))
 
         return { marker }
       },
@@ -809,7 +809,7 @@ export default {
         )
 
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
         )
 
