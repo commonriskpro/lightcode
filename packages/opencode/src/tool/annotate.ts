@@ -972,13 +972,25 @@ export const AnnotateTool = Tool.define("annotate", {
         }
       })
 
-      // For etch mode: capture before-state and start watching BEFORE user edits
+      // For etch mode: resolve selectors once, capture before-state and start watching BEFORE user edits
       let etchBefore: Awaited<ReturnType<typeof take>> | undefined
+      let resolvedEtchSelectors: string[] | undefined
       if (args.mode === "etch") {
         const etchTargets = args.track ?? args.selectors
-        const resolved = etchTargets?.length ? etchTargets : (await pick(page, undefined, 20)).map((e) => e.selector)
+        resolvedEtchSelectors = etchTargets?.length
+          ? etchTargets
+          : (await pick(page, undefined, 20)).map((e) => e.selector)
         await watch(page)
-        etchBefore = await take(page, resolved)
+        etchBefore = await take(page, resolvedEtchSelectors)
+      }
+
+      live = {
+        page,
+        started: Date.now(),
+        mode: args.mode,
+        // Store the RESOLVED selectors so complete uses the exact same set
+        etchSelectors: resolvedEtchSelectors,
+        etchBefore,
       }
 
       live = {
@@ -1010,9 +1022,8 @@ export const AnnotateTool = Tool.define("annotate", {
       const duration = Date.now() - live.started
 
       if (live.mode === "etch") {
-        const target = live.etchSelectors?.length
-          ? live.etchSelectors
-          : (await pick(live.page, undefined, 20)).map((e) => e.selector)
+        // etchSelectors is always resolved at start — use it directly
+        const target = live.etchSelectors ?? []
         const [afterShot, afterStyles, mutations, title] = await Promise.all([
           shot(live.page, true, "png"),
           styles(live.page, target),
