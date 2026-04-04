@@ -33,6 +33,7 @@ import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogFeature } from "./component/dialog-feature"
+import { DialogDreamModel } from "./component/dialog-dream-model"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
@@ -692,6 +693,17 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogFeature />)
+      },
+      category: "System",
+    },
+    {
+      title: "AutoDream Model",
+      value: "dream.model",
+      slash: {
+        name: "dreammodel",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogDreamModel />)
       },
       category: "System",
     },

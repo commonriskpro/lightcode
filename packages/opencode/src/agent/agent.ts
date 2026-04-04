@@ -238,6 +238,9 @@ export namespace Agent {
               mode: "subagent",
               native: true,
               hidden: true,
+              ...(cfg.experimental?.autodream_model
+                ? { model: Provider.parseModel(cfg.experimental.autodream_model) }
+                : {}),
               permission: Permission.merge(
                 defaults,
                 Permission.fromConfig({

@@ -1036,6 +1036,10 @@ export namespace Config {
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
           autodream: z.boolean().optional().describe("Enable automatic memory consolidation via Engram after sessions"),
+          autodream_model: z
+            .string()
+            .optional()
+            .describe("Model to use for AutoDream consolidation (format: provider/model). Defaults to session model."),
         })
         .optional(),
     })

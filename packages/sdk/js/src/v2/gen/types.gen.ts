@@ -1624,6 +1624,10 @@ export type Config = {
      * Enable automatic memory consolidation via Engram after sessions
      */
     autodream?: boolean
+    /**
+     * Model to use for AutoDream consolidation (format: provider/model). Defaults to session model.
+     */
+    autodream_model?: string
   }
 }
 
