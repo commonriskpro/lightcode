@@ -51,10 +51,21 @@ export namespace Engram {
     }
   }
 
+  type Registrar = (name: string, config: { type: "local"; command: string[] }) => Promise<void>
+
+  let registrar: Registrar = async (name, config) => {
+    await MCP.add(name, config)
+  }
+
+  /** Inject an SDK-backed registrar for TUI context */
+  export function setRegistrar(fn: Registrar) {
+    registrar = fn
+  }
+
   async function register(bin: string): Promise<void> {
     log.info("auto-registering engram MCP", { bin })
     try {
-      await MCP.add(MCP_NAME, {
+      await registrar(MCP_NAME, {
         type: "local" as const,
         command: [bin, "mcp", "--tools=agent"],
       })
