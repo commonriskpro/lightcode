@@ -1,6 +1,22 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { createMemo, Show } from "solid-js"
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Global } from "@/global"
+import { AutoDream } from "@/dream"
+
+const DREAM_FRAMES = [
+  "☁     dreaming   ",
+  "☁ ☁   dreaming.  ",
+  "☁   ☁  dreaming..",
+  "☁     ☁ dreaming…",
+  "☁   ☁  dreaming..",
+  "☁ ☁   dreaming.  ",
+  "✦ ☁   dreaming   ",
+  "✦ ☁ ✦ dreaming.  ",
+  "✦  ☁ ✦ dreaming..",
+  "✦ ☁ ✦  dreaming… ",
+  "✦ ☁   dreaming.  ",
+  "☁     dreaming   ",
+]
 
 const id = "internal:sidebar-footer"
 
@@ -13,6 +29,17 @@ function View(props: { api: TuiPluginApi }) {
   )
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
+  const [isDreaming, setIsDreaming] = createSignal(false)
+  const [frame, setFrame] = createSignal(0)
+
+  onMount(() => {
+    const poll = setInterval(() => {
+      const active = AutoDream.dreaming()
+      setIsDreaming(active)
+      if (active) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
+    }, 400)
+    onCleanup(() => clearInterval(poll))
+  })
   const path = createMemo(() => {
     const dir = props.api.state.path.directory || process.cwd()
     const out = dir.replace(Global.Path.home, "~")
@@ -63,6 +90,9 @@ function View(props: { api: TuiPluginApi }) {
         <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
+      <Show when={isDreaming()}>
+        <text fg={theme().accent}>{DREAM_FRAMES[frame()]}</text>
+      </Show>
       <text fg={theme().textMuted}>
         <span style={{ fg: theme().success }}>•</span> <b>Open</b>
         <span style={{ fg: theme().text }}>
