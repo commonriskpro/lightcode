@@ -7,8 +7,14 @@ import { Engram } from "./engram"
 import { Bus } from "../bus"
 import { SessionStatus } from "../session/status"
 import { Session } from "../session"
+import { SessionPrompt } from "../session/prompt"
+import { MessageID } from "../session/schema"
 import { Config } from "../config/config"
 import { Flag } from "../flag/flag"
+import { Provider } from "../provider/provider"
+import { Agent } from "../agent/agent"
+
+import PROMPT from "./prompt.txt"
 
 export namespace AutoDream {
   const log = Log.create({ service: "autodream" })
@@ -62,6 +68,37 @@ export namespace AutoDream {
     }
   }
 
+  async function resolveModel() {
+    const cfg = await Config.get()
+    if (cfg.experimental?.autodream_model) return Provider.parseModel(cfg.experimental.autodream_model)
+    const agent = await Agent.get("dream")
+    if (agent?.model) return agent.model
+    throw new Error("No model configured for AutoDream. Set via /dreammodel or experimental.autodream_model")
+  }
+
+  async function spawn(focus?: string): Promise<string> {
+    const model = await resolveModel()
+
+    const session = await Session.create({
+      title: focus ? `Dream: ${focus}` : "AutoDream consolidation",
+    })
+
+    const prompt = focus ? `${PROMPT}\n\n## Focus\nPrioritize observations related to: ${focus}` : PROMPT
+
+    log.info("spawning dream session", { session: session.id, model })
+
+    const result = await SessionPrompt.prompt({
+      messageID: MessageID.ascending(),
+      sessionID: session.id,
+      model,
+      agent: "dream",
+      parts: [{ type: "text" as const, text: prompt }],
+    })
+
+    const text = result.parts.findLast((x) => x.type === "text")?.text ?? ""
+    return text || "Dream completed with no output"
+  }
+
   /** Manual trigger from /dream command — skips time/session/throttle gates */
   export async function run(focus?: string): Promise<string> {
     const available = await Engram.ensure()
@@ -77,9 +114,10 @@ export namespace AutoDream {
     try {
       _dreaming = true
       log.info("dream started", { focus })
+      const result = await spawn(focus)
       await writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: 0 })
       log.info("dream completed")
-      return "Dream consolidation triggered"
+      return result
     } catch (err) {
       log.error("dream failed", { error: err instanceof Error ? err.message : String(err) })
       return `Dream failed: ${err instanceof Error ? err.message : String(err)}`
@@ -89,7 +127,7 @@ export namespace AutoDream {
     }
   }
 
-  /** Auto trigger — full gate chain, fire-and-forget */
+  /** Auto trigger — full gate chain, fire-and-forget, background session */
   async function execute(): Promise<void> {
     // Gate 1: Feature flag
     if (!(await isEnabled())) return
@@ -121,10 +159,12 @@ export namespace AutoDream {
     try {
       _dreaming = true
       log.info("autodream started", { sessions: count })
+      await spawn()
       await writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: count })
       log.info("autodream completed")
     } catch (err) {
       log.error("autodream failed", { error: err instanceof Error ? err.message : String(err) })
+      // Don't update state on failure — allows retry next idle
     } finally {
       _dreaming = false
       await lock.release()
@@ -133,7 +173,7 @@ export namespace AutoDream {
 
   /** Subscribe to session idle events. Call at app startup. */
   export function init(): () => void {
-    return Bus.subscribe(SessionStatus.Event.Idle, (event) => {
+    return Bus.subscribe(SessionStatus.Event.Idle, () => {
       // Fire-and-forget, don't block the idle transition
       void execute().catch((err) => {
         log.error("autodream execute failed", { error: err instanceof Error ? err.message : String(err) })
