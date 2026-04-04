@@ -31,12 +31,22 @@ export function DialogFeature() {
   const sync = useSync()
   const sdk = useSDK()
   const [loading, setLoading] = createSignal<string | null>(null)
-  const [overrides, setOverrides] = createSignal<Record<string, boolean>>({})
+
+  // Local state tracks toggle results immediately without waiting for server roundtrip
+  const [local, setLocal] = createSignal<Record<string, boolean>>({})
+
+  function isEnabled(key: string, env: boolean): boolean {
+    const l = local()
+    if (key in l) return l[key]
+    const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
+    return exp?.[key] === true || env
+  }
 
   const features = createMemo((): Feature[] => {
-    const cfg = sync.data.config
-    const exp = cfg?.experimental
-    const ov = overrides()
+    // Track reactive dependencies
+    local()
+    sync.data.config
+
     return [
       {
         id: "deferred_tools",
@@ -44,21 +54,21 @@ export function DialogFeature() {
         description: "Lazy-load tools to reduce context usage",
         env: "OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS",
         config: "deferred_tools",
-        enabled: () => ov.deferred_tools ?? (exp?.deferred_tools === true || Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS),
+        enabled: () => isEnabled("deferred_tools", Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS),
       },
       {
         id: "batch_tool",
         title: "Batch Tool",
         description: "Run multiple tools in parallel",
         config: "batch_tool",
-        enabled: () => ov.batch_tool ?? exp?.batch_tool === true,
+        enabled: () => isEnabled("batch_tool", false),
       },
       {
         id: "continue_loop_on_deny",
         title: "Continue on Deny",
         description: "Keep agent loop running when a tool call is denied",
         config: "continue_loop_on_deny",
-        enabled: () => ov.continue_loop_on_deny ?? exp?.continue_loop_on_deny === true,
+        enabled: () => isEnabled("continue_loop_on_deny", false),
       },
       {
         id: "lsp_tool",
@@ -93,7 +103,7 @@ export function DialogFeature() {
         title: "OpenTelemetry",
         description: "Telemetry spans for AI SDK calls",
         config: "openTelemetry",
-        enabled: () => ov.openTelemetry ?? exp?.openTelemetry === true,
+        enabled: () => isEnabled("openTelemetry", false),
       },
     ]
   })
@@ -117,30 +127,24 @@ export function DialogFeature() {
 
         const feature = features().find((f) => f.id === option.value)
         if (!feature) return
-
-        // Env-only features can't be toggled at runtime
         if (!feature.config) return
 
-        setLoading(option.value)
-        try {
-          const cfg = sync.data.config
-          const key = feature.config as keyof NonNullable<typeof cfg.experimental>
-          const current = cfg?.experimental?.[key] === true
-          const next = !current
+        const current = feature.enabled()
+        const next = !current
 
+        // Update local state immediately for responsive UI
+        setLocal((prev) => ({ ...prev, [feature.config!]: next }))
+        setLoading(option.value)
+
+        try {
           await sdk.client.config.update({
             config: {
               experimental: { [feature.config]: next },
             },
           })
-
-          // Refresh config from server
-          const result = await sdk.client.config.get({}, { throwOnError: true })
-          if (result.data) {
-            sync.set("config", result.data)
-          }
-          setOverrides((prev) => ({ ...prev, [feature.id]: next }))
         } catch (error) {
+          // Revert local state on failure
+          setLocal((prev) => ({ ...prev, [feature.config!]: current }))
           console.error("Failed to toggle feature:", error)
         } finally {
           setLoading(null)

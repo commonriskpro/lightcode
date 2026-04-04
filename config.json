@@ -2,6 +2,8 @@
   "$schema": "https://opencode.ai/config.json",
   "experimental": {
     "batch_tool": true,
-    "openTelemetry": true
+    "deferred_tools": true,
+    "openTelemetry": true,
+    "continue_loop_on_deny": true
   }
 }
