@@ -146,7 +146,7 @@ export function DialogFeature() {
           })
           toast.show({
             title: feature.title,
-            message: next ? "Enabled — takes effect on next session" : "Disabled — takes effect on next session",
+            message: next ? "Enabled" : "Disabled",
             variant: next ? "success" : "info",
             duration: 2000,
           })
