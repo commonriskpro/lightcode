@@ -11,7 +11,7 @@ import {
   DEFAULT_LOCAL_EMBED_MODEL,
   ROUTER_INTENT_PROTOTYPES,
 } from "./router-embed"
-import { applyRouterPolicy, lexicalSignals, splitClauses } from "./router-policy"
+import { applyRouterPolicy, isWebIntentEmbed, lexicalSignals, splitClauses } from "./router-policy"
 import { threadHasAssistant } from "./wire-tier"
 
 const log = Log.create({ service: "tool-router" })
@@ -46,7 +46,7 @@ function estimateTokens(text: string): number {
  * **before** keyword rules (unless `keyword_rules: false`); then augment with **local embeddings** (`local_embed` / `local_embed_model`,
  * `@huggingface/transformers`, default `Xenova/paraphrase-multilingual-MiniLM-L12-v2`) or a **remote small LLM**
  * (`router_model`, `small_model`, `Provider.getSmallModel`). Local embed path takes precedence when enabled.
- * Default `keyword_rules` is **false** (embed-first); set **`keyword_rules: true`** to union regex `RULES` on the user text after intent merge. Policy gates still trim high-risk tools.
+ * Default `keyword_rules` is **false** (intent + local embed first); set **`keyword_rules: true`** to also union regex `RULES` on the user text. Lexical seeds (ask_me, question, strong_write, …) run either way. With `keyword_rules: true`, full tool descriptions apply to regex hits **and** semantic ids (intent/embed augment/lexical/sticky).
  *
  * **Conversation tier** (`contextTier: "conversation"`) comes **only** from local intent embed: `hybrid` + `local_embed` + `local_intent_embed`, and `classifyIntentEmbedMerged` must mark **conversation** exclusive (see `ROUTER_INTENT_PROTOTYPES`). No regex shortcuts for chit-chat; augment is skipped when conversation wins clearly.
  */
@@ -389,6 +389,7 @@ export namespace ToolRouter {
     let intentMerged: string[] = []
     let conversationExclusive = false
     let mergedFull: Awaited<ReturnType<typeof classifyIntentEmbedMerged>> | undefined
+    let intentEmbedWeb = false
 
     if (hybridIntent) {
       mergedFull = await classifyIntentEmbedMerged({
@@ -404,6 +405,7 @@ export namespace ToolRouter {
         intentPrimary = mergedFull.primary
         intentMerged = [...mergedFull.merged]
         conversationExclusive = mergedFull.conversationExclusive
+        intentEmbedWeb = isWebIntentEmbed(mergedFull.primary, mergedFull.labels)
       }
     }
 
@@ -429,6 +431,8 @@ export namespace ToolRouter {
     const max = autoPick ? (trLlm?.max_tools_cap ?? 100) : (tr?.max_tools ?? 12)
 
     const matched = new Set<string>()
+    /** Ids from intent embed, Xenova augment, lexical seeds, fallback — not regex RULES alone (for full tool descriptions when keyword_rules is on). */
+    const semanticIds = new Set<string>()
     const intentLabels: string[] = []
 
     const builtinAvailable = new Set([...available].filter((id) => !input.mcpIds.has(id)))
@@ -459,6 +463,7 @@ export namespace ToolRouter {
         if (!sub || sub.conversationExclusive) continue
         if (sub.primary === CONVERSATION_INTENT_LABEL) continue
         clauseHit = true
+        if (isWebIntentEmbed(sub.primary, sub.labels)) intentEmbedWeb = true
         if (!best || sub.score > best.score) best = { primary: sub.primary, score: sub.score }
         for (const id of sub.merged) bag.add(id)
       }
@@ -470,7 +475,10 @@ export namespace ToolRouter {
 
     if (hybridIntent && intentPrimary) {
       for (const id of intentMerged) {
-        if (builtinAvailable.has(id)) matched.add(id)
+        if (builtinAvailable.has(id)) {
+          matched.add(id)
+          semanticIds.add(id)
+        }
       }
       intentLabels.push(`intent:${intentPrimary}`)
     }
@@ -519,7 +527,10 @@ export namespace ToolRouter {
         })
         if (aug?.added.length) {
           hybridAugmented = true
-          for (const id of aug.added) matched.add(id)
+          for (const id of aug.added) {
+            matched.add(id)
+            semanticIds.add(id)
+          }
           if (!labels.some((l) => l.startsWith("embed:")))
             labels.push(aug.note ? `embed:${aug.note.slice(0, 100)}` : "embed/extra")
         }
@@ -533,42 +544,54 @@ export namespace ToolRouter {
       const sig = lexicalSignals(text)
       if (sig.strongWrite && builtinAvailable.has("write")) {
         matched.add("write")
+        semanticIds.add("write")
         strongWriteSeed = true
         if (!labels.some((l) => l === "lexical/strong_write")) labels.push("lexical/strong_write")
       }
-      if (!keywordRules) {
-        const lead = text.trim()
-        if (/^ask\s+me\b/i.test(lead) || /^pregúntame\b/i.test(lead)) {
-          askMeLead = true
-          if (builtinAvailable.has("question")) matched.add("question")
-          labels.push("hint/ask_me")
-        }
-        if (sig.questionIntent && builtinAvailable.has("question")) {
-          if (!matched.has("question")) lexicalHint = true
+      const lead = text.trim()
+      if (/^ask\s+me\b/i.test(lead) || /^pregúntame\b/i.test(lead)) {
+        askMeLead = true
+        if (builtinAvailable.has("question")) {
           matched.add("question")
-          if (!askMeLead) labels.push("hint/question_lexical")
+          semanticIds.add("question")
         }
-        if ((/^this$/i.test(lead) || /^this\s*\(/i.test(lead)) && builtinAvailable.has("grep")) {
-          matched.add("grep")
-          if (builtinAvailable.has("read")) matched.add("read")
-          if (builtinAvailable.has("question")) matched.add("question")
-          lexicalHint = true
-          labels.push("hint/edge_this")
+        labels.push("hint/ask_me")
+      }
+      if (sig.questionIntent && builtinAvailable.has("question")) {
+        if (!matched.has("question")) lexicalHint = true
+        matched.add("question")
+        semanticIds.add("question")
+        if (!askMeLead) labels.push("hint/question_lexical")
+      }
+      if ((/^this$/i.test(lead) || /^this\s*\(/i.test(lead)) && builtinAvailable.has("grep")) {
+        matched.add("grep")
+        semanticIds.add("grep")
+        if (builtinAvailable.has("read")) {
+          matched.add("read")
+          semanticIds.add("read")
         }
-        if (
-          /¿qué\s+hace/i.test(text) &&
-          /\b(?:en este repo|in this repo)\b/i.test(text) &&
-          builtinAvailable.has("grep")
-        ) {
-          matched.add("grep")
-          lexicalHint = true
-          labels.push("hint/repo_que_hace")
+        if (builtinAvailable.has("question")) {
+          matched.add("question")
+          semanticIds.add("question")
         }
-        if (/\bcreate\s+a\s+new\s+test\s+file\b/i.test(text) && builtinAvailable.has("write")) {
-          matched.add("write")
-          lexicalHint = true
-          labels.push("hint/new_test_file")
-        }
+        lexicalHint = true
+        labels.push("hint/edge_this")
+      }
+      if (
+        /¿qué\s+hace/i.test(text) &&
+        /\b(?:en este repo|in this repo)\b/i.test(text) &&
+        builtinAvailable.has("grep")
+      ) {
+        matched.add("grep")
+        semanticIds.add("grep")
+        lexicalHint = true
+        labels.push("hint/repo_que_hace")
+      }
+      if (/\bcreate\s+a\s+new\s+test\s+file\b/i.test(text) && builtinAvailable.has("write")) {
+        matched.add("write")
+        semanticIds.add("write")
+        lexicalHint = true
+        labels.push("hint/new_test_file")
       }
     }
 
@@ -591,7 +614,10 @@ export namespace ToolRouter {
     if (!hadRouterSignal && !routerOnly && tr?.no_match_fallback === true) {
       const fb = tr?.no_match_fallback_tools ?? ["glob", "grep", "read", "task"]
       for (const id of fb) {
-        if (builtinAvailable.has(id)) matched.add(id)
+        if (builtinAvailable.has(id)) {
+          matched.add(id)
+          semanticIds.add(id)
+        }
       }
       hadRouterSignal = true
       labels.push("fallback/no_match")
@@ -607,6 +633,7 @@ export namespace ToolRouter {
         for (const id of sticky) {
           if (builtinAvailable.has(id)) {
             matched.add(id)
+            semanticIds.add(id)
             stickyMerged = true
           }
         }
@@ -622,10 +649,11 @@ export namespace ToolRouter {
       clauses: clauses.length > 1 ? clauses : undefined,
       available: builtinAvailable,
       max,
+      intentEmbedWeb: intentEmbedWeb || undefined,
     })
     const ordered = policyIds.filter((id) => builtinAvailable.has(id))
 
-    // Tools matched by rules (or embed-only path: everything in `matched`) keep full descriptions; base-only tools get slim.
+    // Full descriptions: regex hits ∪ semantic path (intent/embed/lexical/sticky/fallback). With keyword_rules off, all `matched` counts.
     const ruleMatched = new Set<string>()
     if (keywordRules) {
       for (const r of RULES) {
@@ -633,6 +661,7 @@ export namespace ToolRouter {
           for (const id of r.add) ruleMatched.add(id)
         }
       }
+      for (const id of semanticIds) ruleMatched.add(id)
     } else {
       for (const id of matched) ruleMatched.add(id)
     }

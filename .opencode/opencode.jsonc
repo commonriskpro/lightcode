@@ -200,9 +200,9 @@
       // Sin no_match_fallback: solo tools que elijan intent/embed/reglas/sticky/fallback vacío (probar efectividad del router).
       "router_only": false,
       "no_match_fallback": false,
-      // hybrid + Xenova: intención (prototipos) + similitud tool↔mensaje; sin reglas regex ni LLM remoto del router.
+      // hybrid + Xenova: intención (prototipos) + similitud tool↔mensaje. keyword_rules false = embed/intent primero; true = también une RULES regex (más ruido).
       "mode": "hybrid",
-      "keyword_rules": true,
+      "keyword_rules": false,
       "local_embed": true,
       "local_intent_embed": true,
       "local_embed_model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
@@ -213,7 +213,7 @@
       "max_tools_cap": 100,
       "local_embed_top_k": 4,
       "local_embed_min_score": 0.26,
-      "additive": false,
+      "additive": true,
       "apply_after_first_assistant": false,
       "inject_prompt": true,
       "max_tools": 100,

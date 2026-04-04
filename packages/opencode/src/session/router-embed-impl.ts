@@ -211,6 +211,9 @@ export const BUILTIN_INTENT_PROTOTYPES: IntentPrototype[] = [
       "fetch content from website",
       "descargar desde la url",
       "Descarga https://nodejs.org/api/fs.html y resume el contenido",
+      "busca en instagram el perfil",
+      "abrir la url y resumir",
+      "acceder a la pagina web",
     ],
   },
   {
@@ -223,6 +226,8 @@ export const BUILTIN_INTENT_PROTOTYPES: IntentPrototype[] = [
       "investigar en internet sobre la herramienta",
       "busca en internet documentacion oficial de Postgres",
       "look up third party api online",
+      "buscar en instagram a un usuario",
+      "informacion en la web sobre",
     ],
   },
   {

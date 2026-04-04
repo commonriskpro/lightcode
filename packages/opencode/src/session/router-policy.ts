@@ -171,7 +171,20 @@ function forbidsShellExecution(text: string): boolean {
   )
 }
 
-function applyHardGates(ids: Set<string>, text: string, sig: LexicalSignals, multiClause?: boolean): Set<string> {
+/** True when offline intent embed selected web/url or web/research (trust web tools vs lexical-only gates). */
+export function isWebIntentEmbed(primary: string, labels?: string[]): boolean {
+  const w = (l: string) => l === "web/url" || l === "web/research"
+  if (w(primary)) return true
+  return labels?.some(w) ?? false
+}
+
+function applyHardGates(
+  ids: Set<string>,
+  text: string,
+  sig: LexicalSignals,
+  multiClause?: boolean,
+  intentEmbedWeb?: boolean,
+): Set<string> {
   const out = new Set(ids)
   if (out.has("task") && negatesTaskDelegation(text)) out.delete("task")
 
@@ -194,6 +207,7 @@ function applyHardGates(ids: Set<string>, text: string, sig: LexicalSignals, mul
 
   if (out.has("webfetch")) {
     const ok =
+      intentEmbedWeb ||
       sig.hasUrl ||
       /\b(fetch|curl|download)\s+(?:the\s+)?(?:page|url|site|content)\b/i.test(text)
     if (!ok) out.delete("webfetch")
@@ -201,6 +215,7 @@ function applyHardGates(ids: Set<string>, text: string, sig: LexicalSignals, mul
 
   if (out.has("websearch")) {
     const ok =
+      intentEmbedWeb ||
       sig.webResearch ||
       /\b(search|lookup|find)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online)\b/i.test(text) ||
       /\b(documentation|docs|reference)\s+(?:for|about|on)\b/i.test(text) ||
@@ -313,16 +328,19 @@ export type RouterPolicyInput = {
   clauses?: string[]
   available: Set<string>
   max: number
+  /** Intent embed classified web/url or web/research — do not strip websearch/webfetch for weak "internet" phrasing alone. */
+  intentEmbedWeb?: boolean
 }
 
 export function applyRouterPolicy(input: RouterPolicyInput): string[] {
   const multi = !!(input.clauses && input.clauses.length > 1)
   const sig = multi ? lexicalSignalsMerged(input.fullText, input.clauses!) : lexicalSignals(input.fullText)
+  const intentEmbed = input.intentEmbedWeb === true
   let s = new Set(input.ids)
   if (sig.hasUrl && s.has("websearch") && !s.has("webfetch") && input.available.has("webfetch")) {
     s.add("webfetch")
   }
-  s = applyHardGates(s, input.fullText, sig, multi)
+  s = applyHardGates(s, input.fullText, sig, multi, intentEmbed)
   s = resolveConflicts(s, input.fullText, sig, multi)
   s = addReadDeps(s, input.available)
   const filtered = [...s].filter((id) => input.available.has(id))

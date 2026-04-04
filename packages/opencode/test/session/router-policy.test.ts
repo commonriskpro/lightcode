@@ -134,6 +134,40 @@ describe("applyRouterPolicy websearch weak internet", () => {
   })
 })
 
+describe("applyRouterPolicy intent embed web", () => {
+  test("keeps websearch when intentEmbedWeb and text lacks busca en internet phrasing", () => {
+    const ids = new Set(["read", "websearch", "webfetch"])
+    const available = new Set(["read", "websearch", "webfetch"])
+    const t = "porque no puedes acceder a ig para encontrar mi nombre?"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+      intentEmbedWeb: true,
+    })
+    expect(out.includes("websearch")).toBe(true)
+    expect(out.includes("read")).toBe(true)
+  })
+
+  test("still strips web tools when user forbids web even if intentEmbedWeb", () => {
+    const ids = new Set(["read", "websearch", "webfetch"])
+    const available = new Set(["read", "websearch", "webfetch"])
+    const t = "Never use web search; only use the repo. Summarize AGENTS.md"
+    const out = applyRouterPolicy({
+      ids,
+      text: t,
+      fullText: t,
+      available,
+      max: 12,
+      intentEmbedWeb: true,
+    })
+    expect(out.includes("websearch")).toBe(false)
+    expect(out.includes("webfetch")).toBe(false)
+  })
+})
+
 describe("applyRouterPolicy web negation", () => {
   test("strips websearch and webfetch when user forbids web search", () => {
     const ids = new Set(["read", "websearch", "webfetch", "grep", "skill", "task"])
