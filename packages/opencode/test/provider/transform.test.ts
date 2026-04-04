@@ -1641,6 +1641,10 @@ describe("ProviderTransform.message - claude w/bedrock custom inference profile"
 
     const msgs = [
       {
+        role: "system",
+        content: "You are a helpful assistant",
+      },
+      {
         role: "user",
         content: "Hello",
       },
@@ -1648,6 +1652,7 @@ describe("ProviderTransform.message - claude w/bedrock custom inference profile"
 
     const result = ProviderTransform.message(msgs, model, {})
 
+    // system[0] gets a cache breakpoint (BP2)
     expect(result[0].providerOptions?.bedrock).toEqual(
       expect.objectContaining({
         cachePoint: {
@@ -1742,7 +1747,7 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     expect(result[0].providerOptions).toBeUndefined()
   })
 
-  test("non-gateway anthropic keeps existing cache control behavior", () => {
+  test("non-gateway anthropic uses 1hr TTL on system[0] (BP2)", () => {
     const model = createModel({
       providerID: "anthropic",
       api: {
@@ -1764,30 +1769,17 @@ describe("ProviderTransform.message - cache control on gateway", () => {
 
     const result = ProviderTransform.message(msgs, model, {}) as any[]
 
+    // system[0] gets BP2 with 1hr TTL for Anthropic
     expect(result[0].providerOptions).toEqual({
       anthropic: {
         cacheControl: {
           type: "ephemeral",
-        },
-      },
-      openrouter: {
-        cacheControl: {
-          type: "ephemeral",
+          ttl: "1h",
         },
       },
       bedrock: {
         cachePoint: {
           type: "default",
-        },
-      },
-      openaiCompatible: {
-        cache_control: {
-          type: "ephemeral",
-        },
-      },
-      copilot: {
-        copilot_cache_control: {
-          type: "ephemeral",
         },
       },
     })

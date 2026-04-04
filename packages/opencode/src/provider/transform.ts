@@ -189,49 +189,66 @@ export namespace ProviderTransform {
     return msgs
   }
 
-  function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-    const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
-    const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
+  // 5-minute TTL cache options — all providers
+  const CACHE_5M = {
+    anthropic: { cacheControl: { type: "ephemeral" } },
+    openrouter: { cacheControl: { type: "ephemeral" } },
+    bedrock: { cachePoint: { type: "default" } },
+    openaiCompatible: { cache_control: { type: "ephemeral" } },
+    copilot: { copilot_cache_control: { type: "ephemeral" } },
+  }
 
-    const providerOptions = {
-      anthropic: {
-        cacheControl: { type: "ephemeral" },
-      },
-      openrouter: {
-        cacheControl: { type: "ephemeral" },
-      },
-      bedrock: {
-        cachePoint: { type: "default" },
-      },
-      openaiCompatible: {
-        cache_control: { type: "ephemeral" },
-      },
-      copilot: {
-        copilot_cache_control: { type: "ephemeral" },
-      },
+  function isAnthropicLike(model: Provider.Model) {
+    return (
+      model.providerID === "anthropic" ||
+      model.providerID.includes("bedrock") ||
+      model.api.npm === "@ai-sdk/amazon-bedrock"
+    )
+  }
+
+  // 1-hour TTL cache options — Anthropic only, others fall back to 5min
+  function cacheOpts(model: Provider.Model, long: boolean) {
+    if (!long || !isAnthropicLike(model)) return CACHE_5M
+    return {
+      anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } },
+      bedrock: { cachePoint: { type: "default" } },
     }
+  }
 
-    for (const msg of unique([...system, ...final])) {
-      const useMessageLevelOptions =
-        model.providerID === "anthropic" ||
-        model.providerID.includes("bedrock") ||
-        model.api.npm === "@ai-sdk/amazon-bedrock"
-      const shouldUseContentOptions = !useMessageLevelOptions && Array.isArray(msg.content) && msg.content.length > 0
+  function applyBreakpoint(msg: ModelMessage, opts: Record<string, any>, model: Provider.Model) {
+    const messageLevel = isAnthropicLike(model)
+    const contentLevel = !messageLevel && Array.isArray(msg.content) && msg.content.length > 0
 
-      if (shouldUseContentOptions) {
-        const lastContent = msg.content[msg.content.length - 1]
-        if (
-          lastContent &&
-          typeof lastContent === "object" &&
-          lastContent.type !== "tool-approval-request" &&
-          lastContent.type !== "tool-approval-response"
-        ) {
-          lastContent.providerOptions = mergeDeep(lastContent.providerOptions ?? {}, providerOptions)
-          continue
-        }
+    if (contentLevel) {
+      const last = msg.content[msg.content.length - 1]
+      if (
+        last &&
+        typeof last === "object" &&
+        last.type !== "tool-approval-request" &&
+        last.type !== "tool-approval-response"
+      ) {
+        last.providerOptions = mergeDeep(last.providerOptions ?? {}, opts)
+        return
       }
+    }
+    msg.providerOptions = mergeDeep(msg.providerOptions ?? {}, opts)
+  }
 
-      msg.providerOptions = mergeDeep(msg.providerOptions ?? {}, providerOptions)
+  function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
+    // BP2: Agent prompt (system[0]) — 1hr TTL
+    // Most stable content: only changes on agent switch
+    const system = msgs.filter((msg) => msg.role === "system")
+    if (system[0]) applyBreakpoint(system[0], cacheOpts(model, true), model)
+
+    // BP3: Env + skills + instructions (system[1]) — 5min TTL
+    // Stable within a session (volatile data in system[2] is NOT cached)
+    if (system[1]) applyBreakpoint(system[1], cacheOpts(model, false), model)
+
+    // BP4: Second-to-last conversation message — 5min TTL
+    // Last message that WON'T change on the next turn — always a cache READ on turn N+1
+    const conversation = msgs.filter((msg) => msg.role !== "system")
+    if (conversation.length >= 3) {
+      applyBreakpoint(conversation[conversation.length - 2], cacheOpts(model, false), model)
     }
 
     return msgs

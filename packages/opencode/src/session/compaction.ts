@@ -19,6 +19,7 @@ import { Effect, Layer, ServiceMap } from "effect"
 import { makeRuntime } from "@/effect/run-service"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow } from "./overflow"
+import { CutPoint } from "./cut-point"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -138,55 +139,9 @@ export namespace SessionCompaction {
         }
       })
 
-      const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
-        parentID: MessageID
-        messages: MessageV2.WithParts[]
-        sessionID: SessionID
-        auto: boolean
-        overflow?: boolean
-      }) {
-        const parent = input.messages.findLast((m) => m.info.id === input.parentID)
-        if (!parent || parent.info.role !== "user") {
-          throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
-        }
-        const userMessage = parent.info
+      // --- Compaction prompt builders ---
 
-        let messages = input.messages
-        let replay:
-          | {
-              info: MessageV2.User
-              parts: MessageV2.Part[]
-            }
-          | undefined
-        if (input.overflow) {
-          const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
-          for (let i = idx - 1; i >= 0; i--) {
-            const msg = input.messages[i]
-            if (msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction")) {
-              replay = { info: msg.info, parts: msg.parts }
-              messages = input.messages.slice(0, i)
-              break
-            }
-          }
-          const hasContent =
-            replay && messages.some((m) => m.info.role === "user" && !m.parts.some((p) => p.type === "compaction"))
-          if (!hasContent) {
-            replay = undefined
-            messages = input.messages
-          }
-        }
-
-        const agent = yield* agents.get("compaction")
-        const model = agent.model
-          ? yield* provider.getModel(agent.model.providerID, agent.model.modelID)
-          : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID)
-        // Allow plugins to inject context or replace compaction prompt.
-        const compacting = yield* plugin.trigger(
-          "experimental.session.compacting",
-          { sessionID: input.sessionID },
-          { context: [], prompt: undefined },
-        )
-        const defaultPrompt = `Provide a detailed prompt for continuing our conversation above.
+      const FRESH_PROMPT = `Provide a detailed prompt for continuing our conversation above.
 Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next.
 The summary that you construct will be used so that another agent can read it and continue the work.
 Do not call any tools. Respond only with the summary text.
@@ -216,11 +171,63 @@ When constructing the summary, try to stick to this template:
 [Construct a structured list of relevant files that have been read, edited, or created that pertain to the task at hand. If all the files in a directory are relevant, include the path to the directory.]
 ---`
 
-        const prompt = compacting.prompt ?? [defaultPrompt, ...compacting.context].join("\n\n")
-        const msgs = structuredClone(messages)
+      function buildFreshPrompt(compacting: { prompt?: string; context: string[] }) {
+        if (compacting.prompt) return compacting.prompt
+        return [FRESH_PROMPT, ...compacting.context].join("\n\n")
+      }
+
+      function buildIterativePrompt(prev: string, compacting: { prompt?: string; context: string[] }) {
+        if (compacting.prompt) return compacting.prompt
+        const iterative = `UPDATE the following conversation summary with information from the new messages above.
+
+RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Accomplished section: mark completed items, add new ones
+- If previous Discoveries conflict with new information, keep the newer version
+- Do not call any tools. Respond only with the updated summary.
+- Respond in the same language as the user's messages in the conversation.
+
+PREVIOUS SUMMARY:
+---
+${prev}
+---
+
+Use the same template as the previous summary. Update it with the new information.`
+        return [iterative, ...compacting.context].join("\n\n")
+      }
+
+      function findPreviousSummary(msgs: MessageV2.WithParts[]): string | undefined {
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          const msg = msgs[i]
+          if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish && !msg.info.error) {
+            const text = msg.parts
+              .filter((p) => p.type === "text")
+              .map((p) => (p as MessageV2.TextPart).text)
+              .join("\n")
+            if (text.trim()) return text
+          }
+        }
+        return undefined
+      }
+
+      // --- Core: run the compaction LLM and return result ---
+
+      const runCompactionLLM = Effect.fn("SessionCompaction.runLLM")(function* (input: {
+        parentID: MessageID
+        sessionID: SessionID
+        userMessage: MessageV2.User
+        messages: MessageV2.WithParts[]
+        prompt: string
+        model: Provider.Model
+        agent: Agent.Info
+      }) {
+        const msgs = structuredClone(input.messages)
         yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
-        const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, { stripMedia: true })
+        const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, input.model, { stripMedia: true })
         const ctx = yield* InstanceState.context
+        const cfg = yield* config.get()
+        const maxTokens = Math.floor(0.8 * (cfg.compaction?.reserved ?? 20_000))
         const msg: MessageV2.Assistant = {
           id: MessageID.ascending(),
           role: "assistant",
@@ -228,48 +235,174 @@ When constructing the summary, try to stick to this template:
           sessionID: input.sessionID,
           mode: "compaction",
           agent: "compaction",
-          variant: userMessage.variant,
+          variant: input.userMessage.variant,
           summary: true,
-          path: {
-            cwd: ctx.directory,
-            root: ctx.worktree,
-          },
+          path: { cwd: ctx.directory, root: ctx.worktree },
           cost: 0,
-          tokens: {
-            output: 0,
-            input: 0,
-            reasoning: 0,
-            cache: { read: 0, write: 0 },
-          },
-          modelID: model.id,
-          providerID: model.providerID,
-          time: {
-            created: Date.now(),
-          },
+          tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: input.model.id,
+          providerID: input.model.providerID,
+          time: { created: Date.now() },
         }
         yield* session.updateMessage(msg)
         const processor = yield* processors.create({
           assistantMessage: msg,
           sessionID: input.sessionID,
-          model,
+          model: input.model,
         })
         const result = yield* processor
           .process({
-            user: userMessage,
-            agent,
+            user: input.userMessage,
+            agent: input.agent,
             sessionID: input.sessionID,
             tools: {},
             system: [],
-            messages: [
-              ...modelMessages,
-              {
-                role: "user",
-                content: [{ type: "text", text: prompt }],
-              },
-            ],
-            model,
+            messages: [...modelMessages, { role: "user", content: [{ type: "text", text: input.prompt }] }],
+            model: input.model,
           })
           .pipe(Effect.onInterrupt(() => processor.abort()))
+        return { result, processor }
+      })
+
+      // --- Main processCompaction ---
+
+      const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
+        parentID: MessageID
+        messages: MessageV2.WithParts[]
+        sessionID: SessionID
+        auto: boolean
+        overflow?: boolean
+      }) {
+        const parent = input.messages.findLast((m) => m.info.id === input.parentID)
+        if (!parent || parent.info.role !== "user") {
+          throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
+        }
+        const userMessage = parent.info
+
+        const agent = yield* agents.get("compaction")
+        const model = agent.model
+          ? yield* provider.getModel(agent.model.providerID, agent.model.modelID)
+          : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID)
+        const compacting = yield* plugin.trigger(
+          "experimental.session.compacting",
+          { sessionID: input.sessionID },
+          { context: [], prompt: undefined },
+        )
+        const cfg = yield* config.get()
+        const keepTokens = cfg.compaction?.keep ?? 20_000
+
+        // Try cut-point compaction first
+        const cut = CutPoint.find(input.messages, keepTokens)
+
+        // If overflow, verify the trigger message is in the keep zone for cut-point mode
+        if (input.overflow && cut.type === "cut") {
+          const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
+          const triggerIdx = (() => {
+            for (let i = idx - 1; i >= 0; i--) {
+              const msg = input.messages[i]
+              if (msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction")) return i
+            }
+            return -1
+          })()
+          // If trigger message would be summarized away, fall back to full replacement
+          if (triggerIdx >= 0 && triggerIdx < (cut.cutIndex ?? 0)) {
+            cut.type = "full" as "cut" | "full"
+            cut.summarize = input.messages
+            cut.keep = []
+            cut.cutIndex = undefined
+          }
+        }
+
+        if (cut.type === "cut") {
+          // --- CUT-POINT PATH: summarize old, keep recent verbatim ---
+          log.info("cut-point compaction", {
+            summarize: cut.summarize.length,
+            keep: cut.keep.length,
+            cutIndex: cut.cutIndex,
+          })
+
+          const prev = findPreviousSummary(cut.summarize)
+          const prompt = prev ? buildIterativePrompt(prev, compacting) : buildFreshPrompt(compacting)
+
+          const { result, processor } = yield* runCompactionLLM({
+            parentID: input.parentID,
+            sessionID: input.sessionID,
+            userMessage,
+            messages: cut.summarize,
+            prompt,
+            model,
+            agent,
+          })
+
+          if (result === "compact") {
+            processor.message.error = new MessageV2.ContextOverflowError({
+              message: "Session too large to compact - context exceeds model limit even after stripping media",
+            }).toObject()
+            processor.message.finish = "error"
+            yield* session.updateMessage(processor.message)
+            return "stop"
+          }
+
+          // Keep zone messages are preserved — no replay needed.
+          // If auto compaction, add a continue prompt for the agent to resume.
+          if (result === "continue" && input.auto && !input.overflow) {
+            const continueMsg = yield* session.updateMessage({
+              id: MessageID.ascending(),
+              role: "user",
+              sessionID: input.sessionID,
+              time: { created: Date.now() },
+              agent: userMessage.agent,
+              model: userMessage.model,
+            })
+            yield* session.updatePart({
+              id: PartID.ascending(),
+              messageID: continueMsg.id,
+              sessionID: input.sessionID,
+              type: "text",
+              synthetic: true,
+              text: "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+              time: { start: Date.now(), end: Date.now() },
+            })
+          }
+
+          if (processor.message.error) return "stop"
+          if (result === "continue") yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+          return result
+        }
+
+        // --- FULL REPLACEMENT PATH: existing behavior as fallback ---
+        let messages = input.messages
+        let replay: { info: MessageV2.User; parts: MessageV2.Part[] } | undefined
+        if (input.overflow) {
+          const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
+          for (let i = idx - 1; i >= 0; i--) {
+            const msg = input.messages[i]
+            if (msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction")) {
+              replay = { info: msg.info, parts: msg.parts }
+              messages = input.messages.slice(0, i)
+              break
+            }
+          }
+          const hasContent =
+            replay && messages.some((m) => m.info.role === "user" && !m.parts.some((p) => p.type === "compaction"))
+          if (!hasContent) {
+            replay = undefined
+            messages = input.messages
+          }
+        }
+
+        const prev = findPreviousSummary(messages)
+        const prompt = prev ? buildIterativePrompt(prev, compacting) : buildFreshPrompt(compacting)
+
+        const { result, processor } = yield* runCompactionLLM({
+          parentID: input.parentID,
+          sessionID: input.sessionID,
+          userMessage,
+          messages,
+          prompt,
+          model,
+          agent,
+        })
 
         if (result === "compact") {
           processor.message.error = new MessageV2.ContextOverflowError({
@@ -333,10 +466,7 @@ When constructing the summary, try to stick to this template:
               type: "text",
               synthetic: true,
               text,
-              time: {
-                start: Date.now(),
-                end: Date.now(),
-              },
+              time: { start: Date.now(), end: Date.now() },
             })
           }
         }

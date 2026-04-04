@@ -126,6 +126,9 @@ export namespace LLM {
       system.length = 0
       system.push(header, rest.join("\n"))
     }
+    // Append volatile context as system[2] — NOT cached by applyCaching
+    // (applyCaching only places breakpoints on system[0] and system[1])
+    system.push(SystemPrompt.volatile(input.model))
 
     const variant =
       !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}

@@ -1013,6 +1013,12 @@ export namespace Config {
             .min(0)
             .optional()
             .describe("Token buffer for compaction. Leaves enough window to avoid overflow during compaction."),
+          keep: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe("Tokens of recent conversation to keep verbatim after cut-point compaction (default: 20000)."),
         })
         .optional(),
       experimental: z

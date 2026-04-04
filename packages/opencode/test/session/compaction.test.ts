@@ -413,7 +413,7 @@ describe("session.compaction.isOverflow", () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "lightcode.json"),
           JSON.stringify({
             compaction: { auto: false },
           }),
