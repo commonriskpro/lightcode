@@ -1046,6 +1046,12 @@ export namespace Config {
             .string()
             .optional()
             .describe("Model to use for AutoDream consolidation (format: provider/model). Defaults to session model."),
+          observer: z
+            .boolean()
+            .optional()
+            .describe(
+              "Enable background observational memory — compresses message history every 30k tokens. Requires Engram.",
+            ),
           observer_model: z
             .string()
             .optional()

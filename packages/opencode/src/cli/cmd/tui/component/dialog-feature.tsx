@@ -110,10 +110,17 @@ export function DialogFeature() {
       {
         id: "autodream",
         title: "AutoDream",
-        description: "Automatic memory consolidation via Engram",
+        description: "Consolidate session memory to Engram when idle",
         env: "OPENCODE_EXPERIMENTAL_AUTODREAM",
         config: "autodream",
         enabled: () => isEnabled("autodream", Flag.OPENCODE_EXPERIMENTAL_AUTODREAM),
+      },
+      {
+        id: "observer",
+        title: "Observer Memory",
+        description: "Compress message history every 30k tokens (requires Engram)",
+        config: "observer",
+        enabled: () => isEnabled("observer", false),
       },
     ]
   })

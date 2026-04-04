@@ -45,8 +45,8 @@ export namespace Observer {
     if (chunks.length <= 1) return joined
 
     const cfg = await Config.get()
-    const modelStr = cfg.experimental?.observer_model
-    if (!modelStr) return joined
+    if (cfg.experimental?.observer === false) return joined
+    const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
 
     const parsed = Provider.parseModel(modelStr)
     const model = await Provider.getModel(parsed.providerID, parsed.modelID).catch(() => undefined)
@@ -77,6 +77,8 @@ export namespace Observer {
     prev?: string
   }): Promise<string | undefined> {
     const cfg = await Config.get()
+    // Respect explicit opt-out — observer: false disables even the default model
+    if (cfg.experimental?.observer === false) return undefined
     // Default to gemini-2.5-flash — cheap, fast, 1M context. Ideal for background observation.
     const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
 
