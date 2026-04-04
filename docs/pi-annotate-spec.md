@@ -124,7 +124,7 @@ Then LightCode captures the "before" state:
 When I make CSS changes via DevTools (or page.evaluate)
 Then MutationObserver detects the changes
 
-When I run /annotate-complete
+When I complete the etch session
 Then LightCode captures the "after" state
 And generates a diff:
 - Changed properties
@@ -335,7 +335,7 @@ Verify: box has top, left, width, height >= 0
 ```
 Input: /annotate https://example.com --mode etch
 Action: Make CSS change
-Input: /annotate-complete
+Action: Complete etch session
 Verify: changes array is not empty
 Verify: before/after screenshots are different
 ```

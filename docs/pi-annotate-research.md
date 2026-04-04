@@ -109,8 +109,8 @@ Pi Extension ↔ Unix Socket ↔ Native Host ↔ Chrome Native Messaging ↔ Chr
 
 ### Phase 5: Integration
 
-- [ ] `/annotate` command registration
-- [ ] Tool registration (showAnnotations, hideAnnotations)
+- [ ] Tool registration in `ToolRegistry`
+- [ ] Optional slash alias via project/user command config
 - [ ] Output formatting for LLM context
 
 ---
@@ -175,7 +175,7 @@ interface AnnotationElement {
 
 - `packages/opencode/src/tool/annotate.ts` - Main annotation tool
 - `packages/opencode/src/tool/browser.ts` - Puppeteer browser management
-- `packages/opencode/src/tool/types.ts` - Shared types
+- `packages/opencode/src/tool/annotate-types.ts` - Shared types
 - `packages/opencode/src/tool/picker.ts` - Element picker logic
 - `packages/opencode/src/tool/etch.ts` - Edit capture mode
 

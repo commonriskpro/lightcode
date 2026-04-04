@@ -36,6 +36,7 @@ import { makeRuntime } from "@/effect/run-service"
 import { Env } from "../env"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
+import { AnnotateTool } from "./annotate"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -140,6 +141,7 @@ export namespace ToolRegistry {
         const lsp = yield* build(LspTool)
         const batch = yield* build(BatchTool)
         const plan = yield* build(PlanExitTool)
+        const annotate = yield* build(AnnotateTool)
 
         const toolSearch = yield* build(ToolSearchTool)
 
@@ -173,6 +175,7 @@ export namespace ToolRegistry {
             defer(safe(code), "Search code via Context7"),
             defer(patch, "Apply unified diff patches"),
             ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(safe(lsp), "Language server diagnostics and hover")] : []),
+            defer(annotate, "Open URL and return visual annotations via Puppeteer"),
             ...(cfg.experimental?.batch_tool === true ? [defer(batch, "Run multiple tools in parallel")] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [plan] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS || cfg.experimental?.deferred_tools === true

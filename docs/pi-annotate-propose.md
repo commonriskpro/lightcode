@@ -178,7 +178,7 @@ LightCode: Returns structured output to LLM context
 | ---------------------------------------- | ------------------------ |
 | `packages/opencode/package.json`         | Add puppeteer dependency |
 | `packages/opencode/src/tool/registry.ts` | Register annotate tool   |
-| `packages/opencode/src/command/index.ts` | Add /annotate command    |
+| Project/user command config (optional)   | Add `/annotate` alias    |
 
 ---
 

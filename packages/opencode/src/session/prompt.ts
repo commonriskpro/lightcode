@@ -1770,121 +1770,293 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         },
       )
 
-      const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
-        log.info("command", input)
-        const cmd = yield* commands.get(input.command)
-        if (!cmd) {
-          const available = (yield* commands.list()).map((c) => c.name)
-          const hint = available.length ? ` Available commands: ${available.join(", ")}` : ""
-          const error = new NamedError.Unknown({ message: `Command not found: "${input.command}".${hint}` })
-          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
-          throw error
-        }
-        const agentName = cmd.agent ?? input.agent ?? (yield* agents.defaultAgent())
-
-        const raw = input.arguments.match(argsRegex) ?? []
-        const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
-        const templateCommand = yield* Effect.promise(async () => cmd.template)
-
-        const placeholders = templateCommand.match(placeholderRegex) ?? []
-        let last = 0
-        for (const item of placeholders) {
-          const value = Number(item.slice(1))
-          if (value > last) last = value
+      const nativeAnnotate: (input: CommandInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn(
+        "SessionPrompt.nativeAnnotate",
+      )(function* (input: CommandInput) {
+        const session = yield* sessions.get(input.sessionID)
+        if (session.revert) {
+          yield* Effect.promise(() => SessionRevert.cleanup(session))
         }
 
-        const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
-          const position = Number(index)
-          const argIndex = position - 1
-          if (argIndex >= args.length) return ""
-          if (position === last) return args.slice(argIndex).join(" ")
-          return args[argIndex]
-        })
-        const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
-        let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
-
-        if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
-          template = template + "\n\n" + input.arguments
-        }
-
-        const shellMatches = ConfigMarkdown.shell(template)
-        if (shellMatches.length > 0) {
-          const sh = Shell.preferred()
-          const results = yield* Effect.promise(() =>
-            Promise.all(
-              shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
-            ),
-          )
-          let index = 0
-          template = template.replace(bashRegex, () => results[index++])
-        }
-        template = template.trim()
-
-        const taskModel = yield* Effect.gen(function* () {
-          if (cmd.model) return Provider.parseModel(cmd.model)
-          if (cmd.agent) {
-            const cmdAgent = yield* agents.get(cmd.agent)
-            if (cmdAgent?.model) return cmdAgent.model
-          }
-          if (input.model) return Provider.parseModel(input.model)
-          return yield* lastModel(input.sessionID)
-        })
-
-        yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
-
-        const agent = yield* agents.get(agentName)
-        if (!agent) {
+        const cmdAgent = input.agent ?? (yield* agents.defaultAgent())
+        const ag = yield* agents.get(cmdAgent)
+        if (!ag) {
           const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
           const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-          const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
-          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
-          throw error
+          const err = new NamedError.Unknown({ message: `Agent not found: "${cmdAgent}".${hint}` })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: err.toObject() })
+          throw err
         }
 
-        const templateParts = yield* resolvePromptParts(template)
-        const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
-        const parts = isSubtask
-          ? [
-              {
-                type: "subtask" as const,
-                agent: agent.name,
-                description: cmd.description ?? "",
-                command: input.command,
-                model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
-                prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
-              },
-            ]
-          : [...templateParts, ...(input.parts ?? [])]
+        const model = input.model ? Provider.parseModel(input.model) : yield* lastModel(input.sessionID)
+        yield* getModel(model.providerID, model.modelID, input.sessionID)
 
-        const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultAgent())) : agentName
-        const userModel = isSubtask
-          ? input.model
-            ? Provider.parseModel(input.model)
-            : yield* lastModel(input.sessionID)
-          : taskModel
+        const tools = yield* registry.tools({ providerID: model.providerID, modelID: model.modelID }, ag)
+        const annotate = tools.find((item) => item.id === "annotate")
+        if (!annotate) {
+          const err = new NamedError.Unknown({ message: 'Tool "annotate" is not available for this model/agent.' })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: err.toObject() })
+          throw err
+        }
 
-        yield* plugin.trigger(
-          "command.execute.before",
-          { command: input.command, sessionID: input.sessionID, arguments: input.arguments },
-          { parts },
-        )
+        const args = input.arguments.match(argsRegex) ?? []
+        const first = args[0]?.replace(quoteTrimRegex, "")
+        const action =
+          input.command === "annotate" ? "start" : input.command === "annotate-complete" ? "complete" : "cancel"
+        const data = {
+          action,
+          mode: "picker",
+          headed: true,
+          elementScreenshots: false,
+          fullPage: true,
+          max: 100,
+          wait: 1500,
+          closeOnComplete: true,
+          ...(first && action === "start" ? { url: first } : {}),
+        }
 
-        const result = yield* prompt({
+        const user: MessageV2.User = {
+          id: input.messageID ?? MessageID.ascending(),
           sessionID: input.sessionID,
-          messageID: input.messageID,
-          model: userModel,
-          agent: userAgent,
-          parts,
+          role: "user",
+          time: { created: Date.now() },
+          agent: ag.name,
+          model: { providerID: model.providerID, modelID: model.modelID },
           variant: input.variant,
-        })
-        yield* bus.publish(Command.Event.Executed, {
-          name: input.command,
+        }
+        yield* sessions.updateMessage(user)
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
           sessionID: input.sessionID,
-          arguments: input.arguments,
-          messageID: result.info.id,
-        })
-        return result
+          type: "text",
+          text: `/${input.command}${input.arguments.trim() ? ` ${input.arguments.trim()}` : ""}`,
+        } satisfies MessageV2.TextPart)
+
+        const ctx = yield* InstanceState.context
+        const msg: MessageV2.Assistant = {
+          id: MessageID.ascending(),
+          sessionID: input.sessionID,
+          parentID: user.id,
+          mode: ag.name,
+          agent: ag.name,
+          cost: 0,
+          path: { cwd: ctx.directory, root: ctx.worktree },
+          time: { created: Date.now() },
+          role: "assistant",
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: model.modelID,
+          providerID: model.providerID,
+        }
+        yield* sessions.updateMessage(msg)
+
+        const part: MessageV2.ToolPart = {
+          type: "tool",
+          id: PartID.ascending(),
+          messageID: msg.id,
+          sessionID: input.sessionID,
+          tool: "annotate",
+          callID: ulid(),
+          state: {
+            status: "running",
+            input: data,
+            time: { start: Date.now() },
+          },
+        }
+        yield* sessions.updatePart(part)
+        const started = Date.now()
+
+        const toolCtx: Tool.Context = {
+          sessionID: input.sessionID,
+          messageID: msg.id,
+          callID: part.callID,
+          abort: new AbortController().signal,
+          agent: ag.name,
+          messages: [],
+          metadata: (item) => {
+            part.state = {
+              status: "running",
+              input: data,
+              title: item.title,
+              metadata: item.metadata,
+              time: { start: started },
+            }
+            void Effect.runFork(sessions.updatePart(part))
+          },
+          ask: (req) =>
+            Effect.runPromise(
+              permission.ask({
+                ...req,
+                sessionID: input.sessionID,
+                tool: { messageID: msg.id, callID: part.callID },
+                ruleset: Permission.merge(ag.permission, session.permission ?? []),
+              }),
+            ),
+        }
+
+        const out = yield* Effect.promise(() => annotate.execute(data, toolCtx)).pipe(Effect.exit)
+        if (Exit.isFailure(out)) {
+          const err = Cause.squash(out.cause)
+          part.state = {
+            status: "error",
+            input: data,
+            error: err instanceof Error ? err.message : String(err),
+            time: { start: started, end: Date.now() },
+          }
+          yield* sessions.updatePart(part)
+          return yield* Effect.failCause(out.cause)
+        }
+
+        part.state = {
+          status: "completed",
+          input: data,
+          output: out.value.output,
+          title: out.value.title,
+          metadata: out.value.metadata,
+          time: { start: started, end: Date.now() },
+          attachments: out.value.attachments?.map((item) => ({
+            ...item,
+            id: PartID.ascending(),
+            sessionID: input.sessionID,
+            messageID: msg.id,
+          })),
+        }
+        yield* sessions.updatePart(part)
+        return { info: msg, parts: [part] }
       })
+
+      const command: (input: CommandInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.command")(
+        function* (input: CommandInput) {
+          log.info("command", input)
+          const cmd = yield* commands.get(input.command)
+          if (!cmd) {
+            const available = (yield* commands.list()).map((c) => c.name)
+            const hint = available.length ? ` Available commands: ${available.join(", ")}` : ""
+            const error = new NamedError.Unknown({ message: `Command not found: "${input.command}".${hint}` })
+            yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+            throw error
+          }
+
+          if (
+            input.command === "annotate" ||
+            input.command === "annotate-complete" ||
+            input.command === "annotate-cancel"
+          ) {
+            const result = yield* nativeAnnotate(input)
+            yield* bus.publish(Command.Event.Executed, {
+              name: input.command,
+              sessionID: input.sessionID,
+              arguments: input.arguments,
+              messageID: result.info.id,
+            })
+            return result
+          }
+          const agentName = cmd.agent ?? input.agent ?? (yield* agents.defaultAgent())
+
+          const raw = input.arguments.match(argsRegex) ?? []
+          const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
+          const templateCommand = yield* Effect.promise(async () => cmd.template)
+
+          const placeholders = templateCommand.match(placeholderRegex) ?? []
+          let last = 0
+          for (const item of placeholders) {
+            const value = Number(item.slice(1))
+            if (value > last) last = value
+          }
+
+          const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
+            const position = Number(index)
+            const argIndex = position - 1
+            if (argIndex >= args.length) return ""
+            if (position === last) return args.slice(argIndex).join(" ")
+            return args[argIndex]
+          })
+          const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
+          let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+
+          if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
+            template = template + "\n\n" + input.arguments
+          }
+
+          const shellMatches = ConfigMarkdown.shell(template)
+          if (shellMatches.length > 0) {
+            const sh = Shell.preferred()
+            const results = yield* Effect.promise(() =>
+              Promise.all(
+                shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
+              ),
+            )
+            let index = 0
+            template = template.replace(bashRegex, () => results[index++])
+          }
+          template = template.trim()
+
+          const taskModel = yield* Effect.gen(function* () {
+            if (cmd.model) return Provider.parseModel(cmd.model)
+            if (cmd.agent) {
+              const cmdAgent = yield* agents.get(cmd.agent)
+              if (cmdAgent?.model) return cmdAgent.model
+            }
+            if (input.model) return Provider.parseModel(input.model)
+            return yield* lastModel(input.sessionID)
+          })
+
+          yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+
+          const agent = yield* agents.get(agentName)
+          if (!agent) {
+            const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+            const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+            const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
+            yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+            throw error
+          }
+
+          const templateParts = yield* resolvePromptParts(template)
+          const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+          const parts = isSubtask
+            ? [
+                {
+                  type: "subtask" as const,
+                  agent: agent.name,
+                  description: cmd.description ?? "",
+                  command: input.command,
+                  model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+                  prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
+                },
+              ]
+            : [...templateParts, ...(input.parts ?? [])]
+
+          const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultAgent())) : agentName
+          const userModel = isSubtask
+            ? input.model
+              ? Provider.parseModel(input.model)
+              : yield* lastModel(input.sessionID)
+            : taskModel
+
+          yield* plugin.trigger(
+            "command.execute.before",
+            { command: input.command, sessionID: input.sessionID, arguments: input.arguments },
+            { parts },
+          )
+
+          const result = yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            model: userModel,
+            agent: userAgent,
+            parts,
+            variant: input.variant,
+          })
+          yield* bus.publish(Command.Event.Executed, {
+            name: input.command,
+            sessionID: input.sessionID,
+            arguments: input.arguments,
+            messageID: result.info.id,
+          })
+          return result
+        },
+      )
 
       return Service.of({
         assertNotBusy,

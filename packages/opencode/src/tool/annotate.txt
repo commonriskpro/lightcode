@@ -1,0 +1,32 @@
+Open a webpage in a controlled browser and return structured visual annotations.
+
+Use this tool for frontend UI inspection workflows when you need:
+- Full-page screenshot capture
+- Element metadata (selector, xpath, box model, accessibility, styles)
+- Optional per-element screenshots
+- Etch mode for before/after style diffs and mutation tracking
+
+The tool uses Puppeteer in a native flow (no browser extension required).
+
+Inputs:
+- `action` (optional): `once` (default), `start`, `complete`, `cancel`
+- `url` (required for `once`, optional for `start`): page URL (http/https)
+- `mode` (optional): `picker` or `etch`
+- `selectors` (optional): explicit selectors to inspect
+- `notes` (optional): selector -> note(s)
+- `elementScreenshots` (optional): include per-element crops
+- `headed` (optional): open visible browser window (default true)
+- `max` (optional): max elements in picker mode
+- `wait` (optional): delay before after-capture in etch mode
+- `script` (optional): page script to run before etch after-capture
+
+Returns JSON output suitable for LLM context.
+
+Live visual picker flow:
+- `start`: opens a controlled browser and injects click-to-annotate listener.
+- user navigates manually, clicks elements, and writes notes in inline cards.
+- numbered badges are rendered on picked elements for quick navigation.
+- dashed connectors map each picked element to its note card.
+- shift+click on a picked element removes it quickly.
+- `complete`: captures selected elements + screenshot and returns structured JSON.
+- `cancel`: closes active annotate session without output.

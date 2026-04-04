@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-**Change**: Add `/annotate` command for visual web page inspection  
+**Change**: Add native `/annotate` session flow for visual web page inspection  
 **Approach**: Puppeteer-based native tool  
 **Location**: `packages/opencode/src/tool/`
 
@@ -431,38 +431,36 @@ const schema = z.object({
 ```typescript
 import { annotateTool } from "./annotate"
 
-export const tools = {
-  // ... existing tools
-  annotate: annotateTool,
-}
+const annotate = yield * build(annotateTool)
+
+return [
+  // ...existing tools
+  annotate,
+]
 ```
 
-### 6.2 Command Registration (`command/index.ts`)
+### 6.2 Native Session Command Dispatch
 
 ```typescript
-export const commands = [
-  // ... existing commands
-  {
-    name: "annotate",
-    description: "Open a URL and visually annotate elements",
-    aliases: ["ann"],
-    template: "/annotate",
-  },
-]
+// SessionPrompt.command intercepts:
+// - /annotate           -> annotate action=start
+// - /annotate-complete  -> annotate action=complete
+// - /annotate-cancel    -> annotate action=cancel
+// and executes tool directly (no template -> LLM path).
 ```
 
 ---
 
 ## 7. Error Handling
 
-| Error                  | Handling                                    |
-| ---------------------- | ------------------------------------------- |
-| Browser launch failure | Show error, suggest `npm install puppeteer` |
-| Page load timeout      | Retry once, then error with URL             |
-| Invalid URL            | Validate with Zod, show format hint         |
-| Element not found      | Return empty elements array with warning    |
-| Screenshot failure     | Return without screenshot, note in output   |
-| Memory pressure        | Explicit browser.close() in finally block   |
+| Error                  | Handling                                  |
+| ---------------------- | ----------------------------------------- |
+| Browser launch failure | Show error, suggest `bun add puppeteer`   |
+| Page load timeout      | Retry once, then error with URL           |
+| Invalid URL            | Validate with Zod, show format hint       |
+| Element not found      | Return empty elements array with warning  |
+| Screenshot failure     | Return without screenshot, note in output |
+| Memory pressure        | Explicit browser.close() in finally block |
 
 ---
 
@@ -545,13 +543,7 @@ const schema = z.object({
 }
 ```
 
-### Development
-
-```json
-{
-  "@types/puppeteer": "latest"
-}
-```
+No separate `@types/puppeteer` dependency is required.
 
 ---
 
@@ -572,11 +564,11 @@ const schema = z.object({
 - [ ] Accessibility info extraction
 - [ ] Unit tests
 
-### M3: Annotation Storage + LLM Output
+### M3: Annotation Storage + Session Output
 
 - [ ] `annotate.ts` main tool
 - [ ] JSON storage in `.opencode/annotations/`
-- [ ] Structured output for LLM
+- [ ] Structured output for session/tool timeline
 - [ ] Integration with tool registry
 
 ### M4: Per-Element Screenshots
@@ -612,4 +604,4 @@ const schema = z.object({
 
 - `packages/opencode/src/tool/skill.ts` - Tool.define example
 - `packages/opencode/src/tool/browser.ts` - N/A (new file)
-- `packages/opencode/src/command/index.ts` - Command registration
+- `packages/opencode/src/tool/registry.ts` - Effect-based tool registration

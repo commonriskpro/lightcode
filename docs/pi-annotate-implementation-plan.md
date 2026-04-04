@@ -287,19 +287,15 @@ interface EtchResult {
 
 ## Phase 5: Tool Integration
 
-### 5.1 Command Registration
+### 5.1 Native Session Command Path
 
-**File:** `packages/opencode/src/command/index.ts`
+Implement native dispatch in `SessionPrompt.command` for:
 
-```typescript
-// Add to commands array
-{
-  name: "annotate",
-  description: "Open a URL and visually annotate elements",
-  template: "/annotate",
-  handler: annotateCommand
-}
-```
+- `/annotate` -> `annotate` tool with `action=start`
+- `/annotate-complete` -> `annotate` tool with `action=complete`
+- `/annotate-cancel` -> `annotate` tool with `action=cancel`
+
+This bypasses command template prompting for annotate workflow.
 
 ### 5.2 Tool Registration
 
@@ -308,10 +304,12 @@ interface EtchResult {
 ```typescript
 import { annotateTool } from "./annotate"
 
-export const tools = {
-  // ... existing tools
-  annotate: annotateTool,
-}
+const annotate = yield * build(annotateTool)
+
+return [
+  // ...existing tools
+  annotate,
+]
 ```
 
 ### 5.3 Main Tool (`annotate.ts`)
@@ -339,7 +337,7 @@ packages/opencode/src/tool/
 ├── browser.ts      # Puppeteer management
 ├── picker.ts       # Element inspection
 ├── etch.ts         # Edit capture
-├── types.ts        # Shared types
+├── annotate-types.ts # Shared types
 └── registry.ts     # Tool registration (modify)
 ```
 
@@ -408,4 +406,4 @@ puppeteer.launch({
 
 - Original pi-annotate: `/Users/saturno/Downloads/pi-annotate-main/`
 - Tool patterns: `packages/opencode/src/tool/*.ts`
-- Command system: `packages/opencode/src/command/index.ts`
+- Command execution path: `packages/opencode/src/session/prompt.ts` (native annotate interception)

@@ -13,9 +13,9 @@
 │  Tool Layer                                                       │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │  annotate.ts                                                │ │
-│  │  - /annotate command handler                                │ │
-│  │  - Deferred tool execution                                   │ │
-│  │  - Output formatting for LLM                                 │ │
+│  │  - Native session flow (start/complete/cancel)             │ │
+│  │  - Live browser annotation capture                           │ │
+│  │  - Structured output for chat/session consumption            │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └────────────────────────────┬────────────────────────────────────┘
                              │
@@ -33,7 +33,7 @@
 │  Integration Layer                                               │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │  registry.ts — Tool registration                           │ │
-│  │  command/index.ts — /annotate command                        │ │
+│  │  session/prompt.ts — native command interception             │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -57,25 +57,22 @@
 User: /annotate https://example.com
     │
     ▼
-annotate.ts parses URL and launches browser
+SessionPrompt.command intercepts native annotate command
     │
     ▼
-browser.ts opens URL in headless Chrome
+annotate.ts action=start opens headed controlled browser
     │
     ▼
-browser.ts captures full-page screenshot (base64)
+User navigates and clicks elements in live page overlay
     │
     ▼
-picker.ts queries interactive elements via CDP
+User runs /annotate-complete
     │
     ▼
-Element list returned with box models, selectors, accessibility
+annotate.ts action=complete resolves picks + metadata + screenshot
     │
     ▼
-User selects element(s)
-    │
-    ▼
-AnnotationResult structured and returned to LLM context
+AnnotationResult persisted in session as native tool output (no command prompt template)
 ```
 
 ### Edit Capture ("Etch") Flow
@@ -96,7 +93,7 @@ User makes CSS changes (via page.evaluate or external)
 MutationObserver detects DOM/style changes
     │
     ▼
-User runs /annotate-complete
+User completes etch session
     │
     ▼
 After state captured
@@ -273,37 +270,34 @@ packages/opencode/src/tool/
 ```typescript
 import { annotateTool } from "./annotate"
 
-export const tools = {
-  // ... existing tools
-  annotate: annotateTool,
-}
+const annotate = yield * build(annotateTool)
+
+return [
+  // ...existing tools
+  annotate,
+]
 ```
 
-### Command Registration (`command/index.ts`)
+### Native Command Dispatch (`session/prompt.ts`)
 
 ```typescript
-export const commands = [
-  // ... existing commands
-  {
-    name: "annotate",
-    description: "Open a URL and visually annotate elements",
-    aliases: ["ann"],
-    template: "/annotate",
-  },
-]
+// /annotate, /annotate-complete, /annotate-cancel
+// are intercepted in SessionPrompt.command and dispatched
+// directly to annotate tool actions (start/complete/cancel).
+// This path bypasses command template prompting.
 ```
 
 ---
 
 ## 7. Error Handling
 
-| Error                  | Handling                                    |
-| ---------------------- | ------------------------------------------- |
-| Browser launch failure | Show error, suggest `npm install puppeteer` |
-| Page load timeout      | Retry once, then error with URL             |
-| Invalid URL            | Validate with Zod, show format hint         |
-| Element not found      | Return empty elements array with warning    |
-| Screenshot failure     | Return without screenshot, note in output   |
+| Error                  | Handling                                  |
+| ---------------------- | ----------------------------------------- |
+| Browser launch failure | Show error, suggest `bun add puppeteer`   |
+| Page load timeout      | Retry once, then error with URL           |
+| Invalid URL            | Validate with Zod, show format hint       |
+| Element not found      | Return empty elements array with warning  |
+| Screenshot failure     | Return without screenshot, note in output |
 
 ---
 
@@ -342,4 +336,4 @@ export const commands = [
 **LightCode patterns**:
 
 - `packages/opencode/src/tool/skill.ts` - Tool.define example
-- `packages/opencode/src/command/index.ts` - Command registration
+- `packages/opencode/src/tool/registry.ts` - Effect-based tool registration
