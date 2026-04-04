@@ -607,12 +607,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 })
               },
             })
-            // Stash index for system prompt injection
-            ;(tools as any)._deferredIndex = index
           }
+
+          return { tools, deferredIndex: index }
         }
 
-        return tools
+        return { tools, deferredIndex: [] as ToolSearch.Entry[] }
       })
 
       const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
@@ -1522,7 +1522,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
                 const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
-                const tools = yield* resolveTools({
+                const { tools, deferredIndex } = yield* resolveTools({
                   agent,
                   session,
                   model,
@@ -1569,8 +1569,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   instruction.system().pipe(Effect.orDie),
                   Effect.promise(() => MessageV2.toModelMessages(msgs, model)),
                 ])
-                const deferredIndex = (tools as any)._deferredIndex as ToolSearch.Entry[] | undefined
-                const deferredSection = deferredIndex?.length ? ToolSearch.fmt(deferredIndex) : ""
+                const deferredSection = deferredIndex.length ? ToolSearch.fmt(deferredIndex) : ""
                 const system = [
                   ...env,
                   ...(skills ? [skills] : []),

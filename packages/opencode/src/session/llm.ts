@@ -260,6 +260,11 @@ export namespace LLM {
 
     return streamText({
       stopWhen: stepCountIs(input.maxSteps ?? 1),
+      prepareStep() {
+        return {
+          activeTools: Object.keys(tools).filter((x) => x !== "invalid" && !x.startsWith("_")),
+        }
+      },
       onError(error) {
         l.error("stream error", {
           error,
