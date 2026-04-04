@@ -191,10 +191,6 @@ export namespace ToolRegistry {
           const s = yield* InstanceState.get(state)
           const allTools = yield* all(s.custom)
           const filtered = allTools.filter((tool) => {
-            if (tool.id === "codesearch" || tool.id === "websearch") {
-              return model.providerID === ProviderID.opencode || Flag.OPENCODE_ENABLE_EXA
-            }
-
             const usePatch =
               !!Env.get("OPENCODE_E2E_LLM_URL") ||
               (model.modelID.includes("gpt-") && !model.modelID.includes("oss") && !model.modelID.includes("gpt-4"))
