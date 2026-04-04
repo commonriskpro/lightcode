@@ -7,7 +7,20 @@ import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 import { AutoDream } from "@/dream"
 
-const DREAM_FRAMES = ["☁ dreaming", "☁ dreaming.", "☁ dreaming..", "☁ dreaming..."]
+const DREAM_FRAMES = [
+  "   ☁    dreaming   ",
+  "  ☁ ☁   dreaming.  ",
+  " ☁   ☁  dreaming.. ",
+  "☁     ☁ dreaming...",
+  " ☁   ☁  dreaming.. ",
+  "  ☁ ☁   dreaming.  ",
+  "   ☁    dreaming   ",
+  "  ✦ ☁   dreaming.  ",
+  " ✦  ☁ ✦ dreaming.. ",
+  "✦  ☁  ✦  dreaming..",
+  " ✦ ☁ ✦  dreaming.  ",
+  "  ✦☁    dreaming   ",
+]
 
 export function Footer() {
   const { theme } = useTheme()
