@@ -7,6 +7,19 @@ import type { SessionID } from "../schema"
 
 const log = Log.create({ service: "session.observer" })
 
+const CONDENSE_PROMPT = `You are a memory consolidation agent. You receive multiple observation chunks and must produce a single, coherent observation log.
+
+Rules:
+- Preserve ALL important facts — nothing should be lost
+- Merge duplicate or related facts into single bullets
+- Keep 🔴 (user assertions) and 🟡 (user requests) markers
+- Prefer recent observations over older ones when they contradict
+- Condense older facts more aggressively, retain more detail for recent ones
+- Preserve timestamps when present
+- Output format must match the input format exactly
+
+Output the consolidated log directly, no preamble.`
+
 const PROMPT = `You are an observation agent. Extract facts from the conversation below as a structured observation log.
 
 Rules:
@@ -25,14 +38,47 @@ Output format:
 - 🟡 HH:MM [request]`
 
 export namespace Observer {
+  // Condense multiple observation chunks into one coherent log via LLM.
+  // Falls back to naive join if model not configured or LLM fails.
+  export async function condense(chunks: string[], prev?: string): Promise<string> {
+    const joined = chunks.join("\n\n---\n\n")
+    if (chunks.length <= 1) return joined
+
+    const cfg = await Config.get()
+    const modelStr = cfg.experimental?.observer_model
+    if (!modelStr) return joined
+
+    const parsed = Provider.parseModel(modelStr)
+    const model = await Provider.getModel(parsed.providerID, parsed.modelID).catch(() => undefined)
+    if (!model) return joined
+
+    const language = await Provider.getLanguage(model).catch(() => undefined)
+    if (!language) return joined
+
+    const prompt = prev
+      ? `## Previous observations (already consolidated)\n${prev}\n\n## New chunks to merge\n${joined}`
+      : `## Chunks to consolidate\n${joined}`
+
+    const result = await generateText({
+      model: language,
+      system: CONDENSE_PROMPT,
+      prompt,
+    }).catch((err) => {
+      log.error("condense llm failed", { err })
+      return undefined
+    })
+
+    return result?.text || joined
+  }
+
   export async function run(input: {
     sid: SessionID
     msgs: MessageV2.WithParts[]
     prev?: string
   }): Promise<string | undefined> {
     const cfg = await Config.get()
-    const modelStr = cfg.experimental?.observer_model
-    if (!modelStr) return undefined
+    // Default to gemini-2.5-flash — cheap, fast, 1M context. Ideal for background observation.
+    const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
 
     const parsed = Provider.parseModel(modelStr)
 

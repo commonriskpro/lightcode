@@ -52,7 +52,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
-import { OM, Observer, Buffer as OMBuffer } from "./om"
+import { OM, Observer, OMBuf } from "./om"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1514,7 +1514,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
             // Observer buffer trigger — accumulate tokens and fire Observer if threshold reached
             const tok = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
-            const sig = OMBuffer.check(sessionID, tok)
+            const sig = OMBuf.check(sessionID, tok)
             if (sig === "buffer" || sig === "activate") {
               yield* Effect.promise(async () => {
                 const rec = OM.get(sessionID)

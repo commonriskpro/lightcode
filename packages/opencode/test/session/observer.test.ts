@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach } from "bun:test"
 import path from "path"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
-import { Buffer } from "../../src/session/om/buffer"
+import { OMBuf } from "../../src/session/om/buffer"
 import { OM } from "../../src/session/om/record"
 import { SystemPrompt } from "../../src/session/system"
 import type { SessionID } from "../../src/session/schema"
@@ -22,58 +22,58 @@ describe("session.om.buffer.check", () => {
 
   test("returns idle when tokens < 6k", () => {
     const s = sid("idle")
-    expect(Buffer.check(s, 100)).toBe("idle")
-    expect(Buffer.check(s, 500)).toBe("idle")
-    expect(Buffer.check(s, 4_000)).toBe("idle")
+    expect(OMBuf.check(s, 100)).toBe("idle")
+    expect(OMBuf.check(s, 500)).toBe("idle")
+    expect(OMBuf.check(s, 4_000)).toBe("idle")
   })
 
   test("returns buffer at 6k interval", () => {
     const s = sid("buf6k")
     // Add 5999 first — still idle
-    expect(Buffer.check(s, 5_999)).toBe("idle")
-    // One more token crosses 6k
-    expect(Buffer.check(s, 1)).toBe("buffer")
+    expect(OMBuf.check(s, 5_999)).toBe("idle")
+
+    expect(OMBuf.check(s, 1)).toBe("buffer")
   })
 
   test("returns activate at 30k", () => {
     const s = sid("act30k")
     // 29999 → still buffer range
-    expect(Buffer.check(s, 29_999)).toBe("buffer")
-    // Push over 30k
-    expect(Buffer.check(s, 1)).toBe("activate")
+    expect(OMBuf.check(s, 29_999)).toBe("buffer")
+
+    expect(OMBuf.check(s, 1)).toBe("activate")
   })
 
   test("returns force at > 36k", () => {
     const s = sid("force36k")
     // Jump straight to force threshold
-    expect(Buffer.check(s, 36_001)).toBe("force")
+    expect(OMBuf.check(s, 36_001)).toBe("force")
   })
 
   test("returns force when exactly at 36k", () => {
     const s = sid("force-exact")
-    expect(Buffer.check(s, 36_000)).toBe("force")
+    expect(OMBuf.check(s, 36_000)).toBe("force")
   })
 
   test("returns activate when exactly at 30k", () => {
     const s = sid("act-exact")
-    expect(Buffer.check(s, 30_000)).toBe("activate")
+    expect(OMBuf.check(s, 30_000)).toBe("activate")
   })
 
   test("returns buffer when exactly at 6k", () => {
     const s = sid("buf-exact")
-    expect(Buffer.check(s, 6_000)).toBe("buffer")
+    expect(OMBuf.check(s, 6_000)).toBe("buffer")
   })
 
   test("accumulates tokens across multiple check calls", () => {
     const s = sid("accum")
     // 3 calls, each 2k → total 6k at 3rd call
-    expect(Buffer.check(s, 2_000)).toBe("idle")
-    expect(Buffer.check(s, 2_000)).toBe("idle")
-    expect(Buffer.check(s, 2_000)).toBe("buffer")
+    expect(OMBuf.check(s, 2_000)).toBe("idle")
+    expect(OMBuf.check(s, 2_000)).toBe("idle")
+    expect(OMBuf.check(s, 2_000)).toBe("buffer")
   })
 })
 
-// ─── Buffer.add / Buffer.tokens ────────────────────────────────────────────
+// ─── OMBuf.add / OMBuf.tokens ────────────────────────────────────────────
 
 describe("session.om.buffer.add", () => {
   function sid(suffix: string): SessionID {
@@ -82,28 +82,28 @@ describe("session.om.buffer.add", () => {
 
   test("tokens returns 0 for unknown session", () => {
     const s = sid("unknown")
-    expect(Buffer.tokens(s)).toBe(0)
+    expect(OMBuf.tokens(s)).toBe(0)
   })
 
   test("add accumulates tokens", () => {
     const s = sid("accum")
-    Buffer.add(s, 1_000)
-    expect(Buffer.tokens(s)).toBe(1_000)
-    Buffer.add(s, 2_000)
-    expect(Buffer.tokens(s)).toBe(3_000)
+    OMBuf.add(s, 1_000)
+    expect(OMBuf.tokens(s)).toBe(1_000)
+    OMBuf.add(s, 2_000)
+    expect(OMBuf.tokens(s)).toBe(3_000)
   })
 
   test("add and check share the same state", () => {
     const s = sid("shared")
-    Buffer.add(s, 5_000)
+    OMBuf.add(s, 5_000)
     // check adds on top of existing 5k
-    const result = Buffer.check(s, 1_001)
-    expect(Buffer.tokens(s)).toBe(6_001)
+    const result = OMBuf.check(s, 1_001)
+    expect(OMBuf.tokens(s)).toBe(6_001)
     expect(result).toBe("buffer")
   })
 })
 
-// ─── Buffer.reset ──────────────────────────────────────────────────────────
+// ─── OMBuf.reset ──────────────────────────────────────────────────────────
 
 describe("session.om.buffer.reset", () => {
   function sid(suffix: string): SessionID {
@@ -112,24 +112,24 @@ describe("session.om.buffer.reset", () => {
 
   test("reset clears token count", () => {
     const s = sid("clears")
-    Buffer.add(s, 10_000)
-    expect(Buffer.tokens(s)).toBe(10_000)
-    Buffer.reset(s)
-    expect(Buffer.tokens(s)).toBe(0)
+    OMBuf.add(s, 10_000)
+    expect(OMBuf.tokens(s)).toBe(10_000)
+    OMBuf.reset(s)
+    expect(OMBuf.tokens(s)).toBe(0)
   })
 
   test("reset clears check state — starts fresh after reset", () => {
     const s = sid("fresh")
-    Buffer.add(s, 35_000)
-    Buffer.reset(s)
+    OMBuf.add(s, 35_000)
+    OMBuf.reset(s)
     // After reset, 5k should be idle again
-    expect(Buffer.check(s, 5_000)).toBe("idle")
+    expect(OMBuf.check(s, 5_000)).toBe("idle")
   })
 
   test("reset on unknown session is a no-op", () => {
     const s = sid("noop")
-    expect(() => Buffer.reset(s)).not.toThrow()
-    expect(Buffer.tokens(s)).toBe(0)
+    expect(() => OMBuf.reset(s)).not.toThrow()
+    expect(OMBuf.tokens(s)).toBe(0)
   })
 })
 
@@ -340,15 +340,16 @@ describe("session.om.record", () => {
           OM.addBuffer(buf1)
           OM.addBuffer(buf2)
 
-          // activate merges buffers → observation row
-          OM.activate(s.id as SessionID)
+          // activate merges buffers → observation row (async — condenses via LLM or naive join)
+          await OM.activate(s.id as SessionID)
 
           const rec = OM.get(s.id as SessionID)
           expect(rec).not.toBeUndefined()
           expect(rec!.observations).toContain("chunk one")
           expect(rec!.observations).toContain("chunk two")
           expect(rec!.generation_count).toBe(2)
-          expect(rec!.observation_tokens).toBe(22)
+          // observation_tokens now estimated from merged string length (char/4)
+          expect(rec!.observation_tokens).toBeGreaterThan(0)
           expect(rec!.last_observed_at).toBe(now + 1000)
 
           // Buffers should be cleared after activation

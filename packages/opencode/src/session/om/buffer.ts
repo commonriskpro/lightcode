@@ -1,10 +1,12 @@
 import type { SessionID } from "../schema"
 
-type State = { tok: number; pending: boolean }
+// lastInterval tracks the token count at the last "buffer" signal
+// so we only fire "buffer" once per INTERVAL, not on every turn after crossing 6k
+type State = { tok: number; pending: boolean; lastInterval: number }
 
 const state = new Map<SessionID, State>()
 
-export namespace Buffer {
+export namespace OMBuf {
   const TRIGGER = 30_000
   const INTERVAL = 6_000
   const FORCE = 36_000
@@ -12,7 +14,7 @@ export namespace Buffer {
   function ensure(sid: SessionID): State {
     const s = state.get(sid)
     if (s) return s
-    const next: State = { tok: 0, pending: false }
+    const next: State = { tok: 0, pending: false, lastInterval: 0 }
     state.set(sid, next)
     return next
   }
@@ -22,12 +24,19 @@ export namespace Buffer {
     s.tok += tok
     if (s.tok >= FORCE) return "force"
     if (s.tok >= TRIGGER) return "activate"
-    if (s.tok >= INTERVAL) return "buffer"
+    // Fire "buffer" only when crossing a new INTERVAL boundary, not every turn
+    const intervals = Math.floor(s.tok / INTERVAL)
+    const lastIntervals = Math.floor(s.lastInterval / INTERVAL)
+    if (intervals > lastIntervals) {
+      s.lastInterval = s.tok
+      return "buffer"
+    }
     return "idle"
   }
 
   export function reset(sid: SessionID): void {
     state.delete(sid)
+    // state.delete removes the entry entirely — lastInterval resets on next ensure()
   }
 
   export function tokens(sid: SessionID): number {
