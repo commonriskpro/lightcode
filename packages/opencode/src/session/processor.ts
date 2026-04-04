@@ -18,6 +18,8 @@ import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
 import { Question } from "@/question"
+import { LSP } from "@/lsp"
+import { Filesystem } from "@/util/filesystem"
 
 export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
@@ -52,6 +54,7 @@ export namespace SessionProcessor {
     needsCompaction: boolean
     currentText: MessageV2.TextPart | undefined
     reasoningMap: Record<string, MessageV2.ReasoningPart>
+    editedFiles: Set<string>
   }
 
   type StreamEvent = Event
@@ -99,6 +102,7 @@ export namespace SessionProcessor {
           needsCompaction: false,
           currentText: undefined,
           reasoningMap: {},
+          editedFiles: new Set(),
         }
         let aborted = false
 
@@ -227,6 +231,10 @@ export namespace SessionProcessor {
                   attachments: value.output.attachments,
                 },
               })
+              // Track edited files for batched LSP diagnostics at end-of-step
+              const meta = value.output.metadata as Record<string, any> | undefined
+              if (meta?.filediff?.file) ctx.editedFiles.add(meta.filediff.file)
+              if (meta?.filepath) ctx.editedFiles.add(meta.filepath)
               delete ctx.toolcalls[value.toolCallId]
               return
             }
@@ -306,6 +314,38 @@ export namespace SessionProcessor {
                 }
                 ctx.snapshot = undefined
               }
+              // Batched LSP diagnostics: run once after all tool calls complete
+              if (ctx.editedFiles.size > 0) {
+                const files = [...ctx.editedFiles]
+                ctx.editedFiles.clear()
+                yield* Effect.promise(async () => {
+                  for (const file of files) await LSP.touchFile(file, true)
+                })
+                const diagnostics = yield* Effect.promise(() => LSP.diagnostics())
+                const MAX_DIAG = 20
+                const lines: string[] = []
+                for (const file of files) {
+                  const normalized = Filesystem.normalizePath(file)
+                  const issues = diagnostics[normalized] ?? []
+                  const errors = issues.filter((d) => d.severity === 1)
+                  if (errors.length === 0) continue
+                  const limited = errors.slice(0, MAX_DIAG)
+                  const suffix = errors.length > MAX_DIAG ? `\n... and ${errors.length - MAX_DIAG} more` : ""
+                  lines.push(
+                    `<diagnostics file="${file}">\n${limited.map(LSP.Diagnostic.pretty).join("\n")}${suffix}\n</diagnostics>`,
+                  )
+                }
+                if (lines.length > 0) {
+                  yield* session.updatePart({
+                    id: PartID.ascending(),
+                    messageID: ctx.assistantMessage.id,
+                    sessionID: ctx.sessionID,
+                    type: "text",
+                    text: `\n\nLSP errors detected after edits, please fix:\n${lines.join("\n\n")}`,
+                  })
+                }
+              }
+
               SessionSummary.summarize({
                 sessionID: ctx.sessionID,
                 messageID: ctx.assistantMessage.parentID,
