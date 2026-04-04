@@ -557,10 +557,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           tools[key] = item
         }
 
-        // Deferred tools: partition core vs deferred when flag or config is on and enough tools
+        // Deferred tools: partition core vs deferred
+        // When explicitly enabled via config, always activate (user opted in)
+        // When enabled via env var only, require threshold to auto-activate
         const cfg = yield* Effect.promise(() => Config.get())
-        const deferEnabled = Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS || cfg.experimental?.deferred_tools === true
-        if (deferEnabled && Object.keys(tools).length >= Flag.OPENCODE_DEFERRED_TOOLS_THRESHOLD) {
+        const explicit = cfg.experimental?.deferred_tools === true
+        const auto = Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS && !explicit
+        const deferEnabled = explicit || (auto && Object.keys(tools).length >= Flag.OPENCODE_DEFERRED_TOOLS_THRESHOLD)
+        if (deferEnabled) {
           const deferred: Record<string, AITool> = {}
           const index: ToolSearch.Entry[] = []
 
