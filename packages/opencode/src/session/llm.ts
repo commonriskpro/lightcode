@@ -1,6 +1,6 @@
 import { Provider } from "@/provider/provider"
 import { Log } from "@/util/log"
-import { Cause, Effect, Layer, Record, ServiceMap } from "effect"
+import { Cause, Effect, Layer, ServiceMap } from "effect"
 import * as Queue from "effect/Queue"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, stepCountIs, type ModelMessage, type Tool, tool, jsonSchema } from "ai"
@@ -199,7 +199,14 @@ export namespace LLM {
         ? undefined
         : ProviderTransform.maxOutputTokens(input.model)
 
-    const tools = await resolveTools(input)
+    const disabled = resolveDisabled(input)
+    // Use input.tools directly (not a copy) so deferred tools loaded
+    // via tool_search are visible to the SDK across multi-step calls
+    const tools = input.tools
+    // Remove disabled tools from the dict
+    for (const key of disabled) {
+      delete tools[key]
+    }
 
     // LiteLLM and some Anthropic proxies require the tools parameter to be present
     // when message history contains tool calls, even if no tools are being used.
@@ -343,12 +350,16 @@ export namespace LLM {
     })
   }
 
-  function resolveTools(input: Pick<StreamInput, "tools" | "agent" | "permission" | "user">) {
+  function resolveDisabled(input: Pick<StreamInput, "tools" | "agent" | "permission" | "user">) {
     const disabled = Permission.disabled(
       Object.keys(input.tools),
       Permission.merge(input.agent.permission, input.permission ?? []),
     )
-    return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
+    const result = new Set(disabled)
+    for (const [k] of Object.entries(input.tools)) {
+      if (input.user.tools?.[k] === false) result.add(k)
+    }
+    return result
   }
 
   // Check if messages contain any tool-call content
