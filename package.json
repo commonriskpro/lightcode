@@ -15,7 +15,7 @@
     "prepare": "husky",
     "random": "echo 'Random script'",
     "hello": "echo 'Hello World!'",
-    "build": "OPENCODE_CHANNEL=latest bun run --cwd packages/opencode build --single",
+    "build": "OPENCODE_CHANNEL=latest bun run --cwd packages/opencode build --single --skip-embed-web-ui",
     "test": "echo 'do not run tests from root' && exit 1"
   },
   "workspaces": {
