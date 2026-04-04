@@ -335,6 +335,23 @@ export namespace LLM {
                 // @ts-expect-error
                 args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
               }
+
+              // Native deferred: inject providerOptions.{provider}.deferLoading
+              const native = ProviderTransform.supportsNativeDeferred(input.model)
+              if (native && args.params.tools) {
+                for (const t of args.params.tools) {
+                  if (t.type !== "function") continue
+                  const src = input.tools[t.name]
+                  if (!src) continue
+                  if ((src as any)._shouldDefer || (src as any)._deferred) {
+                    t.providerOptions = {
+                      ...t.providerOptions,
+                      [native]: { ...(t.providerOptions as any)?.[native], deferLoading: true },
+                    }
+                  }
+                }
+              }
+
               return args.params
             },
           },

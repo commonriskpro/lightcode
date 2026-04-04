@@ -564,12 +564,32 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         const explicit = cfg.experimental?.deferred_tools === true
         const auto = Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS && !explicit
         const deferEnabled = explicit || (auto && Object.keys(tools).length >= Flag.OPENCODE_DEFERRED_TOOLS_THRESHOLD)
+
         if (deferEnabled) {
+          const native = ProviderTransform.supportsNativeDeferred(input.model)
+
+          if (native) {
+            // NATIVE MODE: keep all tools in dict, provider handles defer_loading
+            // Middleware in llm.ts injects providerOptions.{provider}.deferLoading
+            delete tools["tool_search"]
+            const index: ToolSearch.Entry[] = []
+            for (const [key, t] of Object.entries(tools)) {
+              if ((t as any)._shouldDefer === true || (t as any)._deferred === true) {
+                index.push({
+                  id: key,
+                  hint: (t as any)._hint || (t.description ? t.description.slice(0, 80) : key),
+                  description: t.description || "",
+                })
+              }
+            }
+            return { tools, deferredIndex: index }
+          }
+
+          // HYBRID MODE: partition tools, client-side tool_search
           const deferred: Record<string, AITool> = {}
           const index: ToolSearch.Entry[] = []
 
           for (const [key, t] of Object.entries(tools)) {
-            // tool_search itself is never deferred
             if (key === "tool_search") continue
             const isMcp = (t as any)._deferred === true
             const isDef = (t as any)._shouldDefer === true || isMcp
@@ -584,7 +604,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             delete tools[key]
           }
 
-          // Wire up tool_search execute with the real deferred dict
           if (tools["tool_search"] && index.length > 0) {
             const original = tools["tool_search"]
             tools["tool_search"] = tool({
@@ -595,7 +614,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 const { query, max_results } = args as { query: string; max_results?: number }
                 const matches = ToolSearch.search(index, query, max_results ?? 5)
 
-                // Load matched tools back into the tools dict
                 for (const match of matches) {
                   if (!deferred[match.id]) continue
                   tools[match.id] = deferred[match.id]

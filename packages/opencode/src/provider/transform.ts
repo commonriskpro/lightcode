@@ -943,6 +943,18 @@ export namespace ProviderTransform {
     return Math.min(model.limit.output, OUTPUT_TOKEN_MAX) || OUTPUT_TOKEN_MAX
   }
 
+  export function supportsNativeDeferred(model: Provider.Model): false | "anthropic" | "openai" {
+    const npm = model.api.npm
+    const id = model.api.id
+    if (npm === "@ai-sdk/anthropic" || npm === "@ai-sdk/google-vertex/anthropic") {
+      if (["sonnet-4", "opus-4"].some((v) => id.includes(v))) return "anthropic"
+    }
+    if (npm === "@ai-sdk/openai") {
+      if (["gpt-5", "o3", "o4"].some((v) => id.includes(v))) return "openai"
+    }
+    return false
+  }
+
   export function schema(model: Provider.Model, schema: JSONSchema.BaseSchema | JSONSchema7): JSONSchema7 {
     /*
     if (["openai", "azure"].includes(providerID)) {
