@@ -263,10 +263,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const sdk = useSDK()
   const toast = useToast()
 
-  // Inject SDK-backed MCP registrar for Engram (avoids InstanceState context error)
+  // Inject SDK client for Engram + AutoDream (avoids InstanceState context error)
   Engram.setRegistrar(async (name, config) => {
     await sdk.client.mcp.add({ name, config })
   })
+  AutoDream.setSDK(sdk.client as any)
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
