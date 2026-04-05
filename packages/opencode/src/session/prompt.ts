@@ -128,6 +128,11 @@ export namespace SessionPrompt {
           const runners = new Map<string, Runner<MessageV2.WithParts>>()
           yield* Effect.addFinalizer(
             Effect.fnUntraced(function* () {
+              yield* Effect.forEach(
+                runners.keys(),
+                (sid) => Effect.promise(() => OMBuf.awaitInFlight(sid as SessionID)),
+                { concurrency: "unbounded", discard: true },
+              )
               yield* Effect.forEach(runners.values(), (r) => r.cancel, { concurrency: "unbounded", discard: true })
               runners.clear()
             }),
@@ -1522,33 +1527,49 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               obsRec?.observation_tokens,
               omCfg.experimental?.observer_message_tokens,
             )
-            if (sig === "buffer" || sig === "activate") {
+            if (sig === "buffer") {
+              if (!OMBuf.getInFlight(sessionID)) {
+                const rec = OM.get(sessionID)
+                const boundary = rec?.last_observed_at ?? 0
+                const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
+                const p = (async () => {
+                  OMBuf.setObserving(true)
+                  try {
+                    const result = await Observer.run({
+                      sid: sessionID,
+                      msgs: unobserved,
+                      prev: rec?.observations ?? undefined,
+                      priorCurrentTask: rec?.current_task ?? undefined,
+                    })
+                    if (result) {
+                      OM.addBuffer({
+                        id: ulid(),
+                        session_id: sessionID,
+                        observations: result.observations,
+                        message_tokens: tok,
+                        observation_tokens: result.observations.length >> 2,
+                        starts_at: boundary,
+                        ends_at: Date.now(),
+                        time_created: Date.now(),
+                        time_updated: Date.now(),
+                      })
+                    }
+                  } catch (err) {
+                    log.error("background observer failed", { err })
+                  } finally {
+                    OMBuf.setObserving(false)
+                    OMBuf.clearInFlight(sessionID)
+                  }
+                })()
+                OMBuf.setInFlight(sessionID, p)
+              }
+            }
+            if (sig === "activate") {
               yield* Effect.promise(async () => {
+                await OMBuf.awaitInFlight(sessionID)
                 OMBuf.setObserving(true)
                 try {
-                  const rec = OM.get(sessionID)
-                  const boundary = rec?.last_observed_at ?? 0
-                  const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
-                  const result = await Observer.run({
-                    sid: sessionID,
-                    msgs: unobserved,
-                    prev: rec?.observations ?? undefined,
-                    priorCurrentTask: rec?.current_task ?? undefined,
-                  })
-                  if (result)
-                    OM.upsert({
-                      id: sessionID,
-                      session_id: sessionID,
-                      observations: result.observations,
-                      reflections: null,
-                      current_task: result.currentTask ?? null,
-                      suggested_continuation: result.suggestedContinuation ?? null,
-                      last_observed_at: Date.now(),
-                      generation_count: (rec?.generation_count ?? 0) + 1,
-                      observation_tokens: result.observations.length >> 2,
-                      time_created: rec?.time_created ?? Date.now(),
-                      time_updated: Date.now(),
-                    })
+                  await OM.activate(sessionID)
                   const fresh = OM.get(sessionID)
                   if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
                     OMBuf.setReflecting(true)

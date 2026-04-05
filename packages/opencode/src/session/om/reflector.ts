@@ -9,7 +9,12 @@ import { detectDegenerateRepetition } from "./observer"
 const log = Log.create({ service: "session.reflector" })
 const THRESHOLD = 40_000
 
-type CompressionLevel = 0 | 1 | 2 | 3 | 4
+export type CompressionLevel = 0 | 1 | 2 | 3 | 4
+
+export function startLevel(id: string): CompressionLevel {
+  if (id.includes("gemini-2.5-flash")) return 2
+  return 1
+}
 
 // Validate that reflection actually compressed the observations.
 // Uses the same char/4 heuristic as the rest of the codebase.
@@ -120,7 +125,7 @@ export namespace Reflector {
     if (!language) return
 
     let best: { text: string; tok: number } | undefined
-    let level: CompressionLevel = 0
+    let level = startLevel(model?.api?.id ?? "") as CompressionLevel
 
     while (level <= 4) {
       const system = PROMPT + COMPRESSION_GUIDANCE[level]

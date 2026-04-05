@@ -391,6 +391,137 @@ The system MUST implement `detectDegenerateRepetition(text)` that returns `true`
 - WHEN `detectDegenerateRepetition(text)` is called
 - THEN it MUST return `false`
 
+## Phase 1A — Async Buffering (Gap 1)
+
+### Requirement: Async Buffer Pre-Computation
+
+The OM system MUST pre-compute observations in the background when `OMBuf.check()` returns `"buffer"`, without blocking the agent loop turn.
+
+#### Scenario: Normal async buffer flow
+
+- GIVEN the OM buffer threshold is reached and `OMBuf.check()` returns `"buffer"`
+- WHEN the orchestrator loops
+- THEN a background Observer LLM call MUST be started
+- AND the promise MUST be stored in the `inFlight` map
+- AND the loop MUST NOT block waiting for the LLM call to finish
+- AND when the LLM call finishes, the result MUST be written via `OM.addBuffer()` and the `inFlight` map entry MUST be removed
+
+#### Scenario: Late activate
+
+- GIVEN a background Observer LLM call is in-flight for the session
+- WHEN `OMBuf.check()` returns `"activate"` before the background call finishes
+- THEN the system MUST await the existing promise from the `inFlight` map
+- AND after it resolves, the system MUST call `OM.activate()` to merge the buffers
+
+#### Scenario: Duplicate buffer prevention
+
+- GIVEN a background Observer LLM call is already in-flight for the session
+- WHEN `OMBuf.check()` returns `"buffer"` again
+- THEN the system MUST NOT start a second Observer LLM call
+- AND the existing promise MUST continue unchanged
+
+#### Scenario: Session end with in-flight promise
+
+- GIVEN a background Observer LLM call is in-flight for the session
+- WHEN the session ends or is cleaned up
+- THEN the system MUST await the promise in the `inFlight` map before disposing of the session
+- AND the observation MUST NOT be lost
+
+### Requirement: In-Flight Operations Tracking
+
+A module-level `Map<SessionID, Promise<void>>` (call it `inFlight`) MUST track in-flight background operations per session, preventing duplicate fires and ensuring proper cleanup on session end.
+
+## Phase 1B — Compression Start Level (Gap 3)
+
+### Requirement: Reflector Compression Initialization
+
+The Reflector MUST NOT start the compression retry loop at level 0 (no guidance). For model IDs containing `"gemini-2.5-flash"`, the Reflector MUST start compression at level 2. For all other models, the Reflector MUST start compression at level 1. A pure helper function `startLevel(modelId: string): CompressionLevel` MUST be exported from `reflector.ts` for testability.
+
+#### Scenario: gemini-2.5-flash starts at level 2
+
+- GIVEN the configured observer model ID contains `"gemini-2.5-flash"`
+- WHEN the Reflector starts the compression loop
+- THEN the `startLevel` helper MUST return `2`
+- AND the compression loop MUST begin at level 2
+
+#### Scenario: Other model starts at level 1
+
+- GIVEN the configured observer model ID is `"gpt-4o"` (or any other model)
+- WHEN the Reflector starts the compression loop
+- THEN the `startLevel` helper MUST return `1`
+- AND the compression loop MUST begin at level 1
+
+#### Scenario: Compression succeeds at start level
+
+- GIVEN the Reflector starts compression at level 1 or 2
+- WHEN the LLM returns a successfully compressed output on the first attempt
+- THEN the loop MUST terminate
+- AND no escalation to higher levels MUST occur
+
+## Phase 2 — Observer Prompt Richness (Gap 2)
+
+### Requirement: Enriched Observer Prompt
+
+The Observer `PROMPT` MUST include temporal anchoring instructions for splitting multi-event messages, state-change framing instructions for transitions, precise action verb mapping (replacing vague verbs), and detail preservation guidance for lists, names, @handles, numerical values, and identifiers. The existing XML output format (`<observations>`, `<current-task>`, `<suggested-response>`) MUST be preserved unchanged.
+
+#### Scenario: Multi-event message is split correctly
+
+- GIVEN a user message contains multiple distinct events (e.g., "Yesterday I did X, today I am doing Y")
+- WHEN the Observer LLM processes the message
+- THEN the output MUST contain separate observation lines for X and Y
+- AND each line MUST include its correct resolved temporal anchor
+
+#### Scenario: State change framing produced
+
+- GIVEN a user states they are moving from React to Svelte
+- WHEN the Observer LLM processes the message
+- THEN the generated observation MUST frame the change explicitly, such as "will use Svelte (replacing React)"
+
+#### Scenario: Vague verb replaced
+
+- GIVEN a user says "I got the new Pro subscription"
+- WHEN the Observer LLM processes the message
+- THEN the vague verb "got" MUST be replaced with a precise action verb like "subscribed to" or "purchased"
+
+## Phase 3 — Observer Context Truncation (Gap 4)
+
+### Requirement: Observer Previous Context Truncation
+
+A pure function `truncateObsToBudget(obs: string, budget: number): string` MUST be implemented in `observer.ts`, using `char >> 2` as the token estimate. The function MUST preserve all lines containing `🔴` (user assertions) and `✅` (completions) from the head, keep a raw tail of the most recent observations (O(1) suffix-sum lookup), and insert `[N observations truncated here]` markers at truncation gaps. When `budget === 0`, it MUST return an empty string. When observations fit within budget, it MUST return them unchanged.
+
+#### Scenario: Observations fit in budget
+
+- GIVEN the previous observations string is estimated to be 1000 tokens
+- AND the configured budget is 2000 tokens
+- WHEN `truncateObsToBudget` is called
+- THEN the function MUST return the original observations unchanged
+
+#### Scenario: Observations exceed budget
+
+- GIVEN the previous observations string is estimated to be 5000 tokens
+- AND the configured budget is 2000 tokens
+- WHEN `truncateObsToBudget` is called
+- THEN the function MUST truncate the middle observations
+- AND the function MUST return a string containing the preserved head, a `[N observations truncated here]` marker, and the most recent tail fitting the budget
+
+#### Scenario: budget=0
+
+- GIVEN the previous observations string contains content
+- AND the configured budget is `0`
+- WHEN `truncateObsToBudget` is called
+- THEN the function MUST return an empty string
+
+#### Scenario: 🔴 lines preserved from head even when truncating
+
+- GIVEN the previous observations string exceeds the token budget
+- AND the head of the observations contains lines with the `🔴` emoji
+- WHEN `truncateObsToBudget` is called
+- THEN the returned string MUST include those `🔴` lines from the head, up to the remaining token budget limit
+
+### Requirement: Observer Configuration for Context Truncation
+
+The config key `experimental.observer_prev_tokens` (type: `number | false`) MUST be added. Default is `2000`. `false` disables truncation (legacy behavior). `Observer.run()` MUST apply `truncateObsToBudget` to `input.prev` before appending to the system prompt, using the configured budget.
+
 ## Deferred Requirements
 
 (None currently. All planned phases have been implemented.)

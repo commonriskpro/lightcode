@@ -59,25 +59,61 @@ Rules:
 
 Output the consolidated log directly, no preamble.`
 
-const PROMPT = `You are an observation agent. Extract facts from the conversation below as a structured observation log.
+export const PROMPT = `You are an observation agent. Extract facts from the conversation below as a structured observation log.
 
-Rules:
-- 🔴 User assertions (facts the user stated): "I work at Acme", "the app uses PostgreSQL"
-- 🟡 User requests/questions (what they asked for, NOT facts): "Can you help me..."
-- Include timestamps when messages have them
-- Resolve relative dates to absolute (e.g. "next week" → actual date)
-- Mark superseded info explicitly: "~old fact~ → new fact"
-- Skip: routine tool calls, file reads, assistant acknowledgements
+## Assertion vs Question
+
+- 🔴 User assertions (FACTS the user stated): "I work at Acme", "the app uses PostgreSQL", "I switched to Svelte"
+  - These are AUTHORITATIVE — the user is the source of truth about their own context
+- 🟡 User requests/questions (what they asked for, NOT facts): "Can you help me...", "What's the best way to..."
+  - Only record these if they reveal intent or preference
+
+## STATE CHANGES
+
+When a user indicates a change from X to Y, frame it explicitly:
+- "User will use Svelte (replacing React)"
+- "User now works at NewCo (previously OldCo)"
+- Mark the old value superseded: "~old fact~ → new fact"
+
+## Temporal Anchoring
+
+- Resolve relative dates to absolute (e.g. "yesterday" → 2026-04-03, "next week" → 2026-04-11)
+- IMPORTANT: If an observation contains MULTIPLE events at different times, split them into SEPARATE observation lines, each with its own date
+  - Example: "I visited Paris last week and I'm going to London tomorrow" → two separate lines with two dates
+  - BAD: User will visit parents this weekend and go to the dentist tomorrow.
+  - GOOD:
+    User will visit parents this weekend. (meaning June 17-18, 20XX)
+    User will go to dentist tomorrow. (meaning June 16, 20XX)
+- Include timestamps (HH:MM) when messages carry them
+
+## PRECISE ACTION VERBS
+
+Replace vague verbs with specific ones:
+- "getting" something regularly → "subscribes to" / "receives regularly"
+- "got" something → "purchased" / "received" / "was given" (choose based on context)
+- "has" → "owns" / "maintains" / "is responsible for" (choose based on context)
+- "uses" → "develops with" / "relies on" / "chose" (prefer the most specific)
+- "doing" → "building" / "debugging" / "migrating" / "deploying" (match the actual activity)
+
+## PRESERVE DISTINGUISHING DETAILS
+
+- Lists, names, @handles, URLs, numerical values, quantities, and identifiers MUST be preserved verbatim — never generalize
+  - BAD: "User tried several hotels" → GOOD: "User compared Hotel Marais (€180/night, 4-star) and Hotel Latin (€150/night, 3-star)"
+  - BAD: "User uses some libraries" → GOOD: "User uses Effect, Drizzle, and Vercel AI SDK"
+- Preserve unusual phrasing or specific terminology the user employs — it may carry domain meaning
+
+## General Rules
+
+- Skip: routine tool calls, file reads, assistant acknowledgements, filler
 - Keep bullets concise — one fact per bullet
-- USER ASSERTIONS ARE AUTHORITATIVE — the user is the source of truth about their own context
-- When state changes, mark old info superseded: "~old fact~ → new fact"
+- When in doubt about whether something is a fact, KEEP IT
 
-Output your response using these XML sections:
+## Output Format
 
 <observations>
-Date: [date]
-* 🔴 HH:MM [user assertion]
-* 🟡 HH:MM [user request]
+Date: [resolved date]
+* 🔴 HH:MM [user assertion — specific, with preserved details]
+* 🟡 HH:MM [user request — only if it reveals intent]
 </observations>
 
 <current-task>
@@ -87,6 +123,66 @@ State what the agent is currently working on (1-2 sentences).
 <suggested-response>
 Hint for the agent's next message to continue naturally (1 sentence).
 </suggested-response>`
+
+export function truncateObsToBudget(obs: string, budget: number): string {
+  if (budget === 0) return ""
+  const total = obs.length >> 2
+  if (total <= budget) return obs
+
+  const lines = obs.split("\n")
+  const n = lines.length
+
+  const tok = lines.map((l) => l.length >> 2)
+
+  const suffix = new Array<number>(n + 1)
+  suffix[n] = 0
+  for (let i = n - 1; i >= 0; i--) suffix[i] = suffix[i + 1]! + tok[i]!
+
+  // Pre-scan important lines from head (before trying to fit tail)
+  // so we can reserve their budget before picking the tail size
+  const important: number[] = []
+  let importantCost = 0
+  for (let i = 0; i < n; i++) {
+    if (lines[i]!.includes("🔴") || lines[i]!.includes("✅")) {
+      important.push(i)
+      importantCost += tok[i]!
+    }
+  }
+
+  // Find largest tail that fits in budget minus reserved important cost
+  // (cap reserved cost at budget to avoid negative tail budget)
+  const reserved = Math.min(importantCost, budget)
+  const tailBudget = budget - reserved
+
+  let tail = n
+  for (let i = n - 1; i >= 0; i--) {
+    if (suffix[i]! <= tailBudget) tail = i
+    else break
+  }
+
+  // Recalculate remaining after tail is committed
+  const tailCost = suffix[tail]!
+  let remaining = budget - tailCost
+
+  // Greedily add important lines from head (before tail) within remaining budget
+  const kept: string[] = []
+  for (const i of important) {
+    if (i >= tail) break // tail already covers this line
+    if (remaining <= 0) break
+    if (tok[i]! <= remaining) {
+      kept.push(lines[i]!)
+      remaining -= tok[i]!
+    }
+  }
+
+  const skipped = tail - kept.length
+  const parts: string[] = []
+  if (kept.length) parts.push(kept.join("\n"))
+  if (skipped > 0) parts.push(`[${skipped} observations truncated here]`)
+  parts.push(lines.slice(tail).join("\n"))
+
+  return parts.join("\n")
+}
 
 export namespace Observer {
   // Condense multiple observation chunks into one coherent log via LLM.
@@ -126,6 +222,7 @@ export namespace Observer {
     sid: SessionID
     msgs: MessageV2.WithParts[]
     prev?: string
+    prevBudget?: number | false
     priorCurrentTask?: string
   }): Promise<ObserverResult | undefined> {
     const cfg = await Config.get()
@@ -165,7 +262,11 @@ export namespace Observer {
     if (!context.trim()) return undefined
 
     let system = PROMPT
-    if (input.prev) system += `\n\n## Previous Observations (for context, do not duplicate)\n${input.prev}`
+    if (input.prev) {
+      const budget = input.prevBudget ?? cfg.experimental?.observer_prev_tokens
+      const prev = budget === false ? input.prev : truncateObsToBudget(input.prev, budget ?? 2000)
+      if (prev) system += `\n\n## Previous Observations (for context, do not duplicate)\n${prev}`
+    }
     if (input.priorCurrentTask) system += `\n\n## Prior Context — Current Task\n${input.priorCurrentTask}`
 
     const result = await generateText({

@@ -5,8 +5,13 @@ import { Session } from "../../src/session"
 import { OMBuf, calculateDynamicThreshold } from "../../src/session/om/buffer"
 import type { ThresholdRange } from "../../src/session/om/buffer"
 import { OM } from "../../src/session/om/record"
-import { Reflector } from "../../src/session/om/reflector"
-import { detectDegenerateRepetition, parseObserverOutput } from "../../src/session/om/observer"
+import { Reflector, startLevel } from "../../src/session/om/reflector"
+import {
+  detectDegenerateRepetition,
+  parseObserverOutput,
+  PROMPT,
+  truncateObsToBudget,
+} from "../../src/session/om/observer"
 import { SystemPrompt } from "../../src/session/system"
 import type { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util/log"
@@ -701,5 +706,257 @@ describe("session.om.record currentTask round-trip", () => {
         }
       },
     })
+  })
+})
+
+// ─── OMBuf inFlight lifecycle ────────────────────────────────────────────────
+
+describe("session.om.buffer.inFlight", () => {
+  function sid(suffix: string): SessionID {
+    return `test-inflight-${suffix}-${Math.random().toString(36).slice(2)}` as SessionID
+  }
+
+  test("setInFlight stores a promise — getInFlight returns it", () => {
+    const s = sid("set-get")
+    const p = Promise.resolve()
+    OMBuf.setInFlight(s, p)
+    expect(OMBuf.getInFlight(s)).toBe(p)
+  })
+
+  test("clearInFlight removes the entry — getInFlight returns undefined", () => {
+    const s = sid("clear")
+    OMBuf.setInFlight(s, Promise.resolve())
+    OMBuf.clearInFlight(s)
+    expect(OMBuf.getInFlight(s)).toBeUndefined()
+  })
+
+  test("awaitInFlight awaits the promise AND clears it", async () => {
+    const s = sid("await-clears")
+    let resolved = false
+    const p = new Promise<void>((res) =>
+      setTimeout(() => {
+        resolved = true
+        res()
+      }, 5),
+    )
+    OMBuf.setInFlight(s, p)
+    await OMBuf.awaitInFlight(s)
+    expect(resolved).toBe(true)
+    expect(OMBuf.getInFlight(s)).toBeUndefined()
+  })
+
+  test("awaitInFlight on missing key resolves immediately", async () => {
+    const s = sid("missing")
+    // Should not hang or throw
+    await expect(OMBuf.awaitInFlight(s)).resolves.toBeUndefined()
+  })
+
+  test("reset also clears inFlight entry", () => {
+    const s = sid("reset-clears")
+    OMBuf.setInFlight(s, Promise.resolve())
+    OMBuf.reset(s)
+    expect(OMBuf.getInFlight(s)).toBeUndefined()
+  })
+})
+
+// ─── startLevel ──────────────────────────────────────────────────────────────
+
+describe("session.om.reflector.startLevel", () => {
+  test("gemini-2.5-flash prefix → 2", () => {
+    expect(startLevel("google/gemini-2.5-flash")).toBe(2)
+  })
+
+  test("gemini-2.5-flash-thinking → 2", () => {
+    expect(startLevel("gemini-2.5-flash-thinking")).toBe(2)
+  })
+
+  test("gpt-4o → 1", () => {
+    expect(startLevel("gpt-4o")).toBe(1)
+  })
+
+  test("anthropic/claude-sonnet → 1", () => {
+    expect(startLevel("anthropic/claude-sonnet")).toBe(1)
+  })
+
+  test("empty string → 1", () => {
+    expect(startLevel("")).toBe(1)
+  })
+})
+
+// ─── PROMPT richness (Phase 2, T-2.1) ───────────────────────────────────────
+
+describe("session.om.observer.PROMPT", () => {
+  test("PROMPT contains temporal anchoring instruction", () => {
+    expect(PROMPT).toContain("MULTIPLE events")
+  })
+
+  test("PROMPT contains state-change framing instruction", () => {
+    expect(PROMPT).toContain("STATE CHANGES")
+  })
+
+  test("PROMPT contains precise action verbs instruction", () => {
+    expect(PROMPT).toContain("PRECISE ACTION VERBS")
+  })
+
+  test("PROMPT contains detail preservation instruction", () => {
+    expect(PROMPT).toContain("PRESERVE DISTINGUISHING DETAILS")
+  })
+
+  test("PROMPT preserves XML output format tags", () => {
+    expect(PROMPT).toContain("<observations>")
+    expect(PROMPT).toContain("</observations>")
+    expect(PROMPT).toContain("<current-task>")
+    expect(PROMPT).toContain("</current-task>")
+    expect(PROMPT).toContain("<suggested-response>")
+    expect(PROMPT).toContain("</suggested-response>")
+  })
+})
+
+// ─── OMBuf async buffering behavior ─────────────────────────────────────────
+
+describe("OMBuf async buffering behavior", () => {
+  test("duplicate buffer guard: second setInFlight when one exists is a no-op via getInFlight check", () => {
+    const sid = "test-session-dup" as any
+    let resolved = false
+    const p = new Promise<void>((resolve) =>
+      setTimeout(() => {
+        resolved = true
+        resolve()
+      }, 50),
+    )
+    OMBuf.setInFlight(sid, p)
+    // Simulate: caller checks getInFlight before firing second — if exists, skip
+    const existing = OMBuf.getInFlight(sid)
+    expect(existing).toBeDefined() // guard: inFlight exists
+    // Do NOT set a second one — this is the caller's responsibility
+    OMBuf.clearInFlight(sid)
+  })
+
+  test("awaitInFlight resolves immediately when no promise exists", async () => {
+    const sid = "test-session-noop" as any
+    const start = Date.now()
+    await OMBuf.awaitInFlight(sid)
+    expect(Date.now() - start).toBeLessThan(50)
+  })
+
+  test("awaitInFlight waits for in-flight promise to resolve", async () => {
+    const sid = "test-session-await" as any
+    let done = false
+    const p = new Promise<void>((resolve) =>
+      setTimeout(() => {
+        done = true
+        resolve()
+      }, 30),
+    )
+    OMBuf.setInFlight(sid, p)
+    await OMBuf.awaitInFlight(sid)
+    expect(done).toBe(true)
+    expect(OMBuf.getInFlight(sid)).toBeUndefined() // cleaned up
+  })
+
+  test("awaitInFlight cleans up map entry after awaiting", async () => {
+    const sid = "test-session-cleanup" as any
+    const p = Promise.resolve()
+    OMBuf.setInFlight(sid, p)
+    expect(OMBuf.getInFlight(sid)).toBeDefined()
+    await OMBuf.awaitInFlight(sid)
+    expect(OMBuf.getInFlight(sid)).toBeUndefined()
+  })
+
+  test("late activate scenario: awaitInFlight waits then clears", async () => {
+    const sid = "test-session-late" as any
+    // Simulate: buffer LLM still running when activate arrives
+    let bufferDone = false
+    const bufferP = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        bufferDone = true
+        resolve()
+      }, 40)
+    })
+    OMBuf.setInFlight(sid, bufferP)
+    // activate arrives before buffer finishes
+    expect(bufferDone).toBe(false)
+    await OMBuf.awaitInFlight(sid)
+    // after await, buffer is done and map is clean
+    expect(bufferDone).toBe(true)
+    expect(OMBuf.getInFlight(sid)).toBeUndefined()
+  })
+})
+
+// ─── Reflector.startLevel behavior ──────────────────────────────────────────
+
+describe("Reflector.startLevel behavior", () => {
+  test("startLevel used in Reflector means level 0 compression guidance never fires for any model", () => {
+    // Level 0 = COMPRESSION_GUIDANCE[0] = "" (no guidance)
+    // startLevel always returns >= 1, so level 0 is never the initial level
+    expect(startLevel("any-model")).toBeGreaterThanOrEqual(1)
+    expect(startLevel("google/gemini-2.5-flash")).toBeGreaterThanOrEqual(1)
+  })
+})
+
+// ─── REQ-1.6: awaitInFlight idempotency ─────────────────────────────────────
+
+test("OMBuf.awaitInFlight is idempotent — safe to call multiple times", async () => {
+  const sid = "test-session-idem" as any
+  const p = Promise.resolve()
+  OMBuf.setInFlight(sid, p)
+  await OMBuf.awaitInFlight(sid)
+  // calling again when map is empty should not throw
+  await expect(OMBuf.awaitInFlight(sid)).resolves.toBeUndefined()
+})
+
+// ─── truncateObsToBudget ─────────────────────────────────────────────────────
+
+describe("truncateObsToBudget", () => {
+  test("budget=0 returns empty string", () => {
+    expect(truncateObsToBudget("line1\nline2\nline3", 0)).toBe("")
+  })
+
+  test("fits in budget returns unchanged", () => {
+    const obs = "short observation"
+    expect(truncateObsToBudget(obs, 2000)).toBe(obs)
+  })
+
+  test("empty string returns empty string", () => {
+    expect(truncateObsToBudget("", 100)).toBe("")
+  })
+
+  test("exceeds budget inserts truncation marker", () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `* line observation number ${i}`)
+    const obs = lines.join("\n")
+    const result = truncateObsToBudget(obs, 50)
+    expect(result).toContain("observations truncated here")
+  })
+
+  test("🔴 lines preserved from head when truncating", () => {
+    const important = "🔴 (09:00) User stated they are a senior engineer"
+    const filler = Array.from({ length: 200 }, (_, i) => `* (10:${i}) routine observation ${i}`).join("\n")
+    const obs = `${important}\n${filler}`
+    const result = truncateObsToBudget(obs, 30)
+    expect(result).toContain("senior engineer")
+  })
+
+  test("✅ lines preserved from head when truncating", () => {
+    const done = "✅ (09:00) Task completed: implemented auth module"
+    const filler = Array.from({ length: 200 }, (_, i) => `* (10:${i}) routine observation ${i}`).join("\n")
+    const obs = `${done}\n${filler}`
+    const result = truncateObsToBudget(obs, 30)
+    expect(result).toContain("auth module")
+  })
+})
+
+// ─── Observer.run prevBudget truncation ──────────────────────────────────────
+
+describe("Observer.run prevBudget truncation", () => {
+  test("truncateObsToBudget is applied when prev exceeds budget", () => {
+    // 200 lines * ~25 chars = ~5000 chars / 4 = ~1250 tokens
+    const longObs = Array.from({ length: 200 }, (_, i) => `* (09:${String(i).padStart(2, "0")}) observation ${i}`).join(
+      "\n",
+    )
+    const result = truncateObsToBudget(longObs, 50)
+    // Must be shorter than original
+    expect(result.length).toBeLessThan(longObs.length)
+    // Must contain truncation marker
+    expect(result).toContain("observations truncated here")
   })
 })

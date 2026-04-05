@@ -5,6 +5,7 @@ import type { SessionID } from "../schema"
 type State = { tok: number; pending: boolean; lastInterval: number }
 
 const state = new Map<SessionID, State>()
+const inFlight = new Map<SessionID, Promise<void>>()
 
 // Observable status for TUI feedback — polled by sidebar footer
 let _observing = false
@@ -61,7 +62,27 @@ export namespace OMBuf {
 
   export function reset(sid: SessionID): void {
     state.delete(sid)
+    inFlight.delete(sid)
     // state.delete removes the entry entirely — lastInterval resets on next ensure()
+  }
+
+  export function setInFlight(sid: SessionID, p: Promise<void>): void {
+    inFlight.set(sid, p)
+  }
+
+  export function getInFlight(sid: SessionID): Promise<void> | undefined {
+    return inFlight.get(sid)
+  }
+
+  export function clearInFlight(sid: SessionID): void {
+    inFlight.delete(sid)
+  }
+
+  export async function awaitInFlight(sid: SessionID): Promise<void> {
+    const p = inFlight.get(sid)
+    if (!p) return
+    await p
+    inFlight.delete(sid)
   }
 
   export function tokens(sid: SessionID): number {

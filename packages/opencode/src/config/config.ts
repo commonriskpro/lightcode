@@ -1067,6 +1067,12 @@ export namespace Config {
             .describe(
               "Token threshold for observer trigger. Plain number = fixed. Object {min, max} = adaptive (shrinks as observations grow).",
             ),
+          observer_prev_tokens: z
+            .union([z.number().int().positive(), z.literal(false)])
+            .optional()
+            .describe(
+              "Token budget for previous observations passed to Observer. Default 2000. Set false to disable truncation.",
+            ),
         })
         .optional(),
     })
