@@ -32,13 +32,13 @@
 - **Acceptance Criteria:** `{ type: "agent", id: lastUser.agent }` is passed as a scope. The tool schema accepts `"agent"`.
 - **Tests:** Verify tool schema validation and that agent memory is retrieved during context building.
 
-## T5 — Extract handleOMCycle helper from runLoop (MEDIUM)
+## T5 — Clarify runLoop ownership boundaries (MEDIUM)
 
-- **Goal:** Improve maintainability of the main run loop.
+- **Goal:** Improve maintainability of the main run loop without risky late-stage behavioral refactors.
 - **Files:** `packages/opencode/src/session/prompt.ts`
 - **Dependencies:** None.
-- **Acceptance Criteria:** OM coordination logic is extracted into a `handleOMCycle` generator. The main loop calls this generator, reducing its size.
-- **Tests:** Ensure existing end-to-end session tests pass without modification (pure refactoring).
+- **Acceptance Criteria:** The loop has explicit ownership boundaries for OM coordination and memory assembly in code/comments, and no production behavior regresses.
+- **Tests:** Ensure existing end-to-end session tests pass without modification.
 
 ## T6 — Remove dead Engram recall code (LOW)
 

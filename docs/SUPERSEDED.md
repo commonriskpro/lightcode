@@ -2,7 +2,7 @@
 
 This document tracks all components that have been superseded, deprecated, or replaced across the native LightCode memory migration from V1 through the final production architecture.
 
-Deprecated files are **retained** in the codebase for rollback capability. They are NOT deleted unless the initiative is declared fully stable and the rollback period has ended.
+Deprecated files are retained only when they still serve a clear compatibility or migration purpose. They are not kept as a general runtime rollback mechanism.
 
 ---
 
@@ -12,7 +12,7 @@ Deprecated files are **retained** in the codebase for rollback capability. They 
 
 **Status**: DEPRECATED  
 **Superseded by**: `packages/opencode/src/memory/` (native MemoryProvider)  
-**Reason**: Manages the external Engram Go binary and registers it as an MCP client. LightCode Memory Core V1 replaces the need for an external binary. All cross-session memory is now stored natively in `lightcode.db`.  
+**Reason**: Manages the external Engram Go binary and registers it as an MCP client. The canonical/default runtime path is now native and SQLite-backed in `lightcode.db`. Engram remains only as a compatibility surface.  
 **Rollback**: No runtime rollback flag remains for recall. Engram is now compatibility-only, not a canonical runtime backend.  
 **Removal trigger**: Remove when TUI no longer needs `Engram.setRegistrar()` compatibility.
 

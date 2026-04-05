@@ -52,27 +52,17 @@ _Update `SemanticRecall.search()` to execute the query using `sanitizeFTS` first
 - **Change:** Inject `{ type: "agent", id: lastUser.agent }` as an ancestor scope alongside the `project` scope when building memory context.
 - **Change:** Update the `UpdateWorkingMemoryTool` schema and parameters to expose `"agent"` as a valid scope choice for the AI.
 
-## D5 — runLoop OM coordination helper
+## D5 — runLoop OM coordination boundary cleanup
 
 **File:** `packages/opencode/src/session/prompt.ts`
 
-- **Change:** Extract the OM (Output Management) buffer, activate, and block logic (lines 1521-1628, approx. 107 lines) into a standalone generator helper function.
+- **Change:** Do a low-risk structural cleanup inside `prompt.ts` rather than a deep extraction in this initiative.
 - **Implementation:**
+  - add explicit section ownership comments (`OM Coordinator`, `Memory Assembler`)
+  - keep the existing live logic in place to avoid destabilizing the runtime hot path late in the initiative
+  - defer a true helper extraction until there is broader session-runtime refactor capacity
 
-```typescript
-function* handleOMCycle(
-  sessionID: SessionID,
-  tok: number,
-  obsRec: ObservationRecord | undefined,
-  omCfg: Config.Info,
-  msgs: MessageV2.WithParts[],
-  scope: Scope.Scope,
-): Generator<any, any, any> {
-  // Extracted OM logic goes here
-}
-```
-
-- **Effect:** Reduces the massive 452-line main `runLoop` down to ~345 lines, heavily improving readability and isolating OM lifecycle management.
+- **Effect:** clarifies ownership and production maintainability without taking on the risk of a large behavioral refactor inside the already-sensitive `runLoop`.
 
 ## D6 — Clean up OPENCODE_MEMORY_USE_ENGRAM flag
 

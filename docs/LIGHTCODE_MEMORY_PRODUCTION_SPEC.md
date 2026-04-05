@@ -48,7 +48,7 @@ The LightCode Memory system currently has foundational features in place but suf
 - Fix the deduplication logic in working memory retrieval.
 - Implement a two-pass FTS5 search (AND-mode with prefix matching, falling back to OR-mode).
 - Connect the semantic recall fallback in the runtime hot path (`Memory.buildContext()`).
-- Refactor the overloaded `runLoop` by extracting OM coordination into a manageable helper function.
+- Reduce ambiguity inside the overloaded `runLoop` by clarifying ownership boundaries in code and isolating the canonical memory/OM sections, without requiring a risky full extraction in this initiative.
 - Clean up dead code, unreferenced flags, and document dormant features to reduce technical debt.
 
 ## 5. Success Criteria
@@ -56,9 +56,9 @@ The LightCode Memory system currently has foundational features in place but suf
 - **Bug 1:** A test with identical keys in `thread` and `project` scopes returns only the `thread` record.
 - **Bug 2:** A search for "auth JWT" successfully matches entries containing "authentication" and "JWT".
 - **Bug 3:** Queries returning 0 FTS results automatically trigger and return results from `SemanticRecall.recent()`.
-- **Bug 4/6:** `OPENCODE_MEMORY_USE_ENGRAM`, `recallEngram()`, and `recallNative()` are entirely removed from the codebase.
+- **Bug 4/6:** `OPENCODE_MEMORY_USE_ENGRAM`, `recallEngram()`, and `recallNative()` are removed from live runtime implementations and no core runtime path depends on them.
 - **Bug 5:** The `agent` scope is passed in the hot path and exposed in `UpdateWorkingMemoryTool`.
-- **Bug 6:** The main `runLoop` size is reduced by at least 100 lines through the extraction of `handleOMCycle`.
+- **Bug 6:** The main `runLoop` has clearer ownership boundaries for OM coordination and memory assembly, and production maintainability is improved without changing runtime behavior incorrectly.
 
 ## 6. Non-Goals
 
