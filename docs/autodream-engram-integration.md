@@ -82,11 +82,16 @@ The memory system is implemented across two phases:
 - Observations injected at `system[2]` each turn (dense, fact-level with 🔴🟡 priority)
 - AutoDream's `summaries()` reads ObservationTable first for high-quality cross-session signal
 
-### Remaining gaps (Phase 3)
+### Phase 3 — Reflector / condensation (shipped)
 
-1. **No Reflector** — observations accumulate but never get cross-session pattern detection
-2. **ObservationTable is session-local** — once session ends, signal depends on AutoDream picking it up
-3. **No semantic search** — Engram recall uses `mem_context` (recency), not vector similarity
+- When `observation_tokens` exceeds `40_000`, `Reflector.run(sid)` fires after each Observer pass
+- LLM condenses `observations` → `reflections`; original `observations` are preserved (never cleared)
+- `system[2]` injects `rec.reflections ?? rec.observations` — reflections take priority when available
+
+### Remaining gaps
+
+1. **ObservationTable is session-local** — once session ends, signal depends on AutoDream picking it up
+2. **No semantic search** — Engram recall uses `mem_context` (recency), not vector similarity or FTS
 
 ---
 
@@ -161,14 +166,15 @@ After every assistant turn end (fire-and-forget, non-blocking).
 
 ### Gate Order (cheapest first, all must pass)
 
-| #   | Gate          | Check                                         | Default                              |
-| --- | ------------- | --------------------------------------------- | ------------------------------------ |
-| 1   | Feature gate  | `config.experimental.autodream === true`      | Disabled by default                  |
-| 2   | Engram gate   | `ensureEngram()` — binary found or downloaded | Auto-download if needed              |
-| 3   | Time gate     | `>= minHours since last consolidation`        | 24 hours                             |
-| 4   | Scan throttle | `>= 10min since last check`                   | Prevents expensive checks every turn |
-| 5   | Session gate  | `>= minSessions since last consolidation`     | 5 sessions                           |
-| 6   | Lock          | Not held by another process                   | Flock-based lock                     |
+| #   | Gate          | Check                                          | Default                              |
+| --- | ------------- | ---------------------------------------------- | ------------------------------------ |
+| 1   | Engram gate   | `Engram.ensure()` — binary found or downloaded | Auto-download if needed              |
+| 2   | Feature gate  | `cfg.experimental?.autodream !== false`        | Enabled unless explicitly `false`    |
+| 3   | SDK gate      | internal `sdk` reference is initialized        | Always true when app is running      |
+| 4   | Time gate     | `>= minHours since last consolidation`         | 24 hours                             |
+| 5   | Scan throttle | `>= 10min since last check`                    | Prevents expensive checks every turn |
+| 6   | Session gate  | `>= minSessions since last consolidation`      | 5 sessions                           |
+| 7   | Lock          | Not held by another process                    | Flock-based lock                     |
 
 ### Lock Design
 

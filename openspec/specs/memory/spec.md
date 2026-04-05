@@ -137,20 +137,27 @@ The system MUST track unobserved tokens and trigger the Observer or buffering pr
 
 ### Requirement: Observer LLM Output Storage
 
-The system MUST store the generated observations securely and reliably.
+The system MUST store the generated observations securely and reliably, including structured metadata extracted by the Observer.
 
 #### Scenario: Observer LLM runs successfully
 
 - GIVEN unobserved messages are sent to the Observer LLM
 - WHEN the Observer LLM generates a successful response
-- THEN the system MUST store the resulting markdown observation log in the `ObservationTable`
+- THEN the system MUST store the resulting observation log in the `ObservationTable`
 - AND the system MUST update the `last_observed_at` boundary timestamp
+- AND the system MUST store `currentTask` and `suggestedContinuation` when present in the Observer output
 
 #### Scenario: Observer LLM fails or times out
 
 - GIVEN unobserved messages are sent to the Observer LLM
 - WHEN the Observer LLM fails or times out
 - THEN the system MUST NOT update the `last_observed_at` boundary and MUST discard the failed output
+
+#### Scenario: Observer output is degenerate
+
+- GIVEN the Observer LLM produces degenerate repetition output
+- WHEN `detectDegenerateRepetition(output)` returns `true`
+- THEN the system MUST discard the output, log a warning, and NOT call `OM.upsert`
 
 ### Requirement: Observer Configuration
 
@@ -192,15 +199,29 @@ The system MUST trigger the Reflector based on the observation tokens threshold 
 
 ### Requirement: Reflector LLM output
 
-The Reflector MUST process and persist condensed observations when successful, and handle failures gracefully.
+The Reflector MUST process and persist condensed observations when successful. It MUST validate that output is smaller than input, retrying with up to 4 progressively aggressive compression levels. It MUST use the best result produced if all retries fail. It MUST handle failures gracefully.
 
-#### Scenario: Successful reflection
+#### Scenario: Successful reflection — first attempt compresses
 
 - GIVEN observations text passed to Reflector
-- WHEN Reflector LLM responds successfully
+- WHEN Reflector LLM responds with output smaller than input (validated via `text.length >> 2 < THRESHOLD`)
 - THEN `reflections` column MUST be updated with condensed text
 - AND condensed text MUST preserve all 🔴 user assertions
 - AND condensed text MUST condense older observations more aggressively than recent ones
+
+#### Scenario: First attempt fails compression — retry with escalating guidance
+
+- GIVEN the Reflector's first LLM output has more tokens than the input
+- WHEN `validateCompression` returns `false`
+- THEN the Reflector MUST retry up to level 4 with progressively more aggressive `COMPRESSION_GUIDANCE`
+- AND MUST track the smallest output across all attempts
+- AND MUST call `OM.reflect` with the smallest output after exhausting retries
+
+#### Scenario: Reflector output is degenerate
+
+- GIVEN the Reflector LLM produces degenerate repetition output
+- WHEN `detectDegenerateRepetition(output)` returns `true`
+- THEN the Reflector MUST discard that attempt, advance compression level, and NOT call `OM.reflect` with it
 
 #### Scenario: Reflection failure or unconfigured model
 
@@ -263,6 +284,112 @@ The system MUST provide AutoDream with a complete picture of the session, includ
 - WHEN the session goes idle and AutoDream fires
 - THEN the system MUST read the local observations AND existing summaries
 - AND the system MUST pass the combined signal to the dream agent
+
+### Requirement: Intra-Session Observer Output
+
+The Observer MUST produce structured XML output containing `<observations>`, `<current-task>`, and `<suggested-response>` sections. The system MUST parse each section independently. When `<observations>` tags are absent, the system MUST fall back to treating the full output as plain observations (backwards-compatible).
+
+#### Scenario: Observer returns structured XML output
+
+- GIVEN the Observer LLM produces output containing `<observations>`, `<current-task>`, and `<suggested-response>` XML tags
+- WHEN `Observer.run()` parses the result
+- THEN it MUST return `{ observations, currentTask, suggestedContinuation }` as separate fields
+- AND `observations` MUST contain only the content inside `<observations>` tags
+- AND `currentTask` MUST contain the text inside `<current-task>` tags
+- AND `suggestedContinuation` MUST contain the text inside `<suggested-response>` tags
+
+#### Scenario: Observer returns plain text (fallback)
+
+- GIVEN the Observer LLM produces output without `<observations>` XML tags
+- WHEN `Observer.run()` parses the result
+- THEN it MUST treat the entire output as observations
+- AND `currentTask` and `suggestedContinuation` MUST be `undefined`
+
+### Requirement: Observer currentTask Round-Trip
+
+The system MUST persist `currentTask` from each Observer cycle and pass it back to the next Observer call as `priorCurrentTask` context, maintaining continuity between observation cycles.
+
+#### Scenario: currentTask persisted after observation
+
+- GIVEN `Observer.run()` returns a non-empty `currentTask`
+- WHEN `OM.upsert` is called with the result
+- THEN `current_task` MUST be written to the `ObservationTable` row for the session
+
+#### Scenario: currentTask passed to next Observer cycle
+
+- GIVEN an `ObservationTable` row exists for the session with a non-null `current_task`
+- WHEN the next Observer cycle fires for that session
+- THEN `OM.get(sid).current_task` MUST be included in the Observer prompt as `## Prior Context — Current Task`
+- AND the Observer MUST update or replace it with the new task state
+
+### Requirement: Observation Context Instructions
+
+The system MUST inject interpretation instructions alongside the observations block in `system[2]`, telling the model how to resolve temporal conflicts, treat planned actions, and prioritize the most recent message.
+
+#### Scenario: Observations injected with instructions
+
+- GIVEN `SystemPrompt.observations(sid)` returns a non-undefined value
+- WHEN the observations string is assembled
+- THEN it MUST include `OBSERVATION_CONTEXT_INSTRUCTIONS` text AFTER the `</local-observations>` closing tag
+- AND the instructions MUST instruct the model to prefer the most recent information when dates conflict
+- AND the instructions MUST instruct the model to assume past planned actions completed if their date has passed
+
+#### Scenario: suggestedContinuation injected as system-reminder
+
+- GIVEN the current `ObservationTable` row has a non-null `suggested_continuation`
+- WHEN `SystemPrompt.observations(sid)` is called
+- THEN the returned string MUST include a `<system-reminder>` block containing `suggested_continuation` AFTER the observations block
+
+### Requirement: Adaptive Message Threshold
+
+The message token threshold for triggering the Observer MAY be configured as a `ThresholdRange { min, max }` instead of a fixed number. When a range is provided, the effective threshold MUST shrink proportionally as observation tokens grow.
+
+#### Scenario: Adaptive threshold with no observations
+
+- GIVEN `observer_message_tokens` is configured as `{ min: 30_000, max: 70_000 }`
+- AND the session has 0 observation tokens
+- WHEN `calculateDynamicThreshold(threshold, 0)` is called
+- THEN it MUST return `70_000` (full budget available for messages)
+
+#### Scenario: Adaptive threshold with existing observations
+
+- GIVEN `observer_message_tokens` is `{ min: 30_000, max: 70_000 }` and `observation_tokens = 20_000`
+- WHEN `calculateDynamicThreshold(threshold, 20_000)` is called
+- THEN it MUST return `50_000` (70k − 20k)
+
+#### Scenario: Adaptive threshold floored at min
+
+- GIVEN `observer_message_tokens` is `{ min: 30_000, max: 70_000 }` and `observation_tokens = 50_000`
+- WHEN `calculateDynamicThreshold(threshold, 50_000)` is called
+- THEN it MUST return `30_000` (never below min)
+
+#### Scenario: Fixed threshold — no change in behavior
+
+- GIVEN `observer_message_tokens` is a plain `number`
+- WHEN `calculateDynamicThreshold(number, anyValue)` is called
+- THEN it MUST return the number unchanged
+
+### Requirement: Degenerate Output Detection
+
+The system MUST implement `detectDegenerateRepetition(text)` that returns `true` when an LLM output contains pathological repetition, indicating a model repeat-penalty failure. Detection MUST only run on text longer than 2000 characters.
+
+#### Scenario: Short output skips detection
+
+- GIVEN an output string of fewer than 2000 characters
+- WHEN `detectDegenerateRepetition(text)` is called
+- THEN it MUST return `false` without analysis
+
+#### Scenario: Repetitive output detected
+
+- GIVEN an output string of 5000+ characters where 80%+ of sequential 200-char chunks are near-identical
+- WHEN `detectDegenerateRepetition(text)` is called
+- THEN it MUST return `true`
+
+#### Scenario: Normal varied output not flagged
+
+- GIVEN a normal observation output with varied content across chunks
+- WHEN `detectDegenerateRepetition(text)` is called
+- THEN it MUST return `false`
 
 ## Deferred Requirements
 

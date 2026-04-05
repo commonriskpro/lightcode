@@ -45,20 +45,15 @@ const system = [
 
 If the agent has a `prompt` field defined → uses that directly.
 
-If not → selects by model ID from built-in prompt files:
+If not → `SystemPrompt.provider(model)` returns the single unified LightCode prompt:
 
-| Model Pattern       | Prompt File            | First Line                                   |
-| ------------------- | ---------------------- | -------------------------------------------- |
-| `claude`            | `prompt/anthropic.txt` | "You are OpenCode, the best coding agent..." |
-| `gpt-4`, `o1`, `o3` | `prompt/beast.txt`     | Beast mode prompt                            |
-| `gpt` (other)       | `prompt/gpt.txt`       | GPT-specific prompt                          |
-| `gpt` + `codex`     | `prompt/codex.txt`     | Codex-specific prompt                        |
-| `gemini-`           | `prompt/gemini.txt`    | Gemini-specific prompt                       |
-| `kimi`              | `prompt/kimi.txt`      | Kimi-specific prompt                         |
-| `trinity`           | `prompt/trinity.txt`   | Trinity-specific prompt                      |
-| (default)           | `prompt/default.txt`   | Generic prompt                               |
+| Prompt File            | Used For                   |
+| ---------------------- | -------------------------- |
+| `prompt/lightcode.txt` | All models (single prompt) |
 
-**File:** `src/session/system.ts`, lines 20-34
+There are no model-specific prompt files. LightCode uses one prompt for all providers.
+
+**File:** `src/session/system.ts`, lines 16-18
 
 ### [1] Environment (`SystemPrompt.environment`)
 
@@ -221,9 +216,7 @@ system[3]  — NOT cached       Volatile: date + model identity
 
 ```
 [System Message 0 — BP2, 1h cache]:
-You are OpenCode, the best coding agent on the planet.
-You are an interactive CLI tool that helps users with software engineering tasks...
-<tone and style rules>
+<lightcode.txt content>
 ...
 [joined with env + skills + instructions]
 
@@ -259,11 +252,6 @@ Today's date: Sat Apr 04 2026
 | `src/session/instruction.ts`       | `Instruction.system()` — AGENTS.md/CLAUDE.md loading                                 |
 | `src/session/om/record.ts`         | `OM` namespace — ObservationTable CRUD                                               |
 | `src/session/om/observer.ts`       | `Observer.run()` — background LLM call for intra-session compression                 |
-| `src/session/om/buffer.ts`         | `Buffer` state machine — 6k/30k/36k token thresholds                                 |
-| `src/session/prompt/anthropic.txt` | Claude provider prompt                                                               |
-| `src/session/prompt/beast.txt`     | GPT-4/o1/o3 provider prompt                                                          |
-| `src/session/prompt/gpt.txt`       | GPT generic provider prompt                                                          |
-| `src/session/prompt/gemini.txt`    | Gemini provider prompt                                                               |
-| `src/session/prompt/kimi.txt`      | Kimi provider prompt                                                                 |
-| `src/session/prompt/default.txt`   | Default fallback prompt                                                              |
+| `src/session/om/buffer.ts`         | `OMBuf` state machine — 6k/30k/36k token thresholds                                  |
+| `src/session/prompt/lightcode.txt` | Unified LightCode agent prompt (all models)                                          |
 | `src/tool/search.ts:61-69`         | `ToolSearch.fmt()` — deferred tools section                                          |

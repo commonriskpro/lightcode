@@ -247,16 +247,36 @@ export function DialogModel(props: { providerID?: string }) {
 ### Config-level experimental options (from `Config.Info.experimental`)
 
 ```ts
-// config.ts lines 1018-1037
+// config.ts lines 1024-1062
 experimental: z.object({
   disable_paste_summary: z.boolean().optional(),
   batch_tool: z.boolean().optional(),
+  deferred_tools: z.boolean().optional(),
   openTelemetry: z.boolean().optional(),
   primary_tools: z.array(z.string()).optional(),
   continue_loop_on_deny: z.boolean().optional(),
   mcp_timeout: z.number().int().positive().optional(),
+  // Memory system
+  autodream: z.boolean().optional(), // AutoDream consolidation on session idle
+  autodream_model: z.string().optional(), // model for AutoDream (default: google/gemini-2.5-flash)
+  observer: z.boolean().optional(), // intra-session observer at 30k tokens
+  observer_model: z.string().optional(), // model for Observer (default: google/gemini-2.5-flash)
 }).optional()
 ```
+
+### Toggleable via `/features` TUI command
+
+The `/features` dialog (`dialog-feature.tsx`) exposes config-toggleable features using `sdk.client.global.config.update()`. Features with only an `env` field are shown as read-only (env only) and cannot be toggled.
+
+| Feature ID              | Toggle via Space | Model picker via Enter | Notes                         |
+| ----------------------- | :--------------: | :--------------------: | ----------------------------- |
+| `deferred_tools`        |        ✅        |           —            | also toggleable via env var   |
+| `batch_tool`            |        ✅        |           —            |                               |
+| `continue_loop_on_deny` |        ✅        |           —            |                               |
+| `markdown`              |  ❌ (env only)   |           —            | read-only in UI               |
+| `open_telemetry`        |        ✅        |           —            |                               |
+| `autodream`             |        ✅        |  ✅ (AutoDream model)  | requires Engram MCP connected |
+| `observer`              |        ✅        |  ✅ (Observer model)   | requires Engram MCP connected |
 
 ---
 
@@ -267,8 +287,9 @@ experimental: z.object({
 - All `Flag.*` values in `flag.ts` are computed **once at module load time** from `process.env`. They are `const` from `truthy()` or `number()` calls.
 - Some flags use `Object.defineProperty` with getters for dynamic access (lines 94-158): `OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_TUI_CONFIG`, `OPENCODE_CONFIG_DIR`, `OPENCODE_PURE`, `OPENCODE_PLUGIN_META_FILE`, `OPENCODE_CLIENT`. These re-read from `process.env` on each access — but they are NOT experimental flags.
 - Two flags use `Effect.Config.boolean(...)`: `OPENCODE_EXPERIMENTAL_FILEWATCHER` and `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER`. Resolved once when the Effect runtime starts.
-- The `config.experimental` field in `opencode.json` IS persisted and can be changed by editing the config file, but there is no slash command or TUI mechanism to toggle it.
-- `Config.updateGlobal()` exists (line 1507-1526) and writes back to `opencode.jsonc`/`opencode.json`, then calls `invalidate()`. **This COULD be used to persist experimental config changes at runtime.**
+- The `config.experimental` field in `opencode.json` IS persisted and can be changed by editing the config file.
+- `Config.updateGlobal()` (line 1507-1526) writes back to `opencode.jsonc`/`opencode.json` then calls `invalidate()`.
+- **The `/features` dialog uses `sdk.client.global.config.update()` to toggle `config.experimental.*` fields at runtime.** Features with `config` key are togglable; those with only `env` are read-only in the UI.
 
 ---
 

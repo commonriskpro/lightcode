@@ -262,14 +262,16 @@ Verified at `src/session/om/reflector.ts:36-55,57`.
 ### `idle(sid)` exact steps
 
 1. `Engram.ensure()`; return if false.
-2. return if no `configuredModel`.
-3. set `_dreaming = true`.
-4. `obs = await summaries(sid)`.
-5. `await spawn(undefined, obs)`.
-6. write state `{ lastConsolidatedAt: Date.now(), lastSessionCount: 0 }`.
-7. log errors, always reset `_dreaming=false` in `finally`.
+2. load config; if `cfg.experimental?.autodream === false`, return.
+3. resolve `model = configuredModel ?? cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"`.
+4. return if no `sdk`.
+5. set `_dreaming = true`.
+6. `obs = await summaries(sid)`.
+7. `await spawn(undefined, obs, model)`.
+8. write state `{ lastConsolidatedAt: Date.now(), lastSessionCount: 0 }`.
+9. log errors, always reset `_dreaming=false` in `finally`.
 
-Verified at `src/dream/index.ts:182-198`.
+Verified at `src/dream/index.ts:183-205`.
 
 ### `summaries(sid)` fallback chain
 
@@ -439,6 +441,7 @@ Inside `ProviderTransform.message`, `applyCaching(msgs, model)` is called only f
 ### BP markers and TTL behavior
 
 **BP1** (in `llm.ts`):
+
 - Last tool definition gets `anthropic.cacheControl = { type: "ephemeral", ttl: "1h" }`.
 - Marks tool section boundary for prompt cache stability in Anthropic prefix order.
 
@@ -485,10 +488,10 @@ Verified at `src/config/config.ts:1044-1060`.
   - Verified at `src/config/config.ts:1024-1062`, `src/session/om/observer.ts:48,81`, `src/session/om/reflector.ts:32`.
 - `experimental.observer_model`: defaults to `"google/gemini-2.5-flash"` in Observer and Reflector.
   - Verified at `src/session/om/observer.ts:49,83`, `src/session/om/reflector.ts:33`.
-- `experimental.autodream_model`: no schema default and no backend fallback in AutoDream path; TUI injects this value into `AutoDream.setModel(...)`.
-  - Verified at `src/config/config.ts:1045-1048`, `src/cli/cmd/tui/app.tsx:271-274`, `src/dream/index.ts:121,185`.
-- `experimental.autodream` boolean exists in schema but is not referenced in `src/dream/index.ts` trigger path.
-  - Verified by usage search and `src/dream/index.ts:182-207`.
+- `experimental.autodream_model`: no schema default; `idle()` falls back to `cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"` — same model as observer.
+  - Verified at `src/dream/index.ts:191`.
+- `experimental.autodream` is checked in `idle()`: if explicitly `false`, skips consolidation immediately.
+  - Verified at `src/dream/index.ts:187-189`.
 
 ---
 
@@ -577,8 +580,8 @@ Verified at `src/dream/index.ts:118-160,182-207`.
    - `src/session/om/buffer.ts:5`
 5. **ObservationBuffer table path is effectively dormant in turn loop**: runLoop writes directly to `ObservationTable` with `OM.upsert` and never calls `OM.addBuffer/OM.activate`.
    - `src/session/prompt.ts:1529-1539,1555-1565`; `src/session/om/record.ts:32-74`
-6. **`experimental.autodream` feature flag not enforced in AutoDream trigger path**; idle subscription is always installed at bootstrap.
-   - `src/project/bootstrap.ts:26`, `src/dream/index.ts:201-207`, schema only at `src/config/config.ts:1044`
+6. **`experimental.autodream` flag is checked in `idle()` at runtime** — if `false`, consolidation is skipped immediately after `Engram.ensure()`. The idle subscription is always installed at bootstrap, but the flag is respected before any model call.
+   - `src/dream/index.ts:187-189`
 7. **`readState()` in AutoDream is currently unused** (state is written but never read in this module).
    - `src/dream/index.ts:25-32,171,191`
 
