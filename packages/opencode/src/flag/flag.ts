@@ -89,12 +89,8 @@ export namespace Flag {
   /**
    * Memory flags.
    *
-   * OPENCODE_DREAM_USE_NATIVE_MEMORY=false → use legacy Engram MCP path for AutoDream consolidation
+   * OPENCODE_DREAM_USE_NATIVE_MEMORY=false → skip native AutoDream artifact persistence
    *                                    (default: true — native Memory.indexArtifact() is used)
-   *
-   * OPENCODE_MEMORY_USE_ENGRAM has been removed. The Engram recall path (recallEngram(),
-   * callEngramTool()) was dead code with no active callers — the flag was never checked.
-   * Native LightCode memory is now the unconditional canonical recall path.
    */
   export const OPENCODE_DREAM_USE_NATIVE_MEMORY = !falsy("OPENCODE_DREAM_USE_NATIVE_MEMORY")
 

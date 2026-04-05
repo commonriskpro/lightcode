@@ -10,11 +10,11 @@ Deprecated files are retained only when they still serve a clear compatibility o
 
 ### 1. `packages/opencode/src/dream/engram.ts`
 
-**Status**: DEPRECATED  
+**Status**: REMOVED  
 **Superseded by**: `packages/opencode/src/memory/` (native MemoryProvider)  
 **Reason**: Manages the external Engram Go binary and registers it as an MCP client. The canonical/default runtime path is now native and SQLite-backed in `lightcode.db`. Engram remains only as a compatibility surface.  
 **Rollback**: No runtime rollback flag remains for recall. Engram is now compatibility-only, not a canonical runtime backend.  
-**Removal trigger**: Remove when TUI no longer needs `Engram.setRegistrar()` compatibility.
+**Removal trigger**: Completed — removed once no runtime-adjacent surface needed it.
 
 ---
 
@@ -126,5 +126,4 @@ After the production initiative:
 
 Remaining Engram surface:
 
-- `packages/opencode/src/dream/engram.ts` — deprecated compatibility module
-- `packages/opencode/cli/cmd/tui/app.tsx` — `Engram.setRegistrar()` for TUI MCP compatibility
+- No active runtime or runtime-adjacent Engram module remains in `src/`

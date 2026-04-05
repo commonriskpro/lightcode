@@ -15,7 +15,6 @@ type MemoryState = {
   last_observed_at: number | null
   is_observing: boolean
   is_reflecting: boolean
-  engram_connected: boolean
 }
 
 function truncate(text: string, max: number): string {
@@ -98,14 +97,6 @@ export function DialogMemory(props: { sessionID: string }) {
       </box>
 
       <box paddingLeft={4} paddingRight={4} gap={1}>
-        {/* Engram connection status */}
-        <box flexDirection="row" justifyContent="space-between">
-          <text fg={theme.textMuted}>Engram</text>
-          <text fg={mem()?.engram_connected ? (theme.success ?? theme.accent) : (theme.error ?? theme.textMuted)}>
-            {mem()?.engram_connected ? "connected" : "⚠ not connected"}
-          </text>
-        </box>
-
         {/* Observer status */}
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.textMuted}>Observer</text>

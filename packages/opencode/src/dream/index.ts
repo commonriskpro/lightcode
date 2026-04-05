@@ -1,8 +1,9 @@
 import path from "path"
 import { Global } from "../global"
 import { Log } from "@/util/log"
-// V3: Engram import removed from hot path — dream/index.ts no longer calls Engram.ensure()
-// The Engram module is retained as a compatibility module (dream/engram.ts) for TUI auto-registration.
+// Engram is not part of the dream runtime path. Native dream execution uses ensureDaemon()
+// and persists through Memory.indexArtifact(). Any remaining Engram code lives only in the
+// deprecated compatibility module (dream/engram.ts).
 import { Bus } from "../bus"
 import { SessionStatus } from "../session/status"
 import { Session } from "../session"
@@ -93,10 +94,7 @@ export namespace AutoDream {
 
   /** Manual trigger from /dream command */
   export async function run(focus?: string): Promise<string> {
-    // V3: Removed Engram.ensure() gate. The daemon-based dream path (ensureDaemon)
-    // does not need the Engram binary at all. Engram.ensure() blocked the /dream command
-    // for all users without the Engram binary installed — a V0 holdover that prevented
-    // manual dream triggers from working in native-memory mode.
+    // Manual dream trigger uses the native daemon path only.
     try {
       const { Config } = await import("../config/config")
       const cfg = await Config.get()
@@ -119,10 +117,7 @@ export namespace AutoDream {
   }
 
   async function idle(sid: string): Promise<void> {
-    // V2: Removed Engram.ensure() gate. AutoDream runs via the daemon path which
-    // does not need the Engram binary at all. The old gate silently disabled
-    // AutoDream for all users without Engram installed — a V0 holdover.
-    // Engram.ensure() is now only called in run() for manual trigger compatibility.
+    // AutoDream runs via the native daemon path and does not depend on Engram.
     const { Config } = await import("../config/config")
     const cfg = await Config.get()
     if (cfg.experimental?.autodream === false) return

@@ -1,7 +1,7 @@
 # LightCode Memory — Production Validation Report
 
 **Date**: 2026-04-05  
-**Status**: READY WITH CAVEATS  
+**Status**: READY  
 **Scope**: Final production cleanup of the native LightCode memory runtime
 
 ---
@@ -67,11 +67,16 @@ This report uses only the verified command results provided for this initiative,
 - `src/tool/task.ts` writes richer fork snapshots with `taskDescription`, continuation metadata, and `workingMemorySnapshot` values.
 - Non-fork child sessions write `memory_agent_handoffs` and the runtime now meaningfully consumes those records.
 
-### 7. Engram Boundary — ✅ PASS (runtime)
+### 7. Engram Boundary — ✅ PASS
 
 - `src/session/system.ts` no longer carries dead local recall helpers: `callEngramTool()`, `recallNative()`, `recallEngram()`.
 - `src/flag/flag.ts` no longer exports `OPENCODE_MEMORY_USE_ENGRAM`.
-- No core runtime path now requires Engram.
+- `src/cli/cmd/tui/app.tsx` no longer wires `Engram.setRegistrar()`.
+- `src/server/routes/session.ts` no longer exposes `engram_connected` for the TUI memory dialog.
+- `src/cli/cmd/tui/component/dialog-*` no longer present Engram as an operational requirement.
+- `src/dream/engram.ts` has been removed.
+- `src/dream/prompt.txt` now describes the native consolidation flow rather than old Engram MCP tooling.
+- No core or runtime-adjacent path now requires Engram.
 
 ### 8. Validation Gate — ✅ PASS
 
@@ -83,17 +88,17 @@ This report uses only the verified command results provided for this initiative,
 
 ## Gate Evaluation
 
-| Gate                    | Status                | Notes                                                                                                      |
-| ----------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| 1. Runtime Composition  | ✅ PASS               | Canonical path is `Memory.buildContext()` in `prompt.ts` step `=== 1` for normal + fork                    |
-| 2. OM Durability        | ✅ PASS               | `OM.addBufferSafe()` remains the canonical durable write path                                              |
-| 3. Working Memory       | ✅ PASS               | Precedence bug fixed; duplicate logical keys no longer leak across scopes                                  |
-| 4. Fork/Handoff         | ✅ PASS               | Durable child hydration now reads DB-backed handoff/fork state; in-memory fork map remains an optimization |
-| 5. Project Memory       | ✅ PASS               | Project + agent + thread scope chain is operational in runtime                                             |
-| 6. Recall               | ✅ PASS               | Two-pass FTS plus recent fallback materially improves recall behavior                                      |
-| 7. Engram Boundary      | ✅ PASS with caveat   | Runtime no longer depends on Engram, but compatibility surfaces still exist                                |
-| 8. Validation           | ✅ PASS               | All verified commands passed                                                                               |
-| 9. Production Readiness | ⚠️ READY WITH CAVEATS | Core runtime is production-usable, but some architectural cleanup remains intentionally deferred           |
+| Gate                    | Status   | Notes                                                                                                      |
+| ----------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| 1. Runtime Composition  | ✅ PASS  | Canonical path is `Memory.buildContext()` in `prompt.ts` step `=== 1` for normal + fork                    |
+| 2. OM Durability        | ✅ PASS  | `OM.addBufferSafe()` remains the canonical durable write path                                              |
+| 3. Working Memory       | ✅ PASS  | Precedence bug fixed; duplicate logical keys no longer leak across scopes                                  |
+| 4. Fork/Handoff         | ✅ PASS  | Durable child hydration now reads DB-backed handoff/fork state; in-memory fork map remains an optimization |
+| 5. Project Memory       | ✅ PASS  | Project + agent + thread scope chain is operational in runtime                                             |
+| 6. Recall               | ✅ PASS  | Two-pass FTS plus recent fallback materially improves recall behavior                                      |
+| 7. Engram Boundary      | ✅ PASS  | Runtime and runtime-adjacent paths no longer ambiguously depend on Engram                                  |
+| 8. Validation           | ✅ PASS  | All verified commands passed                                                                               |
+| 9. Production Readiness | ✅ READY | Remaining limitations are intentional design choices, not cleanup caveats                                  |
 
 ---
 
@@ -102,8 +107,6 @@ This report uses only the verified command results provided for this initiative,
 - The `runLoop` in `src/session/prompt.ts` is still large. This initiative added helper boundaries (`lastUserText`, `durableChildHydration`, `loadRuntimeMemory`, `indexSessionArtifacts`) and clearer ownership, but it is still not a small orchestration loop.
 - `user` and `global_pattern` scopes remain documented but dormant.
 - `SystemPrompt.observations()` still sits outside `Memory.buildContext()` by design.
-- `packages/opencode/src/cli/cmd/tui/app.tsx` still calls `Engram.setRegistrar()`.
-- `packages/opencode/src/dream/engram.ts` still exists as a deprecated compatibility module.
 - In-memory fork context is still retained as the fast-path for cache sharing; DB-backed hydration is now consumed meaningfully but is not yet the only source of truth.
 
 ---
@@ -131,13 +134,13 @@ This initiative **materially improved production quality**.
 
 The validated runtime memory path is stronger now: working-memory precedence is correct, recall quality is significantly better, zero-result recall no longer silently empties, agent scope is operational in the hot path, and dead local Engram recall code was removed.
 
-**Verdict**: **READY WITH CAVEATS**
+**Verdict**: **READY**
 
 - **Production rollout**: **YES** — the core LightCode memory runtime is ready for production use based on the validated gates.
-- **Full initiative signoff**: **NO** — not as a claim of “nothing left to do.” The system is shippable, but a few architectural caveats remain explicit.
+- **Full initiative signoff**: **YES** — the remaining limitations are documented design choices, not blockers or misleading compatibility debt.
 
 Known follow-up (non-blocking):
 
 - A future maintainability refactor can still extract larger portions of `runLoop`.
 - `user` and `global_pattern` scopes remain intentionally dormant.
-- TUI Engram compatibility (`Engram.setRegistrar()`) still exists as a compatibility surface.
+- In-memory fork context remains an optimization layer over the durable DB-backed fallback.

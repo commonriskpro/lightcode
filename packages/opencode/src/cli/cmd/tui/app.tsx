@@ -36,7 +36,6 @@ import { DialogFeature } from "./component/dialog-feature"
 import { DialogDreamModel } from "./component/dialog-dream-model"
 import { DialogMemory } from "./component/dialog-memory"
 import { AutoDream } from "@/dream"
-import { Engram } from "@/dream/engram"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
@@ -264,10 +263,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const sdk = useSDK()
   const toast = useToast()
 
-  // Inject SDK client for Engram (avoids InstanceState context error)
-  Engram.setRegistrar(async (name, config) => {
-    await sdk.client.mcp.add({ name, config })
-  })
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
   const sync = useSync()

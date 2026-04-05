@@ -62,8 +62,7 @@ export namespace SystemPrompt {
 
   /**
    * Wrap recall results for system prompt injection.
-   * Uses <memory-recall> tag (renamed from <engram-recall> in V4 cleanup —
-   * the native path has nothing to do with Engram).
+   * Uses <memory-recall> tag for the native semantic recall layer.
    */
   export function wrapRecall(body: string): string {
     return `<memory-recall>\n${body}\n</memory-recall>`
@@ -136,17 +135,6 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     return out
   }
 
-  // Production cleanup: callEngramTool(), recallNative(), and recallEngram() removed.
-  //
-  // These were dead code — no active callers in the runtime since V3 adopted
-  // Memory.buildContext() as the canonical recall path. The OPENCODE_MEMORY_USE_ENGRAM
-  // flag was also removed from flag.ts since it was never checked at a call site.
-  //
-  // Engram recall path cleanup rationale:
-  // - recallNative(): never called from hot path; recallEngram() fallback never called either
-  // - callEngramTool(): only used by recallEngram()
-  // - OPENCODE_MEMORY_USE_ENGRAM flag: defined in flag.ts but no call site checked it
-  //
-  // For any production recall use outside the hot path, call Memory.searchArtifacts() directly.
-  // The canonical hot path is Memory.buildContext({ semanticQuery }) in prompt.ts at step===1.
+  // Production cleanup: the old Engram recall bridge was removed.
+  // The canonical recall path is Memory.buildContext({ semanticQuery }) in prompt.ts at step===1.
 }

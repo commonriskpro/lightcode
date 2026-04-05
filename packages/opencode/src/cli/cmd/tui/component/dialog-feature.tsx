@@ -60,13 +60,6 @@ export function DialogFeature() {
     return exp?.[key] === true || env
   }
 
-  // Check if Engram MCP is connected — needed for AutoDream and Observer
-  const engramConnected = createMemo(() => {
-    const mcp = sync.data.mcp as Record<string, { status: string }> | undefined
-    if (!mcp) return false
-    return Object.entries(mcp).some(([name, s]) => name.toLowerCase().includes("engram") && s.status === "connected")
-  })
-
   function currentModel(key: string): string | undefined {
     const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
     return exp?.[key] as string | undefined
@@ -117,9 +110,7 @@ export function DialogFeature() {
       {
         id: "autodream",
         title: "AutoDream",
-        description: engramConnected()
-          ? "Consolidate session memory to Engram when idle"
-          : "Consolidate session memory to Engram when idle ⚠ Engram not connected",
+        description: "Consolidate session memory when idle using the native memory pipeline",
         env: "OPENCODE_EXPERIMENTAL_AUTODREAM",
         config: "autodream",
         modelConfig: "autodream_model",
@@ -129,9 +120,7 @@ export function DialogFeature() {
       {
         id: "observer",
         title: "Observer Memory",
-        description: engramConnected()
-          ? "Compress message history every 30k tokens"
-          : "Compress message history every 30k tokens ⚠ Engram not connected",
+        description: "Compress message history every 30k tokens using native observational memory",
         config: "observer",
         modelConfig: "observer_model",
         enabled: () => isEnabled("observer", false),

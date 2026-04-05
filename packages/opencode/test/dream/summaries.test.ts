@@ -243,8 +243,8 @@ describe("dream.idle.graceful", () => {
     })
   })
 
-  test("idle path gracefully returns when Engram is unavailable", async () => {
-    // AutoDream.run() → Engram.ensure() fails → returns string message (no throw)
+  test("manual dream path gracefully returns a string on failure", async () => {
+    // AutoDream.run() catches daemon/startup failures and returns a message string (no throw)
     const result = await AutoDream.run()
     expect(typeof result).toBe("string")
     // dreaming flag is cleaned up

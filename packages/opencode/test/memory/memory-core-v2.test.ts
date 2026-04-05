@@ -422,8 +422,8 @@ describe("V2-7: Engram gate removed from autodream idle()", () => {
     const idleNoComments = idleFnBody.replace(/\/\/[^\n]*/g, "")
     expect(idleNoComments).not.toContain("Engram.ensure()")
 
-    // V2 comment should be present
-    expect(idleFnBody).toContain("V2:")
+    // The native-memory comment should still be present
+    expect(idleFnBody).toContain("native daemon path")
   })
 
   test("idle() has proper config gate for autodream=false", () => {
