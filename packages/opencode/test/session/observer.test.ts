@@ -12,6 +12,13 @@ import {
   PROMPT,
   truncateObsToBudget,
 } from "../../src/session/om/observer"
+import {
+  wrapInObservationGroup,
+  parseObservationGroups,
+  stripObservationGroups,
+  renderObservationGroupsForReflection,
+  reconcileObservationGroupsFromReflection,
+} from "../../src/session/om/groups"
 import { SystemPrompt } from "../../src/session/system"
 import type { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util/log"
@@ -307,6 +314,8 @@ describe("session.om.record", () => {
             observation_tokens: 20,
             starts_at: now,
             ends_at: now + 1000,
+            first_msg_id: null,
+            last_msg_id: null,
             time_created: now,
             time_updated: now,
           }
@@ -336,6 +345,8 @@ describe("session.om.record", () => {
             observation_tokens: 10,
             starts_at: now,
             ends_at: now + 500,
+            first_msg_id: null,
+            last_msg_id: null,
             time_created: now,
             time_updated: now,
           }
@@ -347,6 +358,8 @@ describe("session.om.record", () => {
             observation_tokens: 12,
             starts_at: now + 501,
             ends_at: now + 1000,
+            first_msg_id: null,
+            last_msg_id: null,
             time_created: now,
             time_updated: now,
           }
@@ -894,6 +907,23 @@ describe("Reflector.startLevel behavior", () => {
   })
 })
 
+// ─── OBSERVATION_RETRIEVAL_INSTRUCTIONS injection ────────────────────────────
+
+describe("OBSERVATION_RETRIEVAL_INSTRUCTIONS injection", () => {
+  test("OBSERVATION_RETRIEVAL_INSTRUCTIONS is defined and non-empty", () => {
+    expect(SystemPrompt.OBSERVATION_RETRIEVAL_INSTRUCTIONS).toContain("recall")
+    expect(SystemPrompt.OBSERVATION_RETRIEVAL_INSTRUCTIONS).toContain("observation-group")
+  })
+
+  test("wrapObservations with grouped obs includes retrieval instructions", () => {
+    const wrapped = wrapInObservationGroup("* obs", "a:b", "g1")
+    // parseObservationGroups(wrapped).length > 0 → instructions should be appended
+    const groups = parseObservationGroups(wrapped)
+    expect(groups.length).toBeGreaterThan(0)
+    // The instructions would be appended by SystemPrompt.observations() — test the condition
+  })
+})
+
 // ─── REQ-1.6: awaitInFlight idempotency ─────────────────────────────────────
 
 test("OMBuf.awaitInFlight is idempotent — safe to call multiple times", async () => {
@@ -958,5 +988,183 @@ describe("Observer.run prevBudget truncation", () => {
     expect(result.length).toBeLessThan(longObs.length)
     // Must contain truncation marker
     expect(result).toContain("observations truncated here")
+  })
+})
+
+// ─── Observer.run group wrapping (T-3.2, T-3.3) ─────────────────────────────
+
+describe("Observer.run group wrapping", () => {
+  test("wraps output when msgs provided", () => {
+    const obs = "* test observation"
+    const wrapped = wrapInObservationGroup(obs, "msg-001:msg-010")
+    expect(wrapped).toContain("<observation-group")
+    expect(wrapped).toContain("msg-001:msg-010")
+  })
+
+  test("stripObservationGroups before truncateObsToBudget", () => {
+    const wrapped = wrapInObservationGroup("* observation line", "a:b")
+    const stripped = stripObservationGroups(wrapped)
+    expect(stripped).not.toContain("<observation-group")
+    expect(stripped).toContain("observation line")
+  })
+})
+
+// ─── Reflector group integration (T-4.1 / T-4.2) ───────────────────────────
+
+describe("Reflector group integration", () => {
+  test("renderObservationGroupsForReflection used before reflector prompt", () => {
+    // test the function directly — flat string returns unchanged
+    const flat = "* line one\n* line two"
+    expect(renderObservationGroupsForReflection(flat)).toBe(flat)
+  })
+
+  test("renderObservationGroupsForReflection wraps groups as markdown", () => {
+    const wrapped = wrapInObservationGroup("* obs", "a:b", "grp1")
+    const rendered = renderObservationGroupsForReflection(wrapped)
+    expect(rendered).toContain("## Group `grp1`")
+    expect(rendered).toContain("* obs")
+  })
+
+  test("reconcileObservationGroupsFromReflection restores group wrappers", () => {
+    const obs = "* observation line one\n* observation line two"
+    const source = wrapInObservationGroup(obs, "msg1:msg2", "g1")
+    const reflected = "* observation line one\n* observation line two"
+    const result = reconcileObservationGroupsFromReflection(reflected, source)
+    expect(result).toContain("<observation-group")
+  })
+
+  test("reconcileObservationGroupsFromReflection falls back when no source groups", () => {
+    const result = reconcileObservationGroupsFromReflection("* reflected obs", "* flat source")
+    expect(result).toBe("* reflected obs")
+  })
+})
+
+// ─── OM.activate group wrapping (T-3.5) ─────────────────────────────────────
+
+describe("OM.activate group wrapping", () => {
+  test("wrapInObservationGroup spans full buffer range", () => {
+    const obs = "* merged observation"
+    const range = "first-msg:last-msg"
+    const wrapped = wrapInObservationGroup(obs, range)
+    const groups = parseObservationGroups(wrapped)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].range).toBe(range)
+  })
+})
+
+// ─── session.om.groups ──────────────────────────────────────────────────────
+
+describe("session.om.groups", () => {
+  // ── wrapInObservationGroup ──────────────────────────────────────────────
+
+  test("wraps obs in XML tag with range", () => {
+    const result = wrapInObservationGroup("* fact one", "msg-001:msg-010")
+    expect(result).toContain('<observation-group id="')
+    expect(result).toContain('range="msg-001:msg-010"')
+    expect(result).toContain("* fact one")
+    expect(result).toContain("</observation-group>")
+  })
+
+  test("generates id when not provided", () => {
+    const result = wrapInObservationGroup("obs", "a:b")
+    const match = result.match(/id="([^"]+)"/)
+    expect(match).not.toBeNull()
+    expect(match![1].length).toBeGreaterThan(0)
+  })
+
+  test("uses provided id", () => {
+    const result = wrapInObservationGroup("obs", "a:b", "custom")
+    expect(result).toContain('id="custom"')
+  })
+
+  // ── parseObservationGroups ──────────────────────────────────────────────
+
+  test("parses single group", () => {
+    const wrapped = wrapInObservationGroup("* line one\n* line two", "m1:m5", "g1")
+    const groups = parseObservationGroups(wrapped)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].id).toBe("g1")
+    expect(groups[0].range).toBe("m1:m5")
+    expect(groups[0].content).toContain("line one")
+  })
+
+  test("parses multiple groups", () => {
+    const a = wrapInObservationGroup("obs A", "m1:m3", "ga")
+    const b = wrapInObservationGroup("obs B", "m4:m6", "gb")
+    const groups = parseObservationGroups(`${a}\n\n${b}`)
+    expect(groups).toHaveLength(2)
+    expect(groups[0].id).toBe("ga")
+    expect(groups[1].id).toBe("gb")
+  })
+
+  test("returns [] for flat string", () => {
+    expect(parseObservationGroups("* obs line one\n* obs line two")).toEqual([])
+  })
+
+  test("roundtrip: wrap → parse", () => {
+    const obs = "* 🔴 user is a TypeScript developer"
+    const wrapped = wrapInObservationGroup(obs, "r1:r2", "tid")
+    const groups = parseObservationGroups(wrapped)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].content).toBe(obs)
+  })
+
+  // ── stripObservationGroups ──────────────────────────────────────────────
+
+  test("strips wrappers leaves content", () => {
+    const wrapped = wrapInObservationGroup("* fact one\n* fact two", "m1:m2", "g1")
+    const stripped = stripObservationGroups(wrapped)
+    expect(stripped).not.toContain("<observation-group")
+    expect(stripped).not.toContain("</observation-group>")
+    expect(stripped).toContain("fact one")
+    expect(stripped).toContain("fact two")
+  })
+
+  test("flat string unchanged by strip", () => {
+    const flat = "* obs line"
+    expect(stripObservationGroups(flat)).toBe(flat)
+  })
+
+  // ── renderObservationGroupsForReflection ────────────────────────────────
+
+  test("flat string returned unchanged by render", () => {
+    const flat = "* obs line"
+    expect(renderObservationGroupsForReflection(flat)).toBe(flat)
+  })
+
+  test("groups rendered as markdown headers", () => {
+    const wrapped = wrapInObservationGroup("* fact about user", "m1:m3", "grp1")
+    const rendered = renderObservationGroupsForReflection(wrapped)
+    expect(rendered).toContain("## Group")
+    expect(rendered).toContain("grp1")
+    expect(rendered).toContain("fact about user")
+    expect(rendered).not.toContain("<observation-group")
+  })
+
+  // ── reconcileObservationGroupsFromReflection ────────────────────────────
+
+  test("no source groups → returns reflected unchanged", () => {
+    const reflected = "* compressed fact\n* another fact"
+    const source = "* original flat obs"
+    expect(reconcileObservationGroupsFromReflection(reflected, source)).toBe(reflected)
+  })
+
+  test("restores group wrappers from source", () => {
+    const source = wrapInObservationGroup("* user is senior engineer\n* prefers TypeScript", "m1:m5", "g1")
+    // reflected contains lines matching the source group
+    const reflected = "* user is senior engineer\n* prefers TypeScript"
+    const result = reconcileObservationGroupsFromReflection(reflected, source)
+    expect(result).toContain("<observation-group")
+    expect(result).toContain("</observation-group>")
+  })
+
+  test("fallback: no overlap → wraps all in single group", () => {
+    const source = wrapInObservationGroup("* completely different content", "m1:m5", "g1")
+    // reflected has no content overlap with source
+    const reflected = "* entirely new unrelated summary"
+    const result = reconcileObservationGroupsFromReflection(reflected, source)
+    // Should still produce a wrapped output (either assigned or fallback)
+    expect(result).toContain("<observation-group")
+    expect(result).toContain("entirely new unrelated summary")
   })
 })

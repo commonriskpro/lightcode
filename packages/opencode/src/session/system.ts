@@ -10,6 +10,7 @@ import { Skill } from "@/skill"
 import { MCP } from "@/mcp"
 import { Token } from "@/util/token"
 import { OM } from "./om"
+import { parseObservationGroups } from "./om/groups"
 import type { SessionID } from "./schema"
 
 export namespace SystemPrompt {
@@ -81,6 +82,17 @@ export namespace SystemPrompt {
 - MOST RECENT USER INPUT: Treat the most recent user message as the highest-priority signal for what to do next.
 - Do not mention the memory system, summarization, or missing messages.`
 
+  export const OBSERVATION_RETRIEVAL_INSTRUCTIONS = `## Recall — retrieving source messages
+
+Your observations may contain \`<observation-group range="startId:endId">\` markers. Each range points to the original messages the observation was derived from. Use the \`recall\` tool to retrieve them.
+
+When to use recall:
+- The user asks to repeat, show, or reproduce something from a past message
+- You need exact content (code, text, URLs, specific numbers) your observations only summarize
+- You want to verify or expand on an observation
+
+How: extract the \`range\` attribute from the relevant \`<observation-group>\` tag and call \`recall({ range: "startId:endId" })\`.`
+
   export function wrapObservations(body: string, hint?: string): string {
     let out = `<local-observations>\n${capRecallBody(body)}\n</local-observations>\n\n${OBSERVATION_CONTEXT_INSTRUCTIONS}`
     if (hint) out += `\n\n<system-reminder>\n${hint}\n</system-reminder>`
@@ -92,7 +104,9 @@ export namespace SystemPrompt {
     if (!rec) return undefined
     const body = rec.reflections ?? rec.observations
     if (!body) return undefined
-    return wrapObservations(body, rec.suggested_continuation ?? undefined)
+    let out = wrapObservations(body, rec.suggested_continuation ?? undefined)
+    if (parseObservationGroups(body).length > 0) out += "\n\n" + OBSERVATION_RETRIEVAL_INSTRUCTIONS
+    return out
   }
 
   // Execute a single Engram MCP tool by partial name match, return text content.

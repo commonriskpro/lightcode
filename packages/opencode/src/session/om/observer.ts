@@ -4,6 +4,7 @@ import { MessageV2 } from "../message-v2"
 import { Log } from "@/util/log"
 import { generateText } from "ai"
 import type { SessionID } from "../schema"
+import { wrapInObservationGroup, stripObservationGroups } from "./groups"
 
 const log = Log.create({ service: "session.observer" })
 
@@ -220,7 +221,7 @@ export namespace Observer {
 
   export async function run(input: {
     sid: SessionID
-    msgs: MessageV2.WithParts[]
+    msgs?: MessageV2.WithParts[]
     prev?: string
     prevBudget?: number | false
     priorCurrentTask?: string
@@ -245,7 +246,7 @@ export namespace Observer {
     })
     if (!language) return undefined
 
-    const context = input.msgs
+    const context = (input.msgs ?? [])
       .filter((m) => m.info.role === "user" || m.info.role === "assistant")
       .map((m) => {
         const role = m.info.role === "user" ? "User" : "Assistant"
@@ -264,7 +265,8 @@ export namespace Observer {
     let system = PROMPT
     if (input.prev) {
       const budget = input.prevBudget ?? cfg.experimental?.observer_prev_tokens
-      const prev = budget === false ? input.prev : truncateObsToBudget(input.prev, budget ?? 2000)
+      const stripped = stripObservationGroups(input.prev)
+      const prev = budget === false ? stripped : truncateObsToBudget(stripped, budget ?? 2000)
       if (prev) system += `\n\n## Previous Observations (for context, do not duplicate)\n${prev}`
     }
     if (input.priorCurrentTask) system += `\n\n## Prior Context — Current Task\n${input.priorCurrentTask}`
@@ -285,6 +287,12 @@ export namespace Observer {
       return undefined
     }
 
-    return parseObserverOutput(result.text)
+    const out = parseObserverOutput(result.text)
+    const first = input.msgs?.[0]?.info.id
+    const last = input.msgs?.at(-1)?.info.id
+    if (first && last && out.observations) {
+      out.observations = wrapInObservationGroup(out.observations, `${first}:${last}`)
+    }
+    return out
   }
 }

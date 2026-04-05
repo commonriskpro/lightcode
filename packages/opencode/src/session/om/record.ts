@@ -4,6 +4,7 @@ import type { SessionID } from "../schema"
 import { Identifier } from "@/id/id"
 import { Observer } from "./observer"
 import { Token } from "@/util/token"
+import { wrapInObservationGroup } from "./groups"
 
 export type ObservationRecord = typeof ObservationTable.$inferSelect
 export type ObservationBuffer = typeof ObservationBufferTable.$inferSelect
@@ -46,13 +47,17 @@ export namespace OM {
     // Use LLM to condense chunks into a coherent observation log.
     // Falls back to naive join if observer_model is not configured or LLM fails.
     const merged = await Observer.condense(chunks, rec?.observations ?? undefined)
+    const first = bufs[0]
+    const last = bufs[bufs.length - 1]
+    const range = first?.first_msg_id && last?.last_msg_id ? `${first.first_msg_id}:${last.last_msg_id}` : ""
+    const obs = range ? wrapInObservationGroup(merged, range) : merged
     const latest = bufs[bufs.length - 1]
-    const tok = Token.estimate(merged)
+    const tok = Token.estimate(obs)
 
     if (rec) {
       const updated: ObservationRecord = {
         ...rec,
-        observations: merged,
+        observations: obs,
         last_observed_at: latest.ends_at,
         generation_count: rec.generation_count + bufs.length,
         observation_tokens: tok,
@@ -63,7 +68,7 @@ export namespace OM {
       const next: ObservationRecord = {
         id: Identifier.ascending("session") as SessionID,
         session_id: sid,
-        observations: merged,
+        observations: obs,
         reflections: null,
         current_task: null,
         suggested_continuation: null,

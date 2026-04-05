@@ -5,6 +5,7 @@ import { generateText } from "ai"
 import type { SessionID } from "../schema"
 import { OM } from "./record"
 import { detectDegenerateRepetition } from "./observer"
+import { renderObservationGroupsForReflection, reconcileObservationGroupsFromReflection } from "./groups"
 
 const log = Log.create({ service: "session.reflector" })
 const THRESHOLD = 40_000
@@ -127,12 +128,14 @@ export namespace Reflector {
     let best: { text: string; tok: number } | undefined
     let level = startLevel(model?.api?.id ?? "") as CompressionLevel
 
+    const rendered = renderObservationGroupsForReflection(rec.observations)
+
     while (level <= 4) {
       const system = PROMPT + COMPRESSION_GUIDANCE[level]
       const result = await generateText({
         model: language,
         system,
-        prompt: rec.observations,
+        prompt: rendered,
       }).catch((err) => {
         log.error("reflector llm failed", { err, level })
         return undefined
@@ -153,7 +156,8 @@ export namespace Reflector {
       if (!best || tok < best.tok) best = { text: result.text, tok }
 
       if (validateCompression(result.text, THRESHOLD)) {
-        OM.reflect(sid, result.text)
+        const reconciled = reconcileObservationGroupsFromReflection(result.text, rec.observations)
+        OM.reflect(sid, reconciled)
         if (level > 0) log.info("reflector: compressed at level", { level })
         return
       }
@@ -164,7 +168,7 @@ export namespace Reflector {
     // Exhausted all levels — persist the best result we got
     if (best) {
       log.warn("reflector: exhausted compression levels, persisting best result", { tok: best.tok })
-      OM.reflect(sid, best.text)
+      OM.reflect(sid, reconcileObservationGroupsFromReflection(best.text, rec.observations))
     }
   }
 }

@@ -139,6 +139,8 @@ export const ObservationBufferTable = sqliteTable(
     observation_tokens: integer().notNull(),
     starts_at: integer().notNull(),
     ends_at: integer().notNull(),
+    first_msg_id: text().$type<MessageID>(),
+    last_msg_id: text().$type<MessageID>(),
     ...Timestamps,
   },
   (table) => [index("obs_buffer_session_idx").on(table.session_id)],

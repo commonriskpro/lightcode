@@ -1550,6 +1550,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                         observation_tokens: result.observations.length >> 2,
                         starts_at: boundary,
                         ends_at: Date.now(),
+                        first_msg_id: unobserved[0]?.info.id ?? null,
+                        last_msg_id: unobserved.at(-1)?.info.id ?? null,
                         time_created: Date.now(),
                         time_updated: Date.now(),
                       })
