@@ -1,3 +1,16 @@
+/**
+ * @deprecated LightCode Memory Core V1
+ *
+ * This module manages the external Engram Go binary and MCP integration.
+ * It is superseded by the native LightCode Memory Core (packages/opencode/src/memory/).
+ *
+ * Status: DEPRECATED — retained for rollback capability only.
+ * Use: set OPENCODE_MEMORY_USE_ENGRAM=true to re-enable the Engram path.
+ * Future: this module will be removed once Memory Core V1 is fully stable.
+ *
+ * See: docs/SUPERSEDED.md for full deprecation rationale.
+ */
+
 import path from "path"
 import fs from "fs/promises"
 import { Global } from "../global"

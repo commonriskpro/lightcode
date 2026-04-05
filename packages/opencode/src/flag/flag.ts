@@ -86,6 +86,17 @@ export namespace Flag {
   export const OPENCODE_AUTODREAM_MIN_HOURS = number("OPENCODE_AUTODREAM_MIN_HOURS") ?? 24
   export const OPENCODE_AUTODREAM_MIN_SESSIONS = number("OPENCODE_AUTODREAM_MIN_SESSIONS") ?? 5
 
+  /**
+   * Memory Core V1 flags.
+   *
+   * OPENCODE_MEMORY_USE_ENGRAM=true  → use legacy Engram MCP path for cross-session recall
+   *                                    (default: false — native MemoryProvider is used)
+   * OPENCODE_DREAM_USE_NATIVE_MEMORY=false → use legacy Engram MCP path for AutoDream consolidation
+   *                                    (default: true — native Memory.indexArtifact() is used)
+   */
+  export const OPENCODE_MEMORY_USE_ENGRAM = truthy("OPENCODE_MEMORY_USE_ENGRAM")
+  export const OPENCODE_DREAM_USE_NATIVE_MEMORY = !falsy("OPENCODE_DREAM_USE_NATIVE_MEMORY")
+
   function number(key: string) {
     const value = process.env[key]
     if (!value) return undefined

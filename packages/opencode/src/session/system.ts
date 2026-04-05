@@ -10,6 +10,8 @@ import { Token } from "@/util/token"
 import { OM } from "./om"
 import { parseObservationGroups } from "./om/groups"
 import type { SessionID } from "./schema"
+import { Memory, SemanticRecall } from "@/memory"
+import { Flag } from "@/flag/flag"
 
 export namespace SystemPrompt {
   export function provider(_model: Provider.Model) {
@@ -136,20 +138,50 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     )
   }
 
-  export async function recall(pid: string): Promise<string | undefined> {
+  /**
+   * Recall cross-session memory for a project.
+   *
+   * V1: uses native LightCode Memory Core (MemoryProvider → memory_artifacts FTS5).
+   * Fallback: if OPENCODE_MEMORY_USE_ENGRAM=true, falls back to Engram MCP path.
+   *
+   * The native path requires no external daemon. Falls back gracefully to
+   * undefined on any error or if no artifacts exist.
+   */
+  export async function recall(pid: string, sessionId?: string): Promise<string | undefined> {
+    // Feature flag: set OPENCODE_MEMORY_USE_ENGRAM=true to use old Engram MCP path
+    if (Flag.OPENCODE_MEMORY_USE_ENGRAM) {
+      return recallEngram(pid)
+    }
+    return recallNative(pid, sessionId)
+  }
+
+  async function recallNative(pid: string, sessionId?: string): Promise<string | undefined> {
+    try {
+      const scopes = [
+        ...(sessionId ? [{ type: "thread" as const, id: sessionId }] : []),
+        { type: "project" as const, id: pid },
+        { type: "user" as const, id: "default" },
+      ]
+      const artifacts = Memory.searchArtifacts(pid, scopes, 20)
+      if (!artifacts.length) return undefined
+      const body = SemanticRecall.format(artifacts, 2000)
+      if (!body) return undefined
+      return wrapRecall(capRecallBody(body))
+    } catch {
+      return undefined
+    }
+  }
+
+  async function recallEngram(pid: string): Promise<string | undefined> {
     try {
       const all = await MCP.tools()
 
       // Run mem_context (recency) and mem_search (semantic keywords) in parallel.
-      // mem_search uses the project name as the query — surfaces architecturally
-      // relevant observations even if they weren't the most recent.
       const [ctx, search] = await Promise.all([
         callEngramTool(all, "mem_context", { limit: 20, project: pid }),
         callEngramTool(all, "mem_search", { query: pid, project: pid, limit: 10 }),
       ])
 
-      // Merge: context first (recency signal), then search results (relevance signal).
-      // Simple dedup by line — search results are often a subset of context anyway.
       const ctxLines = new Set(
         (ctx ?? "")
           .split("\n")

@@ -12,6 +12,8 @@ import type { SessionID } from "../session/schema"
 import { Instance } from "../project/instance"
 import { ensureDaemon } from "./ensure"
 import { Server } from "../server/server"
+import { Memory } from "../memory"
+import { Flag } from "../flag/flag"
 
 import PROMPT from "./prompt.txt"
 
@@ -149,5 +151,37 @@ export namespace AutoDream {
         log.error("autodream failed", { error: err instanceof Error ? err.message : String(err) })
       })
     })
+  }
+
+  /**
+   * Write a consolidated observation text to the native LightCode Memory Core.
+   *
+   * Called after the dream agent completes to persist cross-session memory
+   * natively (without Engram MCP) when OPENCODE_DREAM_USE_NATIVE_MEMORY=true.
+   *
+   * Falls back silently on error — dream consolidation is best-effort.
+   */
+  export function persistConsolidation(projectId: string, title: string, content: string, topicKey?: string): void {
+    if (!Flag.OPENCODE_DREAM_USE_NATIVE_MEMORY) return
+    try {
+      Memory.indexArtifact({
+        scope_type: "project",
+        scope_id: projectId,
+        type: "observation",
+        title,
+        content,
+        topic_key: topicKey ?? null,
+        normalized_hash: null,
+        revision_count: 1,
+        duplicate_count: 1,
+        last_seen_at: null,
+        deleted_at: null,
+      })
+      log.info("dream consolidation persisted to native memory", { projectId, title })
+    } catch (err) {
+      log.warn("dream consolidation native write failed", {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 }
