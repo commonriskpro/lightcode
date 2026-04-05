@@ -241,13 +241,47 @@ export namespace SemanticRecall {
             seen.add(r.id)
           }
         }
-      } catch {
-        // FTS5 query error — fall through with whatever we have
+      } catch (err) {
+        // Log FTS5 errors — silently swallowing made debugging hard in V1
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!msg.includes("no such table")) {
+          // Only log real query errors, not missing-table errors (fresh DB)
+          console.warn("[memory] FTS5 search error:", msg)
+        }
       }
     }
 
     if (results.length > limit) return results.slice(0, limit) as MemoryArtifact[]
     return results as MemoryArtifact[]
+  }
+
+  /**
+   * Get recent artifacts for a scope, ordered by most recently updated.
+   * Used as a non-FTS fallback when no semantic query is available.
+   */
+  export function recent(scopes: ScopeRef[], limit = 10): MemoryArtifact[] {
+    if (!scopes.length) return []
+    const results: MemoryArtifact[] = []
+    for (const scope of scopes) {
+      const rows = Database.use((db) =>
+        db
+          .select()
+          .from(MemoryArtifactTable)
+          .where(
+            and(
+              eq(MemoryArtifactTable.scope_type, scope.type),
+              eq(MemoryArtifactTable.scope_id, scope.id),
+              isNull(MemoryArtifactTable.deleted_at),
+            ),
+          )
+          .orderBy(sql`${MemoryArtifactTable.time_updated} DESC`)
+          .limit(limit)
+          .all(),
+      ) as MemoryArtifact[]
+      results.push(...rows)
+      if (results.length >= limit) break
+    }
+    return results.slice(0, limit)
   }
 
   /**
@@ -289,7 +323,8 @@ export namespace SemanticRecall {
     for (let i = 0; i < artifacts.length; i++) {
       const a = artifacts[i]
       const scopeLabel = `${a.scope_type}/${a.scope_id}`
-      const preview = a.content.length > 300 ? a.content.slice(0, 300) + "…" : a.content
+      // V2: expanded preview from 300 → 800 chars for more useful recall context
+      const preview = a.content.length > 800 ? a.content.slice(0, 800) + "…" : a.content
       const entry = `[${i + 1}] ${a.title} (${scopeLabel})\n${preview}`
       const est = Token.estimate(entry)
       if (used + est > budget) break

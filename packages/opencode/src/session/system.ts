@@ -10,7 +10,7 @@ import { Token } from "@/util/token"
 import { OM } from "./om"
 import { parseObservationGroups } from "./om/groups"
 import type { SessionID } from "./schema"
-import { Memory, SemanticRecall } from "@/memory"
+import { Memory, SemanticRecall, WorkingMemory } from "@/memory"
 import { Flag } from "@/flag/flag"
 
 export namespace SystemPrompt {
@@ -64,6 +64,31 @@ export namespace SystemPrompt {
 
   export function wrapRecall(body: string): string {
     return `<engram-recall>\n${body}\n</engram-recall>`
+  }
+
+  /**
+   * Wrap working memory content for injection into the system prompt.
+   * Working memory is stable canonical state: facts, goals, constraints, decisions.
+   * Separate from observations (narrative) and recall (cross-session artifacts).
+   */
+  export function wrapWorkingMemory(body: string): string {
+    return `<working-memory>\n${body}\n</working-memory>\n\nIMPORTANT: The working memory above contains stable facts, goals, and decisions for this project. Use it as authoritative context when answering questions about the project state.`
+  }
+
+  /**
+   * Load and format project-scope working memory for the current session.
+   * Returns undefined if no working memory records exist for this project.
+   */
+  export async function projectWorkingMemory(pid: string): Promise<string | undefined> {
+    try {
+      const records = Memory.getWorkingMemory({ type: "project", id: pid })
+      if (!records.length) return undefined
+      const body = WorkingMemory.format(records, 2000)
+      if (!body) return undefined
+      return wrapWorkingMemory(body)
+    } catch {
+      return undefined
+    }
   }
 
   // Continuation hint injected as a synthetic user message at the start of the unobserved
@@ -141,28 +166,45 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
   /**
    * Recall cross-session memory for a project.
    *
-   * V1: uses native LightCode Memory Core (MemoryProvider → memory_artifacts FTS5).
+   * V2: uses native LightCode Memory Core (MemoryProvider → memory_artifacts FTS5).
+   * The query is the last user message text (best semantic signal) or falls back
+   * to the session's current_task from OM, then to the project name.
+   *
+   * V1 bug fixed: V1 incorrectly passed the project UUID as the FTS5 query,
+   * which never matched any indexed content. V2 uses the actual user message.
+   *
    * Fallback: if OPENCODE_MEMORY_USE_ENGRAM=true, falls back to Engram MCP path.
    *
    * The native path requires no external daemon. Falls back gracefully to
    * undefined on any error or if no artifacts exist.
    */
-  export async function recall(pid: string, sessionId?: string): Promise<string | undefined> {
+  export async function recall(pid: string, sessionId?: string, lastUserMessage?: string): Promise<string | undefined> {
     // Feature flag: set OPENCODE_MEMORY_USE_ENGRAM=true to use old Engram MCP path
     if (Flag.OPENCODE_MEMORY_USE_ENGRAM) {
       return recallEngram(pid)
     }
-    return recallNative(pid, sessionId)
+    return recallNative(pid, sessionId, lastUserMessage)
   }
 
-  async function recallNative(pid: string, sessionId?: string): Promise<string | undefined> {
+  async function recallNative(pid: string, sessionId?: string, lastUserMessage?: string): Promise<string | undefined> {
     try {
       const scopes = [
         ...(sessionId ? [{ type: "thread" as const, id: sessionId }] : []),
         { type: "project" as const, id: pid },
         { type: "user" as const, id: "default" },
       ]
-      const artifacts = Memory.searchArtifacts(pid, scopes, 20)
+
+      // V2 fix: use the actual user message text as the semantic query instead of
+      // the project UUID. Falls back to OM current_task, then to a generic query.
+      const omRec = sessionId ? Memory.getObservations(sessionId) : undefined
+      const query = lastUserMessage?.slice(0, 500) || omRec?.current_task || `project memory`
+
+      // Try FTS5 search first; fall back to recency-ordered results
+      let artifacts = Memory.searchArtifacts(query, scopes, 20)
+      if (!artifacts.length) {
+        // No FTS matches — fall back to most recently updated artifacts for these scopes
+        artifacts = SemanticRecall.recent(scopes, 10)
+      }
       if (!artifacts.length) return undefined
       const body = SemanticRecall.format(artifacts, 2000)
       if (!body) return undefined

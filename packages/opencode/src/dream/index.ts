@@ -117,8 +117,10 @@ export namespace AutoDream {
   }
 
   async function idle(sid: string): Promise<void> {
-    const available = await Engram.ensure()
-    if (!available) return
+    // V2: Removed Engram.ensure() gate. AutoDream runs via the daemon path which
+    // does not need the Engram binary at all. The old gate silently disabled
+    // AutoDream for all users without Engram installed — a V0 holdover.
+    // Engram.ensure() is now only called in run() for manual trigger compatibility.
     const { Config } = await import("../config/config")
     const cfg = await Config.get()
     if (cfg.experimental?.autodream === false) return

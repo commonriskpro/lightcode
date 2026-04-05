@@ -111,7 +111,42 @@ async function doDream(focus?: string, model?: string, obs?: string) {
       } catch {}
     }
 
-    // 5. Write state (AutoDream already imported above)
+    // 5. Capture dream output and persist to native memory artifacts (V2).
+    //    After the dream session completes, fetch its messages, extract the last
+    //    assistant text, and call persistConsolidation() so it lands in memory_artifacts.
+    //    This closes the V1 gap where dream output evaporated after session completion.
+    try {
+      const msgsRes = await fetch(`${serverURL}/session/${sessionID}/messages${qs}`)
+      if (msgsRes.ok) {
+        const msgsData = (await msgsRes.json()) as Array<{
+          role: string
+          parts: Array<{ type: string; text?: string }>
+        }>
+        const lastAssistant = [...msgsData].reverse().find((m) => m.role === "assistant")
+        const outputText = lastAssistant?.parts
+          .filter((p) => p.type === "text" && p.text)
+          .map((p) => p.text!)
+          .join("\n")
+          .trim()
+
+        if (outputText && outputText.length > 50) {
+          AutoDream.persistConsolidation(
+            projectDir,
+            focus ? `Dream: ${focus}` : `AutoDream consolidation ${new Date().toISOString().slice(0, 10)}`,
+            outputText,
+            `dream/${new Date().toISOString().slice(0, 10)}`,
+          )
+          console.log("dream output persisted to native memory", { sessionID, chars: outputText.length })
+        }
+      }
+    } catch (captureErr) {
+      // Non-fatal — dream completed, capture failure does not block state write
+      console.warn("dream output capture failed (non-fatal)", {
+        error: captureErr instanceof Error ? captureErr.message : String(captureErr),
+      })
+    }
+
+    // 6. Write state
     await AutoDream.writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: 0 })
 
     lastCompleted = Date.now()

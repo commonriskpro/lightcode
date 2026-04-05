@@ -1466,6 +1466,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           let step = 0
           let recall: string | undefined
           let obs: string | undefined
+          let workingMem: string | undefined
           const session = yield* sessions.get(sessionID)
 
           while (true) {
@@ -1562,11 +1563,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     (sealed === 0 || (m.info.time?.created ?? 0) > sealed),
                 )
                 const sealAt = unobserved.at(-1)?.info.time?.created ?? 0
-                if (sealAt > 0) OMBuf.seal(sessionID, sealAt)
-                OM.trackObserved(
-                  sessionID,
-                  unobserved.map((m) => m.info.id),
-                )
+                // V2: seal + trackObserved moved INSIDE the async closure so they only
+                // advance after Observer.run() succeeds and the buffer is durably written.
+                // Previously these fired synchronously before the observer resolved, meaning
+                // a failed observer would permanently mark messages as observed with no record.
+                const msgIds = unobserved.map((m) => m.info.id)
                 const p = (async () => {
                   OMBuf.setObserving(true)
                   try {
@@ -1591,6 +1592,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                         time_created: Date.now(),
                         time_updated: Date.now(),
                       })
+                      // Only advance seal + trackObserved AFTER the buffer write succeeds.
+                      // This is the durability guarantee: if addBuffer throws, we retry next cycle.
+                      if (sealAt > 0) OMBuf.seal(sessionID, sealAt)
+                      OM.trackObserved(sessionID, msgIds)
                     }
                   } catch (err) {
                     log.error("background observer failed", { err })
@@ -1670,6 +1675,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 maxSteps: 5,
                 recall,
                 observations: obs,
+                workingMemory: workingMem,
               })
 
               if (result === "stop") break
@@ -1749,7 +1755,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
                 if (step === 1) {
-                  recall = yield* Effect.promise(() => SystemPrompt.recall(Instance.project.id))
+                  // V2: pass last user message text as the semantic recall query.
+                  // The lastUser.id is the message ID; we extract text from the last user message parts.
+                  const lastUserText = msgs
+                    .findLast((m) => m.info.role === "user")
+                    ?.parts.filter((p) => p.type === "text")
+                    .map((p) => (p as { text: string }).text)
+                    .join(" ")
+                    .trim()
+                  ;[recall, workingMem] = yield* Effect.all([
+                    Effect.promise(() => SystemPrompt.recall(Instance.project.id, sessionID, lastUserText)),
+                    // V2: load project-scope working memory for this session
+                    Effect.promise(() => SystemPrompt.projectWorkingMemory(Instance.project.id)),
+                  ])
                 }
 
                 // Load observations every turn — they update during the session
@@ -1828,6 +1846,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   maxSteps: format.type === "json_schema" ? 1 : 5,
                   recall,
                   observations: obs,
+                  workingMemory: workingMem,
                 })
 
                 if (structured !== undefined) {

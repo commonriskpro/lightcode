@@ -38,6 +38,7 @@ export namespace LLM {
     maxSteps?: number
     recall?: string
     observations?: string
+    workingMemory?: string
   }
 
   export type StreamRequest = StreamInput & {
@@ -130,11 +131,14 @@ export namespace LLM {
     }
     // system[1] = observations (BP3 slot — stable between Observer cycles, cacheable)
     // system[2] = recall (session-frozen, uncached, small ~2k tokens — acceptable)
+    // system[3] = workingMemory (project-scope stable facts, loaded once per session)
     // system[last] = volatile (model ID + date — not cached by design)
     // Sentinel "<!-- ctx -->" ensures BP3 always points at stable content even when
     // no observations exist yet (new session before first Observer activation).
     system.splice(1, 0, input.observations ?? "<!-- ctx -->")
     if (input.recall) system.splice(2, 0, input.recall)
+    // V2: inject working memory after recall — stable project facts available every turn
+    if (input.workingMemory) system.splice(input.recall ? 3 : 2, 0, input.workingMemory)
     system.push(SystemPrompt.volatile(input.model))
 
     const variant =
