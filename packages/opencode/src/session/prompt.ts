@@ -1579,24 +1579,36 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                       priorCurrentTask: rec?.current_task ?? undefined,
                     })
                     if (result) {
-                      OM.addBuffer({
-                        id: ulid(),
-                        session_id: sessionID,
-                        observations: result.observations,
-                        message_tokens: tok,
-                        observation_tokens: result.observations.length >> 2,
-                        starts_at: boundary,
-                        // Use last observed message timestamp so the boundary is precise.
-                        ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),
-                        first_msg_id: unobserved[0]?.info.id ?? null,
-                        last_msg_id: unobserved.at(-1)?.info.id ?? null,
-                        time_created: Date.now(),
-                        time_updated: Date.now(),
-                      })
-                      // Only advance seal + trackObserved AFTER the buffer write succeeds.
-                      // This is the durability guarantee: if addBuffer throws, we retry next cycle.
+                      // Final canonical OM write path: addBufferSafe() atomically writes
+                      // the buffer chunk AND updates observed_message_ids in a single DB
+                      // transaction. If the process crashes between addBuffer and trackObserved
+                      // (the old 3-step sequence), the same messages could be re-observed on
+                      // restart. With addBufferSafe(), either both writes succeed or neither
+                      // does, and the durable observed_message_ids prevents double-observation.
+                      OM.addBufferSafe(
+                        {
+                          id: ulid(),
+                          session_id: sessionID,
+                          observations: result.observations,
+                          message_tokens: tok,
+                          observation_tokens: result.observations.length >> 2,
+                          starts_at: boundary,
+                          // Use last observed message timestamp so the boundary is precise.
+                          ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),
+                          first_msg_id: unobserved[0]?.info.id ?? null,
+                          last_msg_id: unobserved.at(-1)?.info.id ?? null,
+                          time_created: Date.now(),
+                          time_updated: Date.now(),
+                        },
+                        sessionID,
+                        msgIds,
+                      )
+                      // Advance the in-memory seal AFTER the transaction succeeds.
+                      // The seal is an ephemeral read-performance hint — it prevents the
+                      // next check() from re-filtering already-observed messages on a live
+                      // process. On restart, observed_message_ids (persisted above) is the
+                      // authoritative deduplication source.
                       if (sealAt > 0) OMBuf.seal(sessionID, sealAt)
-                      OM.trackObserved(sessionID, msgIds)
                     }
                   } catch (err) {
                     log.error("background observer failed", { err })
@@ -1916,17 +1928,32 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // Previously this grew unboundedly (entries were added every turn but never removed).
           activeContexts.delete(sessionID)
 
-          // V3: auto-index final OM observations into memory_artifacts at session end.
+          // Auto-index final OM observations into memory_artifacts at session end.
           // This makes project memory grow automatically — previously only AutoDream populated it.
+          // Final: use reflections (higher quality) when available; use current_task as title
+          // for better FTS5 searchability vs the generic date-only title from V3.
           try {
             const finalObs = OM.get(sessionID)
-            if (finalObs?.observations && finalObs.observations.length > 100) {
+            // Prefer reflections (condensed) > observations. Must be at least 100 chars.
+            const obsContent = finalObs?.reflections ?? finalObs?.observations
+            if (obsContent && obsContent.length > 100) {
+              // Build a meaningful title for FTS5 recall quality.
+              // current_task → first line of content → generic date fallback.
+              const obsTitle =
+                finalObs?.current_task ||
+                obsContent
+                  .split("\n")
+                  .find((l) => l.trim().length > 10)
+                  ?.trim()
+                  .slice(0, 100) ||
+                `Session ${new Date().toISOString().slice(0, 10)}`
+
               Memory.indexArtifact({
                 scope_type: "project",
                 scope_id: Instance.project.id,
                 type: "observation",
-                title: `Session observations ${new Date().toISOString().slice(0, 10)}`,
-                content: finalObs.observations,
+                title: obsTitle,
+                content: obsContent,
                 topic_key: `session/${sessionID}/observations`,
                 normalized_hash: null,
                 revision_count: 1,

@@ -1024,7 +1024,10 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
-          autodream: z.boolean().optional().describe("Enable automatic memory consolidation via Engram after sessions"),
+          autodream: z
+            .boolean()
+            .optional()
+            .describe("Enable automatic memory consolidation via native LightCode memory after sessions"),
           autodream_model: z
             .string()
             .optional()
@@ -1032,9 +1035,7 @@ export namespace Config {
           observer: z
             .boolean()
             .optional()
-            .describe(
-              "Enable background observational memory — compresses message history every 30k tokens. Requires Engram.",
-            ),
+            .describe("Enable background observational memory — compresses message history every 30k tokens."),
           observer_model: z
             .string()
             .optional()

@@ -14,6 +14,7 @@ import { Permission } from "@/permission"
 import { Log } from "@/util/log"
 import { Memory } from "@/memory"
 import { Instance } from "@/project/instance"
+import { OM } from "@/session/om"
 
 const log = Log.create({ service: "task" })
 
@@ -123,15 +124,23 @@ export const TaskTool = Tool.define("task", async (ctx) => {
         if (parent) {
           log.info("fork subagent", { parent: ctx.sessionID, child: session.id })
           SessionPrompt.setForkContext(session.id, parent)
-          // V3: persist fork context to DB for durable restart-safe continuity.
+          // Persist fork context to DB for durable restart-safe continuity.
           // The in-memory forks map is the primary path; DB is the durable fallback.
+          // Final: enriched snapshot includes OM continuation metadata and project WM keys
+          // so a restarted process can reconstruct useful child context without fresh LLM calls.
           try {
+            const parentOm = OM.get(ctx.sessionID as SessionID)
+            const wmKeys = Memory.getWorkingMemory({ type: "project", id: Instance.project.id }).map((r) => r.key)
             Memory.writeForkContext({
               session_id: session.id,
               parent_session_id: ctx.sessionID,
               context: JSON.stringify({
                 parentAgent: ctx.agent,
                 projectId: Instance.project.id,
+                taskDescription: params.description,
+                currentTask: parentOm?.current_task ?? null,
+                suggestedContinuation: parentOm?.suggested_continuation ?? null,
+                workingMemoryKeys: wmKeys,
               }),
             })
           } catch {
@@ -147,6 +156,28 @@ export const TaskTool = Tool.define("task", async (ctx) => {
           model,
         },
       })
+
+      // Wire agent handoff record for non-fork task sessions.
+      // This populates memory_agent_handoffs with the task description, parent OM state,
+      // and project WM snapshot — providing a durable handoff record that survives restart.
+      if (!isFork) {
+        try {
+          const parentOm = OM.get(ctx.sessionID as SessionID)
+          const wmRecords = Memory.getWorkingMemory({ type: "project", id: Instance.project.id })
+          Memory.writeHandoff({
+            parent_session_id: ctx.sessionID,
+            child_session_id: session.id,
+            context: params.description,
+            working_memory_snap: wmRecords.length
+              ? JSON.stringify(wmRecords.map((r) => ({ key: r.key, value: r.value })))
+              : null,
+            observation_snap: parentOm?.current_task ?? parentOm?.suggested_continuation ?? null,
+            metadata: JSON.stringify({ parentAgent: ctx.agent, projectId: Instance.project.id }),
+          })
+        } catch {
+          // Non-fatal — task still runs without handoff record
+        }
+      }
 
       const messageID = MessageID.ascending()
 

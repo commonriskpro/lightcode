@@ -37,11 +37,76 @@ export namespace OM {
     )
   }
 
-  // NOTE: addBuffer + activate implement the Mastra-style async pre-compute pattern.
-  // Currently runLoop writes directly via OM.upsert() — these exist for a future
-  // async buffering upgrade but are not called from the main observation path.
+  // addBuffer + activate implement the Mastra-style async pre-compute pattern.
+  // addBuffer() is called from the main runLoop (prompt.ts) after each Observer.run() cycle.
+  // addBufferSafe() is the canonical write path — prefer it over addBuffer() in production.
+  // activate() is called when the "activate" or "block" signal fires to condense buffers.
   export function addBuffer(buf: ObservationBuffer): void {
     Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+  }
+
+  /**
+   * Final canonical OM write path.
+   *
+   * Wraps addBuffer + trackObserved in a single DB transaction so neither
+   * write is visible unless BOTH succeed. This eliminates the crash window
+   * where addBuffer writes to ObservationBufferTable but the process dies
+   * before trackObserved updates observed_message_ids — which would cause
+   * those same messages to be re-observed on restart.
+   *
+   * The in-memory seal (OMBuf.seal) remains ephemeral by design: it is a
+   * read-performance hint that avoids redundant DB queries on a live process.
+   * On restart, the durable observed_message_ids (updated here inside the
+   * transaction) are the authoritative deduplication source.
+   *
+   * Replace the three-step sequence in the hot path:
+   *   OM.addBuffer({...}) + OMBuf.seal(sid, sealAt) + OM.trackObserved(sid, ids)
+   * With:
+   *   OM.addBufferSafe(buf, sid, ids) then OMBuf.seal(sid, sealAt)
+   *
+   * If the transaction fails, neither write succeeds. The messages will be
+   * re-offered at the next Observer threshold crossing.
+   */
+  export function addBufferSafe(buf: ObservationBuffer, sid: SessionID, msgIds: string[]): void {
+    Database.transaction(() => {
+      // Step 1: persist the observation buffer chunk
+      Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+
+      // Step 2: atomically merge msgIds into observed_message_ids
+      // If a row exists in ObservationTable for this session, update it.
+      // If not (very first observation for this session), insert a placeholder row.
+      const rec = Database.use((db) =>
+        db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get(),
+      )
+      if (rec) {
+        const merged = mergeIds(rec.observed_message_ids ?? null, msgIds)
+        Database.use((db) =>
+          db
+            .update(ObservationTable)
+            .set({ observed_message_ids: merged, time_updated: Date.now() })
+            .where(eq(ObservationTable.session_id, sid))
+            .run(),
+        )
+      } else {
+        // No observation record yet — insert a minimal one with observed IDs set.
+        // This will be overwritten by activate() when the first full observation fires.
+        const placeholder: ObservationRecord = {
+          id: Identifier.ascending("session") as SessionID,
+          session_id: sid,
+          observations: null,
+          reflections: null,
+          current_task: null,
+          suggested_continuation: null,
+          last_observed_at: null,
+          generation_count: 0,
+          observation_tokens: 0,
+          observed_message_ids: JSON.stringify(msgIds),
+          time_created: Date.now(),
+          time_updated: Date.now(),
+        }
+        Database.use((db) => db.insert(ObservationTable).values(placeholder).run())
+      }
+    })
   }
 
   export async function activate(sid: SessionID): Promise<void> {
@@ -116,14 +181,6 @@ export namespace OM {
     )
   }
 
-  // V3: observeSafe() removed.
-  //
-  // It targeted the old direct-upsert+seal pattern (V0 era) and was never called.
-  // The actual OM durability path since V2 is: addBuffer() → (later) activate().
-  // V2 fixed the atomicity by moving seal+trackObserved INSIDE the async Observer closure
-  // after addBuffer() succeeds (prompt.ts). That is the canonical OM durability path.
-  //
-  // If a true transactional addBuffer+seal is needed in the future, implement
-  // addBufferSafe() that wraps the ObservationBufferTable insert and OMBuf.seal()
-  // in a single DB.transaction(). That is architecturally correct for the current path.
+  // V3: observeSafe() removed — targeted obsolete direct-upsert+seal pattern.
+  // Final: addBufferSafe() above is now the canonical OM write path used by the hot path.
 }

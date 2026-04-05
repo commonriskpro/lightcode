@@ -62,8 +62,13 @@ export namespace SystemPrompt {
     return Token.estimate(txt) > cap ? txt.slice(0, cap * 4) : txt
   }
 
+  /**
+   * Wrap recall results for system prompt injection.
+   * Uses <memory-recall> tag (renamed from <engram-recall> in V4 cleanup —
+   * the native path has nothing to do with Engram).
+   */
   export function wrapRecall(body: string): string {
-    return `<engram-recall>\n${body}\n</engram-recall>`
+    return `<memory-recall>\n${body}\n</memory-recall>`
   }
 
   /**
@@ -82,21 +87,9 @@ export namespace SystemPrompt {
     return `<working-memory>\n${body}\n</working-memory>\n\nIMPORTANT: The working memory above contains stable facts, goals, and decisions for this project. Use it as authoritative context.\n\n${WORKING_MEMORY_GUIDANCE}`
   }
 
-  /**
-   * Load and format project-scope working memory for the current session.
-   * Returns undefined if no working memory records exist for this project.
-   */
-  export async function projectWorkingMemory(pid: string): Promise<string | undefined> {
-    try {
-      const records = Memory.getWorkingMemory({ type: "project", id: pid })
-      if (!records.length) return undefined
-      const body = WorkingMemory.format(records, 2000)
-      if (!body) return undefined
-      return wrapWorkingMemory(body)
-    } catch {
-      return undefined
-    }
-  }
+  // projectWorkingMemory() removed in final cleanup — no callers since V3 adopted
+  // Memory.buildContext() as the canonical runtime composition path.
+  // Working memory is now loaded via Memory.buildContext({ ancestorScopes: [{type:"project"}] }).
 
   // Continuation hint injected as a synthetic user message at the start of the unobserved
   // tail (role: "user", createdAt: epoch so it sorts first). Orients the model when the
@@ -170,28 +163,17 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     )
   }
 
-  /**
-   * Recall cross-session memory for a project.
-   *
-   * V2: uses native LightCode Memory Core (MemoryProvider → memory_artifacts FTS5).
-   * The query is the last user message text (best semantic signal) or falls back
-   * to the session's current_task from OM, then to the project name.
-   *
-   * V1 bug fixed: V1 incorrectly passed the project UUID as the FTS5 query,
-   * which never matched any indexed content. V2 uses the actual user message.
-   *
-   * Fallback: if OPENCODE_MEMORY_USE_ENGRAM=true, falls back to Engram MCP path.
-   *
-   * The native path requires no external daemon. Falls back gracefully to
-   * undefined on any error or if no artifacts exist.
-   */
-  export async function recall(pid: string, sessionId?: string, lastUserMessage?: string): Promise<string | undefined> {
-    // Feature flag: set OPENCODE_MEMORY_USE_ENGRAM=true to use old Engram MCP path
-    if (Flag.OPENCODE_MEMORY_USE_ENGRAM) {
-      return recallEngram(pid)
-    }
-    return recallNative(pid, sessionId, lastUserMessage)
-  }
+  // recall() removed in final cleanup.
+  //
+  // The canonical recall path since V3 is Memory.buildContext({ semanticQuery, ... })
+  // called from prompt.ts at step===1. Memory.buildContext() assembles all memory layers
+  // including semantic recall via SemanticRecall.search() and SemanticRecall.recent().
+  //
+  // recallNative() and recallEngram() below are retained as internal helpers for:
+  //   recallNative: test compatibility and potential direct use
+  //   recallEngram: OPENCODE_MEMORY_USE_ENGRAM=true fallback path
+  //
+  // If you need recall from outside the runtime hot path, call Memory.searchArtifacts() directly.
 
   async function recallNative(pid: string, sessionId?: string, lastUserMessage?: string): Promise<string | undefined> {
     try {

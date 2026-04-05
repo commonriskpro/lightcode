@@ -77,9 +77,10 @@ describe("V2-1: OM atomicity — seal only advances after write succeeds", () =>
     // seal must appear AFTER the async IIFE starts
     expect(sealPos).toBeGreaterThan(asyncIIFEPos)
 
-    // trackObserved must also be inside (after addBuffer)
-    const trackPos = src.indexOf("OM.trackObserved(sessionID, msgIds)")
-    expect(trackPos).toBeGreaterThan(addBufferPos)
+    // Final: trackObserved is now inside addBufferSafe() transaction in record.ts
+    // prompt.ts no longer calls OM.trackObserved() directly — it uses addBufferSafe()
+    const addBufferSafePos = src.indexOf("OM.addBufferSafe(")
+    expect(addBufferSafePos).toBeGreaterThan(asyncIIFEPos)
   })
 
   test("OMBuf.seal advances in-memory state independently of DB writes", () => {
@@ -207,23 +208,20 @@ describe("V2-3: Working memory injects into system prompt", () => {
     expect(wrapped).toContain("stable facts")
   })
 
-  test("projectWorkingMemory returns undefined when no records", async () => {
-    const { SystemPrompt } = await import("../../src/session/system")
-    const result = await SystemPrompt.projectWorkingMemory("empty-project")
-    expect(result).toBeUndefined()
-  })
-
-  test("projectWorkingMemory returns wrapped content when records exist", async () => {
+  test("Memory.buildContext returns working memory via canonical path (replaces projectWorkingMemory)", async () => {
     WorkingMemory.set(projectScope, "goals", "Implement memory core V2")
     WorkingMemory.set(projectScope, "constraints", "No external daemon dependency")
 
-    const { SystemPrompt } = await import("../../src/session/system")
-    const result = await SystemPrompt.projectWorkingMemory("v2-test-project")
+    const ctx = await Memory.buildContext({
+      scope: { type: "thread", id: "test-thread" },
+      ancestorScopes: [projectScope],
+    })
 
-    expect(result).toBeDefined()
-    expect(result).toContain("<working-memory>")
-    expect(result).toContain("Implement memory core V2")
-    expect(result).toContain("No external daemon dependency")
+    expect(ctx.workingMemory).toBeDefined()
+    // Memory.buildContext() uses <working-memory scope="..."> format
+    expect(ctx.workingMemory).toContain("<working-memory")
+    expect(ctx.workingMemory).toContain("Implement memory core V2")
+    expect(ctx.workingMemory).toContain("No external daemon dependency")
   })
 
   test("LLM StreamInput accepts workingMemory field (source check)", () => {

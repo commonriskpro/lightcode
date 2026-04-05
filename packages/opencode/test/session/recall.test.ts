@@ -4,36 +4,19 @@ import { Log } from "../../src/util/log"
 
 Log.init({ print: false })
 
-describe("session.system.recall", () => {
-  test("returns undefined when no engram MCP key found", async () => {
-    // MCP.tools() in test env returns empty record (no MCP connected)
-    // so no engram key exists → graceful undefined
-    const result = await SystemPrompt.recall("test-project")
-    expect(result).toBeUndefined()
-  })
+// Note: SystemPrompt.recall() was removed in the final memory cleanup (V4).
+// The canonical recall path is now Memory.buildContext({ semanticQuery, ... })
+// called from prompt.ts at step===1. The tests below verify the remaining
+// SystemPrompt helpers that are still in use.
 
-  test("returns undefined when project id is empty string", async () => {
-    const result = await SystemPrompt.recall("")
-    expect(result).toBeUndefined()
-  })
-
-  test("returns undefined when tool.execute throws", async () => {
-    // recall() wraps everything in try/catch → always returns undefined on failure
-    // Prove the catch path: even if MCP had a tool that threw, recall() returns undefined
-    // We verify this by calling recall with a valid project — if MCP has no engram tool
-    // the function returns undefined before reaching execute. The catch is for unexpected throws.
-    // Test the contract: return is always undefined-or-string, never throws
-    const result = await SystemPrompt.recall("any-project")
-    expect(result === undefined || typeof result === "string").toBe(true)
-  })
-
-  test("wrapRecall wraps content in engram-recall tags", () => {
+describe("session.system.wrapRecall", () => {
+  test("wrapRecall wraps content in memory-recall tags (renamed from engram-recall in V4)", () => {
     const body = "some memory content"
     const result = SystemPrompt.wrapRecall(body)
-    expect(result).toContain("<engram-recall>")
-    expect(result).toContain("</engram-recall>")
+    expect(result).toContain("<memory-recall>")
+    expect(result).toContain("</memory-recall>")
     expect(result).toContain(body)
-    expect(result).toBe(`<engram-recall>\n${body}\n</engram-recall>`)
+    expect(result).toBe(`<memory-recall>\n${body}\n</memory-recall>`)
   })
 
   test("capRecallBody passes through content under 2000 tokens", () => {
@@ -56,13 +39,9 @@ describe("session.system.recall", () => {
     expect(SystemPrompt.capRecallBody(exact)).toBe(exact)
   })
 
-  test("recall() format contract: if result is string it has engram-recall tags", async () => {
-    // In test env without MCP, result is undefined.
-    // But the type contract guarantees: any truthy return is wrapped.
-    // We prove the wrap logic via wrapRecall which is what recall() uses.
-    const body = "obs content"
-    const wrapped = SystemPrompt.wrapRecall(SystemPrompt.capRecallBody(body))
-    expect(wrapped.startsWith("<engram-recall>\n")).toBe(true)
-    expect(wrapped.endsWith("\n</engram-recall>")).toBe(true)
+  test("wrapRecall uses <memory-recall> not <engram-recall> (V4 cleanup)", () => {
+    const result = SystemPrompt.wrapRecall("content")
+    expect(result).not.toContain("engram-recall")
+    expect(result).toContain("memory-recall")
   })
 })
