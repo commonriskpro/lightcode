@@ -5,6 +5,7 @@ import { jwtVerify, createRemoteJWKSet } from "jose"
 import { createAppAuth } from "@octokit/auth-app"
 import { Octokit } from "@octokit/rest"
 import { Resource } from "sst"
+import { Share } from "./share"
 
 type Env = {
   SYNC_SERVER: DurableObjectNamespace<SyncServer>
@@ -49,9 +50,9 @@ export class SyncServer extends DurableObject<Env> {
     })
   }
 
-  async webSocketMessage(ws, message) {}
+  async webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer) {}
 
-  async webSocketClose(ws, code, reason, wasClean) {
+  async webSocketClose(ws: WebSocket, code: number, _reason: string, _wasClean: boolean) {
     ws.close(code, "Durable Object is closing WebSocket")
   }
 
@@ -65,7 +66,7 @@ export class SyncServer extends DurableObject<Env> {
       return new Response("Error: Invalid key", { status: 400 })
 
     // store message
-    await this.env.Bucket.put(`share/${key}.json`, JSON.stringify(content), {
+    await this.env.Bucket.put(Share.object(key), JSON.stringify(content), {
       httpMetadata: {
         contentType: "application/json",
       },
@@ -110,20 +111,25 @@ export class SyncServer extends DurableObject<Env> {
 
   async clear() {
     const sessionID = await this.getSessionID()
-    const list = await this.env.Bucket.list({
-      prefix: `session/message/${sessionID}/`,
-      limit: 1000,
-    })
-    for (const item of list.objects) {
-      await this.env.Bucket.delete(item.key)
+    if (!sessionID) {
+      await this.ctx.storage.deleteAll()
+      return
     }
-    await this.env.Bucket.delete(`session/info/${sessionID}`)
+    const next = Share.clear(sessionID)
+    await Promise.all([...next.drop.map((prefix) => drop(this.env.Bucket, prefix)), this.env.Bucket.delete(next.del)])
     await this.ctx.storage.deleteAll()
   }
 
   static shortName(id: string) {
     return id.substring(id.length - 8)
   }
+}
+
+async function drop(bucket: R2Bucket, prefix: string, cursor?: string): Promise<void> {
+  const list = await bucket.list({ prefix, cursor })
+  await Promise.all(list.objects.map((item) => bucket.delete(item.key)))
+  if (!list.truncated || !list.cursor) return
+  await drop(bucket, prefix, list.cursor)
 }
 
 export default new Hono<{ Bindings: Env }>()
@@ -189,26 +195,34 @@ export default new Hono<{ Bindings: Env }>()
     const id = c.req.query("id")
     console.log("share_data", id)
     if (!id) return c.text("Error: Share ID is required", { status: 400 })
-    const stub = c.env.SYNC_SERVER.get(c.env.SYNC_SERVER.idFromName(id))
+    const stub = c.env.SYNC_SERVER.get(c.env.SYNC_SERVER.idFromName(id)) as unknown as {
+      getData(): Promise<Array<{ key: string; content: Record<string, unknown> }>>
+    }
     const data = await stub.getData()
 
-    let info
-    const messages: Record<string, any> = {}
+    let info: unknown
+    const messages: Record<string, { parts: Array<Record<string, unknown>> } & Record<string, unknown>> = {}
     data.forEach((d) => {
-      const [root, type, ...splits] = d.key.split("/")
+      const [root, type] = d.key.split("/")
       if (root !== "session") return
       if (type === "info") {
         info = d.content
         return
       }
       if (type === "message") {
-        messages[d.content.id] = {
+        const id = d.content.id
+        if (typeof id !== "string") return
+        messages[id] = {
           parts: [],
           ...d.content,
         }
       }
       if (type === "part") {
-        messages[d.content.messageID].parts.push(d.content)
+        const id = d.content.messageID
+        if (typeof id !== "string") return
+        const msg = messages[id]
+        if (!msg) return
+        msg.parts.push(d.content)
       }
     })
 
@@ -289,6 +303,7 @@ export default new Hono<{ Bindings: Env }>()
         audience: EXPECTED_AUDIENCE,
       })
       const sub = payload.sub // e.g. 'repo:my-org/my-repo:ref:refs/heads/main'
+      if (typeof sub !== "string") throw new Error("Invalid token subject")
       const parts = sub.split(":")[1].split("/")
       owner = parts[0]
       repo = parts[1]
@@ -336,8 +351,8 @@ export default new Hono<{ Bindings: Env }>()
       // Verify permissions
       const userClient = new Octokit({ auth: token })
       const { data: repoData } = await userClient.repos.get({ owner, repo })
-      if (!repoData.permissions.admin && !repoData.permissions.push && !repoData.permissions.maintain)
-        throw new Error("User does not have write permissions")
+      const perm = repoData.permissions
+      if (!perm?.admin && !perm?.push && !perm?.maintain) throw new Error("User does not have write permissions")
 
       // Get installation token
       const auth = createAppAuth({
@@ -360,7 +375,7 @@ export default new Hono<{ Bindings: Env }>()
       })
 
       return c.json({ token: installationAuth.token })
-    } catch (e: any) {
+    } catch (e: unknown) {
       let error = e
       if (e instanceof Error) {
         error = e.message
@@ -375,6 +390,7 @@ export default new Hono<{ Bindings: Env }>()
   .get("/get_github_app_installation", async (c) => {
     const owner = c.req.query("owner")
     const repo = c.req.query("repo")
+    if (!owner || !repo) return c.json({ error: "owner and repo are required" }, { status: 400 })
 
     const auth = createAppAuth({
       appId: Resource.GITHUB_APP_ID.value,

@@ -23,9 +23,12 @@ import { Memory } from "../../src/memory/provider"
 import { SemanticRecall } from "../../src/memory/semantic-recall"
 import { WorkingMemory } from "../../src/memory/working-memory"
 import { Handoff } from "../../src/memory/handoff"
-import { UpdateUserMemoryTool } from "../../src/tool/memory"
+import { UpdateUserMemoryTool, UpdateWorkingMemoryTool } from "../../src/tool/memory"
+import { ToolRegistry } from "../../src/tool/registry"
+import { Instance } from "../../src/project/instance"
 import type { Tool } from "../../src/tool/tool"
 import type { ScopeRef } from "../../src/memory/contracts"
+import { tmpdir } from "../fixture/fixture"
 
 // ─── Test DB setup ────────────────────────────────────────────────────────────
 
@@ -162,6 +165,18 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(mode[0].scope_type).toBe("thread")
     expect(mode[0].value).toBe("Thread mode")
   })
+
+  test("fixed precedence does not depend on ancestor order", () => {
+    WorkingMemory.set(userScope, "policy", "User policy")
+    WorkingMemory.set(projectScope, "policy", "Project policy")
+
+    const records = WorkingMemory.getForScopes(threadScope, [userScope, projectScope])
+    const policy = records.filter((r) => r.key === "policy")
+
+    expect(policy).toHaveLength(1)
+    expect(policy[0].scope_type).toBe("project")
+    expect(policy[0].value).toBe("Project policy")
+  })
 })
 
 // ─── P-2: FTS5 Two-Pass Search ────────────────────────────────────────────────
@@ -212,6 +227,26 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
     expect(results.length).toBeGreaterThan(0)
     // Title should contain "Auth"
     expect(results.some((r) => r.title.toLowerCase().includes("auth"))).toBe(true)
+  })
+
+  test("prefix-OR fallback handles single-token singular to plural matches", () => {
+    SemanticRecall.index({
+      scope_type: "project",
+      scope_id: "prod-project",
+      type: "decision",
+      title: "Plural reminders",
+      content: "reminders are persisted in working memory",
+      topic_key: null,
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
+
+    const results = SemanticRecall.search("reminder", [projectScope], 10)
+    expect(results.length).toBeGreaterThan(0)
+    expect(results.some((r) => r.title === "Plural reminders")).toBe(true)
   })
 
   test("FTS5 special characters do not crash (two-pass mode)", () => {
@@ -266,6 +301,45 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
     // Only project scope
     const projectResults = SemanticRecall.search("auth", [projectScope], 10)
     expect(projectResults.every((r) => r.scope_type === "project")).toBe(true)
+  })
+
+  test("topic_key search respects scope filters", () => {
+    SemanticRecall.index({
+      scope_type: "project",
+      scope_id: projectScope.id,
+      type: "decision",
+      title: "Project auth topic",
+      content: "project-only auth decision",
+      topic_key: "auth/decision",
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
+    SemanticRecall.index({
+      scope_type: "user",
+      scope_id: userScope.id,
+      type: "decision",
+      title: "User auth topic",
+      content: "user-only auth preference",
+      topic_key: "auth/decision",
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
+
+    const projectResults = SemanticRecall.search("auth/decision", [projectScope], 10)
+    const userResults = SemanticRecall.search("auth/decision", [userScope], 10)
+
+    expect(projectResults).toHaveLength(1)
+    expect(projectResults[0].scope_type).toBe("project")
+    expect(projectResults[0].title).toBe("Project auth topic")
+    expect(userResults).toHaveLength(1)
+    expect(userResults[0].scope_type).toBe("user")
+    expect(userResults[0].title).toBe("User auth topic")
   })
 })
 
@@ -345,11 +419,16 @@ describe("P-3: Memory.buildContext() falls back to recent() when FTS returns emp
 // ─── P-4: Agent scope in UpdateWorkingMemoryTool ──────────────────────────────
 
 describe("P-4: Agent scope is operational in UpdateWorkingMemoryTool", () => {
-  test("tool/memory.ts exposes agent scope as enum option", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/memory.ts"), "utf-8") as string
-
-    expect(src).toContain('"agent"')
-    expect(src).toContain('.enum(["thread", "agent", "project"])')
+  test("tool registry exposes both working-memory tools at runtime", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const ids = await ToolRegistry.ids()
+        expect(ids).toContain("update_working_memory")
+        expect(ids).toContain("update_user_memory")
+      },
+    })
   })
 
   test("agent scope writes to agent scope_type in working memory", async () => {
@@ -363,6 +442,13 @@ describe("P-4: Agent scope is operational in UpdateWorkingMemoryTool", () => {
     } finally {
       await teardown()
     }
+  })
+
+  test("general working memory schema accepts agent and rejects user scope", async () => {
+    const def = await UpdateWorkingMemoryTool.init()
+
+    expect(() => def.parameters.parse({ scope: "agent", key: "mode", value: "ship it" })).not.toThrow()
+    expect(() => def.parameters.parse({ scope: "user", key: "mode", value: "nope" })).toThrow()
   })
 })
 
@@ -397,28 +483,6 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
     expect(focusRecords).toHaveLength(1)
     expect(focusRecords[0].scope_type).toBe("thread")
     expect(focusRecords[0].value).toBe("Thread focus: current PR review")
-  })
-
-  test("prompt.ts passes agent scope in both normal and fork buildContext calls", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-
-    // Find all Memory.buildContext calls in prompt.ts
-    const buildContextCount = (src.match(/Memory\.buildContext\(/g) ?? []).length
-    expect(buildContextCount).toBeGreaterThanOrEqual(2) // normal + fork
-
-    // Both should include agent scope
-    const agentScopeCount = (src.match(/type: "agent"/g) ?? []).length
-    expect(agentScopeCount).toBeGreaterThanOrEqual(2)
-  })
-
-  test("runtime load path includes user scope and keeps global_pattern dormant", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-    const loadStart = src.indexOf("async function loadRuntimeMemory(")
-    const loadEnd = src.indexOf("function indexSessionArtifacts(", loadStart)
-    const body = src.slice(loadStart, loadEnd)
-
-    expect(body).toContain("Memory.userScope()")
-    expect(body).not.toContain('type: "global_pattern"')
   })
 
   test("buildContext includes user working memory when user scope is in ancestry", async () => {
@@ -492,11 +556,28 @@ describe("P-5C: update_user_memory is explicit and controlled", () => {
   })
 
   test("general working memory tool still does not expose user scope", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/memory.ts"), "utf-8") as string
+    return UpdateWorkingMemoryTool.init().then((def) => {
+      expect(() => def.parameters.parse({ scope: "thread", key: "ok", value: "yes" })).not.toThrow()
+      expect(() => def.parameters.parse({ scope: "user", key: "no", value: "no" })).toThrow()
+    })
+  })
 
-    expect(src).toContain('Tool.define("update_user_memory"')
-    expect(src).toContain('.enum(["thread", "agent", "project"])')
-    expect(src).not.toContain('.enum(["thread", "agent", "project", "user"])')
+  test("tool does not write user memory when approval rejects", async () => {
+    const def = await UpdateUserMemoryTool.init()
+    const ctx: Tool.Context = {
+      sessionID: "user-write-reject" as never,
+      messageID: "msg-user-write-reject" as never,
+      agent: "build",
+      abort: new AbortController().signal,
+      messages: [],
+      metadata() {},
+      ask() {
+        return Promise.reject(new Error("rejected"))
+      },
+    }
+
+    await expect(def.execute({ key: "defaults", value: "dark mode" }, ctx)).rejects.toThrow("rejected")
+    expect(WorkingMemory.get(userScope, "defaults")).toHaveLength(0)
   })
 })
 

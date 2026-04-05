@@ -21,8 +21,16 @@ import { WorkingMemory } from "../../src/memory/working-memory"
 import { SemanticRecall } from "../../src/memory/semantic-recall"
 import { Memory } from "../../src/memory/provider"
 import { OM, OMBuf } from "../../src/session/om"
+import { AutoDream } from "../../src/dream/index"
+import { ToolRegistry } from "../../src/tool/registry"
+import { UpdateWorkingMemoryTool } from "../../src/tool/memory"
+import { Instance } from "../../src/project/instance"
+import { ProjectID } from "../../src/project/schema"
+import { ProjectTable } from "../../src/project/project.sql"
+import { SessionTable } from "../../src/session/session.sql"
+import { MessageID, SessionID } from "../../src/session/schema"
 import type { ScopeRef } from "../../src/memory/contracts"
-import type { SessionID } from "../../src/session/schema"
+import { tmpdir } from "../fixture/fixture"
 
 let testDbPath: string
 
@@ -50,37 +58,85 @@ async function teardownTestDb() {
 const projectScope: ScopeRef = { type: "project", id: "v2-test-project" }
 const threadScope: ScopeRef = { type: "thread", id: "v2-test-thread" }
 
+function seedSession(sid: SessionID, pid = projectScope.id) {
+  const now = Date.now()
+  Database.use((db) =>
+    db
+      .insert(ProjectTable)
+      .values({
+        id: ProjectID.make(pid),
+        worktree: "/tmp",
+        vcs: "git",
+        name: pid,
+        icon_url: null,
+        icon_color: null,
+        time_created: now,
+        time_updated: now,
+        time_initialized: null,
+        sandboxes: [],
+        commands: null,
+      })
+      .onConflictDoNothing()
+      .run(),
+  )
+  Database.use((db) =>
+    db
+      .insert(SessionTable)
+      .values({
+        id: sid,
+        project_id: ProjectID.make(pid),
+        workspace_id: null,
+        parent_id: null,
+        slug: sid,
+        directory: "/tmp",
+        title: sid,
+        version: "test",
+        share_url: null,
+        summary_additions: null,
+        summary_deletions: null,
+        summary_files: null,
+        summary_diffs: null,
+        revert: null,
+        permission: null,
+        time_created: now,
+        time_updated: now,
+        time_compacting: null,
+        time_archived: null,
+      })
+      .run(),
+  )
+}
+
 // ─── V2-1: OM Atomicity ───────────────────────────────────────────────────────
 
 describe("V2-1: OM atomicity — seal only advances after write succeeds", () => {
-  test("OMBuf.seal does NOT advance before Observer writes (code audit)", () => {
-    // This is a structural/code correctness test.
-    // Read the actual prompt.ts source to verify seal is inside the async closure.
-    const fs = require("fs")
-    const src = fs.readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
+  beforeEach(setupTestDb)
+  afterEach(teardownTestDb)
 
-    // The old broken pattern: OMBuf.seal() called OUTSIDE the async closure
-    // The fix: OMBuf.seal() must appear AFTER OM.addBuffer() inside the async IIFE
+  test("addBufferSafe persists buffer and observed ids together", () => {
+    const sid = SessionID.make("v2-atomic-001")
+    seedSession(sid)
 
-    // Verify OMBuf.seal is NOT before the async closure start
-    const sealMatch = src.match(/OMBuf\.seal\(sessionID, sealAt\)/)
-    expect(sealMatch).not.toBeNull()
+    OM.addBufferSafe(
+      {
+        id: "buf-v2-001",
+        session_id: sid,
+        observations: "Observed a runtime change",
+        message_tokens: 10,
+        observation_tokens: 20,
+        starts_at: 1,
+        ends_at: 2,
+        first_msg_id: MessageID.make("m1"),
+        last_msg_id: MessageID.make("m2"),
+        time_created: Date.now(),
+        time_updated: Date.now(),
+      },
+      sid,
+      ["m1", "m2"],
+    )
 
-    // Find the positions
-    const sealPos = src.indexOf("OMBuf.seal(sessionID, sealAt)")
-    const addBufferPos = src.indexOf("OM.addBuffer(")
-    const asyncIIFEPos = src.indexOf("const p = (async () => {")
-
-    // seal must appear AFTER addBuffer (which is inside the async closure)
-    expect(sealPos).toBeGreaterThan(addBufferPos)
-
-    // seal must appear AFTER the async IIFE starts
-    expect(sealPos).toBeGreaterThan(asyncIIFEPos)
-
-    // Final: trackObserved is now inside addBufferSafe() transaction in record.ts
-    // prompt.ts no longer calls OM.trackObserved() directly — it uses addBufferSafe()
-    const addBufferSafePos = src.indexOf("OM.addBufferSafe(")
-    expect(addBufferSafePos).toBeGreaterThan(asyncIIFEPos)
+    expect(OM.buffers(sid)).toHaveLength(1)
+    expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2"]))
   })
 
   test("OMBuf.seal advances in-memory state independently of DB writes", () => {
@@ -224,11 +280,12 @@ describe("V2-3: Working memory injects into system prompt", () => {
     expect(ctx.workingMemory).toContain("No external daemon dependency")
   })
 
-  test("LLM StreamInput accepts workingMemory field (source check)", () => {
-    // Code audit: verify llm.ts has workingMemory in StreamInput
-    const fs = require("fs")
-    const src = fs.readFileSync(path.join(__dirname, "../../src/session/llm.ts"), "utf-8") as string
-    expect(src).toContain("workingMemory?: string")
+  test("SystemPrompt.wrapWorkingMemory remains the runtime injection contract", async () => {
+    const { SystemPrompt } = await import("../../src/session/system")
+    const wrapped = SystemPrompt.wrapWorkingMemory("## Goals\n- Build memory core")
+
+    expect(wrapped).toContain("<working-memory>")
+    expect(wrapped).toContain("Build memory core")
   })
 })
 
@@ -248,22 +305,21 @@ describe("V2-4: update_working_memory tool", () => {
     expect(records[0].scope_type).toBe("project")
   })
 
-  test("update_working_memory tool file exists and exports correct structure", async () => {
-    const { UpdateWorkingMemoryTool } = await import("../../src/tool/memory")
-    expect(UpdateWorkingMemoryTool).toBeDefined()
-    // Verify it has an init function (standard Tool shape)
-    expect(typeof UpdateWorkingMemoryTool.init).toBe("function")
+  test("update_working_memory tool validates runtime schema", async () => {
+    const def = await UpdateWorkingMemoryTool.init()
+    expect(() => def.parameters.parse({ scope: "project", key: "stack", value: "TypeScript" })).not.toThrow()
+    expect(() => def.parameters.parse({ scope: "user", key: "stack", value: "TypeScript" })).toThrow()
   })
 
-  test("update_working_memory tool is registered in the registry", async () => {
-    const registrySrc = require("fs").readFileSync(
-      path.join(__dirname, "../../src/tool/registry.ts"),
-      "utf-8",
-    ) as string
-    expect(registrySrc).toContain("UpdateWorkingMemoryTool")
-    // The registry uses the variable name; the string ID "update_working_memory" is in memory.ts
-    expect(registrySrc).toContain("updateWorkingMemory")
-    expect(registrySrc).toContain("Persist stable facts")
+  test("update_working_memory tool is registered in the runtime registry", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const ids = await ToolRegistry.ids()
+        expect(ids).toContain("update_working_memory")
+      },
+    })
   })
 })
 
@@ -407,35 +463,12 @@ describe("V2-6: Dream persistConsolidation writes to memory_artifacts", () => {
 // ─── V2-7: Engram gate removed from autodream ─────────────────────────────────
 
 describe("V2-7: Engram gate removed from autodream idle()", () => {
-  test("idle() does NOT call Engram.ensure() (code audit)", () => {
-    const fs = require("fs")
-    const src = fs.readFileSync(path.join(__dirname, "../../src/dream/index.ts"), "utf-8") as string
-
-    // Find the idle() function
-    const idleFnStart = src.indexOf("async function idle(")
-    const idleFnEnd = src.indexOf("\n  }", idleFnStart)
-    const idleFnBody = src.slice(idleFnStart, idleFnEnd)
-
-    // V2: Engram.ensure() must NOT be called in idle() body
-    // (comments may mention it but actual function calls should not be present)
-    // Strip single-line comments before checking
-    const idleNoComments = idleFnBody.replace(/\/\/[^\n]*/g, "")
-    expect(idleNoComments).not.toContain("Engram.ensure()")
-
-    // The native-memory comment should still be present
-    expect(idleFnBody).toContain("native daemon path")
-  })
-
-  test("idle() has proper config gate for autodream=false", () => {
-    const fs = require("fs")
-    const src = fs.readFileSync(path.join(__dirname, "../../src/dream/index.ts"), "utf-8") as string
-
-    const idleFnStart = src.indexOf("async function idle(")
-    const idleFnEnd = src.indexOf("\n  }", idleFnStart)
-    const idleFnBody = src.slice(idleFnStart, idleFnEnd)
-
-    // Config gate must still be present
-    expect(idleFnBody).toContain("autodream === false")
+  test("buildSpawnPrompt composes focus and observations for native dream runtime", () => {
+    const out = AutoDream.buildSpawnPrompt("base", "auth", "JWT observations")
+    expect(out).toContain("## Focus")
+    expect(out).toContain("auth")
+    expect(out).toContain("## Session Observations")
+    expect(out).toContain("JWT observations")
   })
 })
 

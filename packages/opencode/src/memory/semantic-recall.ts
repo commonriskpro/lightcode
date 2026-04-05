@@ -13,7 +13,7 @@
  */
 
 import { createHash } from "crypto"
-import { eq, and, isNull, sql } from "drizzle-orm"
+import { eq, and, isNull, or, sql } from "drizzle-orm"
 import { Database } from "../storage/db"
 import { Token } from "../util/token"
 import { MemoryArtifactTable } from "./schema.sql"
@@ -73,7 +73,7 @@ function sanitizeFTSPrefix(query: string): string {
     .split(/\s+/)
     .map(cleanToken)
     .filter(Boolean)
-    .map((t) => `${t}*`)
+    .map((t) => `"${t}"*`)
     .join(" OR ")
 }
 
@@ -220,10 +220,13 @@ export namespace SemanticRecall {
 
     const results: ArtifactSearchResult[] = []
     const seen = new Set<string>()
-
-    // Build scope filter placeholders — must qualify with table alias to avoid
-    // ambiguity with FTS5 virtual table columns of the same name
-    const scopeConditions = scopes.map((s) => `(a.scope_type = '${s.type}' AND a.scope_id = '${s.id}')`).join(" OR ")
+    const scopeWhere = or(
+      ...scopes.map((s) => and(eq(MemoryArtifactTable.scope_type, s.type), eq(MemoryArtifactTable.scope_id, s.id))),
+    )
+    const scopeSql = sql.join(
+      scopes.map((s) => sql`(a.scope_type = ${s.type} AND a.scope_id = ${s.id})`),
+      sql` OR `,
+    )
 
     // Direct topic_key match (Engram-style: "/" in query = topic_key lookup)
     if (query.includes("/")) {
@@ -231,7 +234,9 @@ export namespace SemanticRecall {
         db
           .select()
           .from(MemoryArtifactTable)
-          .where(and(eq(MemoryArtifactTable.topic_key, query.trim()), isNull(MemoryArtifactTable.deleted_at)))
+          .where(
+            and(eq(MemoryArtifactTable.topic_key, query.trim()), isNull(MemoryArtifactTable.deleted_at), scopeWhere),
+          )
           .orderBy(sql`${MemoryArtifactTable.time_updated} DESC`)
           .limit(limit)
           .all(),
@@ -272,7 +277,7 @@ export namespace SemanticRecall {
           JOIN memory_artifacts a ON a.rowid = f.rowid
           WHERE memory_artifacts_fts MATCH ${ftsQuery}
             AND a.deleted_at IS NULL
-            AND (${sql.raw(scopeConditions)})
+            AND (${scopeSql})
           ORDER BY f.rank
           LIMIT ${limit}
         `),

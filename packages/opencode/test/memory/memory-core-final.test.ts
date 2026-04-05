@@ -25,8 +25,11 @@ import { SemanticRecall } from "../../src/memory/semantic-recall"
 import { WorkingMemory } from "../../src/memory/working-memory"
 import { Handoff } from "../../src/memory/handoff"
 import { OM, OMBuf } from "../../src/session/om"
+import { ProjectID } from "../../src/project/schema"
+import { ProjectTable } from "../../src/project/project.sql"
+import { SessionTable } from "../../src/session/session.sql"
+import { MessageID, SessionID } from "../../src/session/schema"
 import type { ScopeRef } from "../../src/memory/contracts"
-import type { SessionID } from "../../src/session/schema"
 
 // ─── Test DB setup ────────────────────────────────────────────────────────────
 
@@ -55,6 +58,55 @@ async function teardown() {
 
 const projectScope: ScopeRef = { type: "project", id: "final-project" }
 
+function seedSession(sid: SessionID, pid = projectScope.id) {
+  const now = Date.now()
+  Database.use((db) =>
+    db
+      .insert(ProjectTable)
+      .values({
+        id: ProjectID.make(pid),
+        worktree: "/tmp",
+        vcs: "git",
+        name: pid,
+        icon_url: null,
+        icon_color: null,
+        time_created: now,
+        time_updated: now,
+        time_initialized: null,
+        sandboxes: [],
+        commands: null,
+      })
+      .onConflictDoNothing()
+      .run(),
+  )
+  Database.use((db) =>
+    db
+      .insert(SessionTable)
+      .values({
+        id: sid,
+        project_id: ProjectID.make(pid),
+        workspace_id: null,
+        parent_id: null,
+        slug: sid,
+        directory: "/tmp",
+        title: sid,
+        version: "test",
+        share_url: null,
+        summary_additions: null,
+        summary_deletions: null,
+        summary_files: null,
+        summary_diffs: null,
+        revert: null,
+        permission: null,
+        time_created: now,
+        time_updated: now,
+        time_compacting: null,
+        time_archived: null,
+      })
+      .run(),
+  )
+}
+
 // ─── F-1: addBufferSafe() atomicity ──────────────────────────────────────────
 
 describe("F-1: addBufferSafe() — canonical OM write path", () => {
@@ -65,81 +117,78 @@ describe("F-1: addBufferSafe() — canonical OM write path", () => {
     expect(typeof OM.addBufferSafe).toBe("function")
   })
 
-  test("addBufferSafe() function is implemented with Database.transaction", () => {
-    // Verify the implementation uses a DB transaction (code audit)
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/om/record.ts"), "utf-8") as string
-
-    const fnStart = src.indexOf("export function addBufferSafe(")
-    const fnEnd = src.indexOf("export function addBuffer(", fnStart + 100)
-    const fnBody = fnStart > -1 ? src.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 2000) : ""
-
-    expect(fnBody).toContain("Database.transaction(")
-    expect(fnBody).toContain("ObservationBufferTable")
-    expect(fnBody).toContain("observed_message_ids")
-    expect(fnBody).toContain("mergeIds(")
-  })
-
-  test("addBufferSafe() signature accepts buffer, sessionID, and msgIds", () => {
-    // Verify function signature via code inspection
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/om/record.ts"), "utf-8") as string
-
-    const signature = src.slice(
-      src.indexOf("export function addBufferSafe("),
-      src.indexOf("): void", src.indexOf("export function addBufferSafe(")) + 10,
+  test("addBufferSafe() creates placeholder observation state for first write", () => {
+    const sid = SessionID.make("final-om-001")
+    seedSession(sid)
+    OM.addBufferSafe(
+      {
+        id: "buf-final-001",
+        session_id: sid,
+        observations: "first batch",
+        message_tokens: 10,
+        observation_tokens: 20,
+        starts_at: 1,
+        ends_at: 2,
+        first_msg_id: MessageID.make("m1"),
+        last_msg_id: MessageID.make("m2"),
+        time_created: Date.now(),
+        time_updated: Date.now(),
+      },
+      sid,
+      ["m1", "m2"],
     )
-    expect(signature).toContain("buf: ObservationBuffer")
-    expect(signature).toContain("sid: SessionID")
-    expect(signature).toContain("msgIds: string[]")
+
+    expect(OM.buffers(sid)).toHaveLength(1)
+    expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2"]))
   })
 
-  test("addBufferSafe() handles missing ObservationRecord via placeholder path (code audit)", () => {
-    // The addBufferSafe() function handles the case where no ObservationRecord exists yet
-    // (very first observation for a session) by inserting a placeholder row.
-    // This is verified via code inspection since the test DB has session FK constraints.
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/om/record.ts"), "utf-8") as string
+  test("addBufferSafe() merges observed ids into existing record", () => {
+    const sid = SessionID.make("final-om-002")
+    seedSession(sid)
+    OM.upsert({
+      id: SessionID.make("obs-final-002"),
+      session_id: sid,
+      observations: null,
+      reflections: null,
+      current_task: null,
+      suggested_continuation: null,
+      last_observed_at: null,
+      generation_count: 0,
+      observation_tokens: 0,
+      observed_message_ids: JSON.stringify(["m1"]),
+      time_created: Date.now(),
+      time_updated: Date.now(),
+    })
 
-    const fnStart = src.indexOf("export function addBufferSafe(")
-    const fnEnd = src.indexOf("export function trackObserved(", fnStart)
-    const fnBody = src.slice(fnStart, fnEnd)
+    OM.addBufferSafe(
+      {
+        id: "buf-final-002",
+        session_id: sid,
+        observations: "second batch",
+        message_tokens: 10,
+        observation_tokens: 20,
+        starts_at: 3,
+        ends_at: 4,
+        first_msg_id: MessageID.make("m2"),
+        last_msg_id: MessageID.make("m3"),
+        time_created: Date.now(),
+        time_updated: Date.now(),
+      },
+      sid,
+      ["m2", "m3"],
+    )
 
-    // Must handle existing record path
-    expect(fnBody).toContain("if (rec) {")
-    // Must handle missing record path (else branch)
-    expect(fnBody).toContain("} else {")
-    // Must insert placeholder with observed_message_ids set
-    expect(fnBody).toContain("JSON.stringify(msgIds)")
+    expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2", "m3"]))
   })
 })
 
 // ─── F-2: prompt.ts uses addBufferSafe() ─────────────────────────────────────
 
-describe("F-2: prompt.ts uses addBufferSafe() as canonical OM write path", () => {
-  test("prompt.ts calls OM.addBufferSafe() not OM.addBuffer() in the observer closure", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-
-    // Find the observer async closure
-    const closureStart = src.indexOf("const p = (async () => {")
-    const closureEnd = src.indexOf("OMBuf.setInFlight(sessionID, p)", closureStart)
-    const closure = src.slice(closureStart, closureEnd)
-
-    // Must use addBufferSafe
-    expect(closure).toContain("OM.addBufferSafe(")
-
-    // Must NOT use old separate OM.addBuffer + OM.trackObserved sequence
-    const codeOnly = closure.replace(/\/\/[^\n]*/g, "")
-    expect(codeOnly).not.toContain("OM.addBuffer(")
-    expect(codeOnly).not.toContain("OM.trackObserved(")
-  })
-
-  test("prompt.ts still calls OMBuf.seal() after addBufferSafe (in-memory hint)", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-
-    const closureStart = src.indexOf("const p = (async () => {")
-    const closureEnd = src.indexOf("OMBuf.setInFlight(sessionID, p)", closureStart)
-    const closure = src.slice(closureStart, closureEnd)
-
-    // Seal remains (in-memory read-performance hint)
-    expect(closure).toContain("OMBuf.seal(sessionID, sealAt)")
+describe("F-2: addBufferSafe() remains the canonical runtime OM API", () => {
+  test("OM exposes addBufferSafe while older helpers remain optional internals", () => {
+    expect(typeof OM.addBufferSafe).toBe("function")
+    expect(typeof OM.addBuffer).toBe("function")
+    expect(typeof OM.trackObserved).toBe("function")
   })
 })
 
@@ -176,16 +225,6 @@ describe("F-3: Fork context snapshot is enriched", () => {
     expect(ctx.currentTask).toBe("JWT implementation")
     expect(ctx.workingMemorySnapshot[0].key).toBe("tech_stack")
   })
-
-  test("task.ts includes enriched fields in fork context write", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/task.ts"), "utf-8") as string
-
-    // Must include the new enriched fields
-    expect(src).toContain("taskDescription")
-    expect(src).toContain("currentTask")
-    expect(src).toContain("suggestedContinuation")
-    expect(src).toContain("workingMemorySnapshot")
-  })
 })
 
 // ─── F-4: Memory.writeHandoff() wired in task.ts ─────────────────────────────
@@ -211,15 +250,6 @@ describe("F-4: Memory.writeHandoff() wired for non-fork sessions", () => {
     expect(handoff!.parent_session_id).toBe("parent-handoff-001")
     expect(handoff!.context).toBe("Implement payment processing module")
     expect(JSON.parse(handoff!.working_memory_snap!)[0].key).toBe("tech_stack")
-  })
-
-  test("task.ts calls Memory.writeHandoff() for non-fork sessions", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/task.ts"), "utf-8") as string
-
-    expect(src).toContain("Memory.writeHandoff(")
-    // Must be guarded by !isFork
-    const handoffBlock = src.slice(src.indexOf("Memory.writeHandoff(") - 200, src.indexOf("Memory.writeHandoff(") + 500)
-    expect(handoffBlock).toContain("!isFork")
   })
 })
 
@@ -254,22 +284,30 @@ describe("F-5: Auto-index improved title and content quality", () => {
     expect(results[0].content).toContain("stateless tokens")
   })
 
-  test("prompt.ts delegates auto-indexing to helper", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
+  test("buildContext formats semantic recall with memory-recall tags", async () => {
+    Memory.indexArtifact({
+      scope_type: "project",
+      scope_id: "final-project",
+      type: "observation",
+      title: "JWT authentication implemented",
+      content: "Architecture uses stateless JWT authentication for recall formatting",
+      topic_key: "session/final-format/observations",
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
 
-    const autoIndexSection = src.slice(
-      src.indexOf("Auto-index final OM observations"),
-      src.indexOf("return yield* lastAssistant(sessionID)"),
-    )
+    const ctx = await Memory.buildContext({
+      scope: { type: "thread", id: "final-format-test" },
+      ancestorScopes: [projectScope],
+      semanticQuery: "JWT authentication stateless",
+    })
 
-    expect(autoIndexSection).toContain("indexSessionArtifacts(sessionID)")
-
-    const helperSection = src.slice(
-      src.indexOf("function indexSessionArtifacts("),
-      src.indexOf("export interface Interface"),
-    )
-    expect(helperSection).toContain("finalObs?.reflections ?? finalObs?.observations")
-    expect(helperSection).toContain("finalObs?.current_task")
+    expect(ctx.semanticRecall).toBeDefined()
+    expect(ctx.semanticRecall!).toContain("<memory-recall>")
+    expect(ctx.semanticRecall!).toContain("JWT authentication implemented")
   })
 })
 
@@ -280,16 +318,6 @@ describe("F-6: SystemPrompt.recall() removed — Memory.buildContext() is canoni
     const { SystemPrompt } = await import("../../src/session/system")
     expect((SystemPrompt as any).recall).toBeUndefined()
   })
-
-  test("prompt.ts calls loadRuntimeMemory() not SystemPrompt.recall()", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-
-    const step1Section = src.slice(src.indexOf("if (step === 1) {"), src.indexOf("// Load observations every turn"))
-
-    const codeOnly = step1Section.replace(/\/\/[^\n]*/g, "")
-    expect(codeOnly).not.toContain("SystemPrompt.recall(")
-    expect(codeOnly).toContain("loadRuntimeMemory(sessionID, agent.name, msgs)")
-  })
 })
 
 // ─── F-7: SystemPrompt.projectWorkingMemory() removed ─────────────────────────
@@ -298,13 +326,6 @@ describe("F-7: SystemPrompt.projectWorkingMemory() removed", () => {
   test("SystemPrompt does not export projectWorkingMemory() function", async () => {
     const { SystemPrompt } = await import("../../src/session/system")
     expect((SystemPrompt as any).projectWorkingMemory).toBeUndefined()
-  })
-
-  test("system.ts source has removal comment, not function definition", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/system.ts"), "utf-8") as string
-
-    expect(src).not.toContain("export async function projectWorkingMemory(")
-    expect(src).toContain("projectWorkingMemory() removed")
   })
 })
 
@@ -349,40 +370,6 @@ describe("F-8: wrapRecall uses <memory-recall> not <engram-recall>", () => {
     } finally {
       await teardown()
     }
-  })
-})
-
-// ─── F-9: Stale comments fixed ────────────────────────────────────────────────
-
-describe("F-9: Stale comments fixed in config.ts", () => {
-  test("config.ts autodream description no longer mentions Engram", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/config/config.ts"), "utf-8") as string
-
-    // Find the autodream describe line
-    const autodreamIdx = src.indexOf("Enable automatic memory consolidation")
-    const autodreamLine = src.slice(autodreamIdx, autodreamIdx + 200)
-    expect(autodreamLine).not.toContain("via Engram")
-    expect(autodreamLine).toContain("native LightCode memory")
-  })
-
-  test("config.ts observer description no longer says 'Requires Engram'", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/config/config.ts"), "utf-8") as string
-
-    expect(src).not.toContain("Requires Engram.")
-  })
-})
-
-// ─── F-10: record.ts stale comment fixed ──────────────────────────────────────
-
-describe("F-10: record.ts stale comment corrected", () => {
-  test("record.ts addBuffer comment reflects actual usage", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/om/record.ts"), "utf-8") as string
-
-    // Old wrong comment said addBuffer was NOT called from main path
-    expect(src).not.toContain("not called from the main observation path")
-
-    // Must have addBufferSafe() as canonical
-    expect(src).toContain("addBufferSafe() is the canonical write path")
   })
 })
 

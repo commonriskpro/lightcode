@@ -18,6 +18,13 @@ import { WorkingMemoryTable } from "./schema.sql"
 import type { MemoryScope, ScopeRef, WorkingMemoryRecord } from "./contracts"
 
 const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi
+const ORDER = {
+  thread: 0,
+  agent: 1,
+  project: 2,
+  user: 3,
+  global_pattern: 4,
+} as const
 
 function stripPrivate(s: string): string {
   return s.replace(PRIVATE_TAG_RE, "").trim()
@@ -66,7 +73,7 @@ export namespace WorkingMemory {
    * just `r.key` so thread's "goals" overrides project's "goals" correctly.
    */
   export function getForScopes(primary: ScopeRef, ancestors: ScopeRef[]): WorkingMemoryRecord[] {
-    const all = [primary, ...ancestors].flatMap((s) => get(s))
+    const all = [primary, ...ancestors].sort((a, b) => ORDER[a.type] - ORDER[b.type]).flatMap((s) => get(s))
     // Deduplicate by logical key name across scopes.
     // Since records are ordered most-specific-first (primary first, then ancestors),
     // the first occurrence of each key name is the highest-precedence value.
