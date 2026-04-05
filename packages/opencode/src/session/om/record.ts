@@ -3,6 +3,7 @@ import { ObservationTable, ObservationBufferTable } from "../session.sql"
 import type { SessionID } from "../schema"
 import { Identifier } from "@/id/id"
 import { Observer } from "./observer"
+import { Token } from "@/util/token"
 
 export type ObservationRecord = typeof ObservationTable.$inferSelect
 export type ObservationBuffer = typeof ObservationBufferTable.$inferSelect
@@ -46,7 +47,7 @@ export namespace OM {
     // Falls back to naive join if observer_model is not configured or LLM fails.
     const merged = await Observer.condense(chunks, rec?.observations ?? undefined)
     const latest = bufs[bufs.length - 1]
-    const tok = merged.length >> 2 // char/4 estimate
+    const tok = Token.estimate(merged)
 
     if (rec) {
       const updated: ObservationRecord = {

@@ -95,26 +95,63 @@ export namespace SystemPrompt {
     return wrapObservations(body, rec.suggested_continuation ?? undefined)
   }
 
+  // Execute a single Engram MCP tool by partial name match, return text content.
+  async function callEngramTool(
+    all: Awaited<ReturnType<typeof MCP.tools>>,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<string | undefined> {
+    const key = Object.keys(all).find((k) => k.includes("engram") && k.includes(name))
+    if (!key) return undefined
+    const tool = all[key]
+    if (!tool.execute) return undefined
+    const res = await tool.execute(args as any, {
+      toolCallId: name,
+      messages: [],
+      abortSignal: new AbortController().signal,
+    })
+    const parts = (res as any)?.content
+    if (!Array.isArray(parts) || parts.length === 0) return undefined
+    return (
+      parts
+        .filter((p: any) => p.type === "text" && p.text)
+        .map((p: any) => p.text as string)
+        .join("\n") || undefined
+    )
+  }
+
   export async function recall(pid: string): Promise<string | undefined> {
     try {
       const all = await MCP.tools()
-      const key = Object.keys(all).find((k) => k.includes("engram") && k.includes("mem_context"))
-      if (!key) return undefined
-      const tool = all[key]
-      if (!tool.execute) return undefined
-      const res = await tool.execute({ limit: 30, project: pid } as any, {
-        toolCallId: "recall",
-        messages: [],
-        abortSignal: new AbortController().signal,
-      })
-      const parts = (res as any)?.content
-      if (!Array.isArray(parts) || parts.length === 0) return undefined
-      const txt = parts
-        .filter((p: any) => p.type === "text" && p.text)
-        .map((p: any) => p.text as string)
+
+      // Run mem_context (recency) and mem_search (semantic keywords) in parallel.
+      // mem_search uses the project name as the query — surfaces architecturally
+      // relevant observations even if they weren't the most recent.
+      const [ctx, search] = await Promise.all([
+        callEngramTool(all, "mem_context", { limit: 20, project: pid }),
+        callEngramTool(all, "mem_search", { query: pid, project: pid, limit: 10 }),
+      ])
+
+      // Merge: context first (recency signal), then search results (relevance signal).
+      // Simple dedup by line — search results are often a subset of context anyway.
+      const ctxLines = new Set(
+        (ctx ?? "")
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean),
+      )
+      const searchExtra = (search ?? "")
+        .split("\n")
+        .filter((l) => l.trim() && !ctxLines.has(l.trim()))
         .join("\n")
-      if (!txt.trim()) return undefined
-      return wrapRecall(capRecallBody(txt))
+
+      const merged = [ctx, searchExtra.trim() ? `\n### Also relevant\n${searchExtra}` : ""]
+        .filter(Boolean)
+        .join("")
+        .trim()
+
+      if (!merged) return undefined
+      return wrapRecall(capRecallBody(merged))
     } catch {
       return undefined
     }

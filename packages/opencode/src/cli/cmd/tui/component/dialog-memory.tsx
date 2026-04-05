@@ -4,19 +4,32 @@ import { useDialog } from "@tui/ui/dialog"
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
 
+const REFLECTOR_THRESHOLD = 40_000
+
 type MemoryState = {
   observations: string | null
   reflections: string | null
+  current_task: string | null
   observation_tokens: number
   generation_count: number
   last_observed_at: number | null
   is_observing: boolean
   is_reflecting: boolean
+  engram_connected: boolean
 }
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text
   return text.slice(0, max) + "…"
+}
+
+// Render a simple ASCII progress bar: [████░░░░] 65%
+function progressBar(value: number, max: number, width: number): string {
+  const pct = Math.min(1, max > 0 ? value / max : 0)
+  const filled = Math.round(pct * width)
+  const empty = width - filled
+  const bar = "█".repeat(filled) + "░".repeat(empty)
+  return `[${bar}] ${Math.round(pct * 100)}%`
 }
 
 export function DialogMemory(props: { sessionID: string }) {
@@ -46,6 +59,20 @@ export function DialogMemory(props: { sessionID: string }) {
     return `${t.toLocaleString()} tokens`
   }
 
+  const tokBar = () => {
+    const t = mem()?.observation_tokens ?? 0
+    if (t === 0) return null
+    return progressBar(t, REFLECTOR_THRESHOLD, 20)
+  }
+
+  const tokBarColor = () => {
+    const t = mem()?.observation_tokens ?? 0
+    const pct = t / REFLECTOR_THRESHOLD
+    if (pct >= 1) return theme.error ?? theme.accent
+    if (pct >= 0.75) return theme.warning ?? theme.accent
+    return theme.success ?? theme.accent
+  }
+
   const status = () => {
     if (mem()?.is_reflecting) return { text: "◈ reflecting…", color: theme.warning ?? theme.accent }
     if (mem()?.is_observing) return { text: "◎ observing…", color: theme.textMuted }
@@ -71,31 +98,61 @@ export function DialogMemory(props: { sessionID: string }) {
       </box>
 
       <box paddingLeft={4} paddingRight={4} gap={1}>
+        {/* Engram connection status */}
+        <box flexDirection="row" justifyContent="space-between">
+          <text fg={theme.textMuted}>Engram</text>
+          <text fg={mem()?.engram_connected ? (theme.success ?? theme.accent) : (theme.error ?? theme.textMuted)}>
+            {mem()?.engram_connected ? "connected" : "⚠ not connected"}
+          </text>
+        </box>
+
+        {/* Observer status */}
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.textMuted}>Observer</text>
           <text fg={status().color}>{status().text}</text>
         </box>
 
+        {/* Token count + progress bar toward reflector threshold */}
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.textMuted}>Observations</text>
           <text fg={theme.text}>{tok()}</text>
         </box>
 
+        <Show when={tokBar()}>
+          <box flexDirection="row" justifyContent="space-between">
+            <text fg={theme.textMuted}> → reflector at 40k</text>
+            <text fg={tokBarColor()}>{tokBar()}</text>
+          </box>
+        </Show>
+
+        {/* Reflections state */}
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.textMuted}>Reflections</text>
-          <text fg={hasReflections() ? theme.success : theme.textMuted}>
+          <text fg={hasReflections() ? (theme.success ?? theme.accent) : theme.textMuted}>
             {hasReflections() ? "active (condensed)" : "none"}
           </text>
         </box>
 
+        {/* Last observed time */}
         <Show when={mem()?.last_observed_at}>
           <box flexDirection="row" justifyContent="space-between">
             <text fg={theme.textMuted}>Last observed</text>
             <text fg={theme.textMuted}>{new Date(mem()!.last_observed_at!).toLocaleTimeString()}</text>
           </box>
         </Show>
+
+        {/* Current task the agent is working on */}
+        <Show when={mem()?.current_task}>
+          <box flexDirection="column" gap={0}>
+            <text fg={theme.textMuted}>Current task</text>
+            <text fg={theme.text} wrapMode="word">
+              {truncate(mem()!.current_task!, 200)}
+            </text>
+          </box>
+        </Show>
       </box>
 
+      {/* Observations / reflections preview */}
       <Show when={active()}>
         <box paddingLeft={4} paddingRight={4} paddingTop={1} gap={1}>
           <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>

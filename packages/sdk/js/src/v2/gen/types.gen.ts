@@ -1640,6 +1640,15 @@ export type Config = {
      * Model to use for background observational memory (format: provider/model). Defaults to google/gemini-2.5-flash.
      */
     observer_model?: string
+    /**
+     * Token threshold for observer trigger. Plain number = fixed. Object {min, max} = adaptive (shrinks as observations grow).
+     */
+    observer_message_tokens?:
+      | number
+      | {
+          min: number
+          max: number
+        }
   }
 }
 

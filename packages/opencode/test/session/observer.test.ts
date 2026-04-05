@@ -2,9 +2,11 @@ import { describe, expect, test, beforeEach } from "bun:test"
 import path from "path"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
-import { OMBuf } from "../../src/session/om/buffer"
+import { OMBuf, calculateDynamicThreshold } from "../../src/session/om/buffer"
+import type { ThresholdRange } from "../../src/session/om/buffer"
 import { OM } from "../../src/session/om/record"
 import { Reflector } from "../../src/session/om/reflector"
+import { detectDegenerateRepetition, parseObserverOutput } from "../../src/session/om/observer"
 import { SystemPrompt } from "../../src/session/system"
 import type { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util/log"
@@ -488,6 +490,212 @@ describe("session.om.reflector", () => {
         try {
           // No OM record → run should return without error
           await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+})
+
+// ─── detectDegenerateRepetition ─────────────────────────────────────────────
+
+describe("session.om.observer.detectDegenerateRepetition", () => {
+  test("returns false for text shorter than 2000 chars", () => {
+    expect(detectDegenerateRepetition("short text")).toBe(false)
+    expect(detectDegenerateRepetition("x".repeat(1999))).toBe(false)
+  })
+
+  test("returns false for varied content", () => {
+    // Build 3000 chars of genuinely varied content
+    const varied = Array.from(
+      { length: 30 },
+      (_, i) => `Observation ${i}: The user implemented feature ${i} using pattern ${i * 7} with ${i} dependencies. `,
+    ).join("")
+    expect(detectDegenerateRepetition(varied)).toBe(false)
+  })
+
+  test("returns true for highly repetitive content", () => {
+    // Classic Gemini repeat-penalty bug — same phrase repeated hundreds of times
+    const phrase = "The user wants to implement authentication with JWT tokens. "
+    const degenerate = phrase.repeat(60) // ~3600 chars, all identical
+    expect(detectDegenerateRepetition(degenerate)).toBe(true)
+  })
+
+  test("2000 char boundary — exactly 2000 returns false (skipped)", () => {
+    // text.length < 2000 check — exactly 2000 is NOT skipped
+    expect(detectDegenerateRepetition("x".repeat(2000))).toBe(true) // all identical → degenerate
+  })
+})
+
+// ─── parseObserverOutput ────────────────────────────────────────────────────
+
+describe("session.om.observer.parseObserverOutput", () => {
+  test("extracts all three XML sections", () => {
+    const raw = `
+<observations>
+* 🔴 10:00 user is a TypeScript developer
+* 🟡 10:01 asked about auth
+</observations>
+
+<current-task>
+Implementing JWT authentication middleware
+</current-task>
+
+<suggested-response>
+Continue with the middleware implementation as discussed.
+</suggested-response>
+`.trim()
+    const result = parseObserverOutput(raw)
+    expect(result.observations).toContain("TypeScript developer")
+    expect(result.currentTask).toContain("JWT authentication")
+    expect(result.suggestedContinuation).toContain("Continue with the middleware")
+  })
+
+  test("falls back to full text when no <observations> tag", () => {
+    const raw = "* 🔴 10:00 user prefers Bun over Node"
+    const result = parseObserverOutput(raw)
+    expect(result.observations).toBe(raw.trim())
+    expect(result.currentTask).toBeUndefined()
+    expect(result.suggestedContinuation).toBeUndefined()
+  })
+
+  test("handles partial XML — only observations tag present", () => {
+    const raw = `<observations>
+* 🔴 fact one
+</observations>
+some trailing text`
+    const result = parseObserverOutput(raw)
+    expect(result.observations).toContain("fact one")
+    expect(result.currentTask).toBeUndefined()
+    expect(result.suggestedContinuation).toBeUndefined()
+  })
+
+  test("trims whitespace from extracted sections", () => {
+    const raw = `<observations>  spaced  </observations><current-task>  task  </current-task>`
+    const result = parseObserverOutput(raw)
+    expect(result.observations).toBe("spaced")
+    expect(result.currentTask).toBe("task")
+  })
+
+  test("empty string returns empty observations", () => {
+    const result = parseObserverOutput("")
+    expect(result.observations).toBe("")
+    expect(result.currentTask).toBeUndefined()
+  })
+})
+
+// ─── calculateDynamicThreshold ──────────────────────────────────────────────
+
+describe("session.om.buffer.calculateDynamicThreshold", () => {
+  test("plain number — always returns the number unchanged", () => {
+    expect(calculateDynamicThreshold(30_000, 0)).toBe(30_000)
+    expect(calculateDynamicThreshold(30_000, 15_000)).toBe(30_000)
+    expect(calculateDynamicThreshold(30_000, 99_999)).toBe(30_000)
+  })
+
+  test("ThresholdRange — returns max when obsTokens is 0", () => {
+    expect(calculateDynamicThreshold({ min: 30_000, max: 70_000 }, 0)).toBe(70_000)
+  })
+
+  test("ThresholdRange — shrinks by obsTokens", () => {
+    expect(calculateDynamicThreshold({ min: 30_000, max: 70_000 }, 20_000)).toBe(50_000)
+  })
+
+  test("ThresholdRange — floors at min", () => {
+    expect(calculateDynamicThreshold({ min: 30_000, max: 70_000 }, 50_000)).toBe(30_000)
+    expect(calculateDynamicThreshold({ min: 30_000, max: 70_000 }, 80_000)).toBe(30_000)
+  })
+
+  test("ThresholdRange — never returns below min even with huge obsTokens", () => {
+    const result = calculateDynamicThreshold({ min: 10_000, max: 50_000 }, 999_999)
+    expect(result).toBe(10_000)
+  })
+})
+
+// ─── wrapObservations with hint ─────────────────────────────────────────────
+
+describe("session.system.wrapObservations hint", () => {
+  test("without hint — no system-reminder in output", () => {
+    const result = SystemPrompt.wrapObservations("some facts")
+    expect(result).toContain("<local-observations>")
+    expect(result).toContain("</local-observations>")
+    expect(result).toContain(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS)
+    expect(result).not.toContain("<system-reminder>")
+  })
+
+  test("with hint — injects system-reminder after instructions", () => {
+    const result = SystemPrompt.wrapObservations("some facts", "Continue building the auth module.")
+    expect(result).toContain("<system-reminder>")
+    expect(result).toContain("Continue building the auth module.")
+    expect(result).toContain("</system-reminder>")
+    // system-reminder comes AFTER instructions
+    const instrIdx = result.indexOf(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS)
+    const reminderIdx = result.indexOf("<system-reminder>")
+    expect(instrIdx).toBeLessThan(reminderIdx)
+  })
+
+  test("with undefined hint — behaves like no hint", () => {
+    const withUndefined = SystemPrompt.wrapObservations("facts", undefined)
+    const withoutHint = SystemPrompt.wrapObservations("facts")
+    expect(withUndefined).toBe(withoutHint)
+  })
+})
+
+// ─── currentTask DB round-trip ───────────────────────────────────────────────
+
+describe("session.om.record currentTask round-trip", () => {
+  test("upsert stores current_task and suggested_continuation, get reads them back", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 user is building auth",
+            reflections: null,
+            current_task: "Implementing JWT middleware",
+            suggested_continuation: "Continue with token validation.",
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 100,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          const got = OM.get(s.id as SessionID)
+          expect(got?.current_task).toBe("Implementing JWT middleware")
+          expect(got?.suggested_continuation).toBe("Continue with token validation.")
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("null current_task and suggested_continuation are stored as null", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 fact",
+            reflections: null,
+            current_task: null,
+            suggested_continuation: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 10,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          const got = OM.get(s.id as SessionID)
+          expect(got?.current_task).toBeNull()
+          expect(got?.suggested_continuation).toBeNull()
         } finally {
           await Session.remove(s.id)
         }

@@ -5,6 +5,7 @@ import { SessionID, MessageID, PartID } from "@/session/schema"
 import z from "zod"
 import { OM } from "@/session/om"
 import { OMBuf } from "@/session/om/buffer"
+import { MCP } from "@/mcp"
 import { Session } from "../../session"
 import { MessageV2 } from "../../session/message-v2"
 import { SessionPrompt } from "../../session/prompt"
@@ -1045,11 +1046,13 @@ export const SessionRoutes = lazy(() =>
                   z.object({
                     observations: z.string().nullable(),
                     reflections: z.string().nullable(),
+                    current_task: z.string().nullable(),
                     observation_tokens: z.number(),
                     generation_count: z.number(),
                     last_observed_at: z.number().nullable(),
                     is_observing: z.boolean(),
                     is_reflecting: z.boolean(),
+                    engram_connected: z.boolean(),
                   }),
                 ),
               },
@@ -1061,14 +1064,18 @@ export const SessionRoutes = lazy(() =>
       async (c) => {
         const { sessionID } = c.req.valid("param")
         const rec = OM.get(sessionID)
+        const tools = await MCP.tools().catch(() => ({}))
+        const engram = Object.keys(tools).some((k) => k.includes("engram"))
         return c.json({
           observations: rec?.observations ?? null,
           reflections: rec?.reflections ?? null,
+          current_task: rec?.current_task ?? null,
           observation_tokens: rec?.observation_tokens ?? 0,
           generation_count: rec?.generation_count ?? 0,
           last_observed_at: rec?.last_observed_at ?? null,
           is_observing: OMBuf.observing(),
           is_reflecting: OMBuf.reflecting(),
+          engram_connected: engram,
         })
       },
     ),
