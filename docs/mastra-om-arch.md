@@ -3,8 +3,9 @@
 > Repo source: `mastra-ai/mastra` (22.7k ★, Apache-2.0)  
 > Analyzed: `packages/memory`, `packages/core/src/memory`, `docs/src/content/en/docs/memory`  
 > Relevant to: lightcodev2 fork — `packages/opencode/src/session/`  
-> **Code-verified against lightcodev2 real implementation** (2026-04-04)  
-> **Implementation status**: Phase 1 (recall + AutoDream) ✅ shipped · Phase 2 (Observer + ObservationTable) ✅ shipped · Phase 3 (Reflector) 🔲 planned
+> **Code-verified against lightcodev2 real implementation** (2026-04-05)  
+> **Implementation status**: Phase 1 (recall + AutoDream) ✅ · Phase 2 (Observer + ObservationTable) ✅ · Phase 3 (Reflector) ✅ · Gap D+C (BP3 slot order) ✅ · Gap E (tool parts) ✅ · Gap F (tail boundary) ✅ · Gap 1 (continuation hint) ✅ · Gap 2 (timing fix) ✅ · Gap 3 (lastMessages cap) ✅  
+> **Emergency compaction removed**: `compaction.ts`, `cut-point.ts`, `overflow.ts` deleted — OM is now the sole context management mechanism.
 
 ---
 
@@ -217,59 +218,59 @@ Key DB operations:
 
 ---
 
-## 6. What lightcodev2 Does Today (CODE-VERIFIED)
+## 6. What lightcodev2 Does Today — FULLY IMPLEMENTED (CODE-VERIFIED 2026-04-05)
 
-### Current Compaction System (`packages/opencode/src/session/compaction.ts`)
+> ⚠️ The previous version of this section described an older state. Everything described as "missing" or "planned" has been implemented.
 
-lightcodev2 already has a compaction system but it's structurally different from Mastra's OM:
+### Context Management: OM replaces compaction
 
-| Aspect     | lightcodev2 Compaction                                             | Mastra OM                                           |
-| ---------- | ------------------------------------------------------------------ | --------------------------------------------------- |
-| Trigger    | Token overflow (context window full — reactive)                    | Token threshold (~30k, proactive)                   |
-| Approach   | LLM-generated summary (Goal/Instructions/Discoveries/Accomplished) | Background Observer agents creating observation log |
-| Timing     | Reactive (blocks when overflow)                                    | Proactive (async background buffering)              |
-| Fidelity   | Summary-level narrative                                            | Fact-level with priority markers 🔴🟡               |
-| Multi-tier | No (single summary, iterative on re-compact)                       | 3-tier: messages → observations → reflections       |
-| UX         | Blocking LLM call visible to user                                  | Near-instant activation from pre-buffered chunks    |
+The emergency compaction system (`compaction.ts`, `cut-point.ts`, `overflow.ts`) was **deleted entirely** on 2026-04-05. OM is now the sole context management mechanism.
 
-Two compaction modes exist (both code-verified):
-
-- **Cut-point**: summarizes old messages, keeps recent ones verbatim (preferred — `CutPoint.find`)
-- **Full replacement**: fallback when cut-point can't save enough space
+| Aspect       | Old lightcodev2 (deleted)                       | lightcodev2 current (Mastra-aligned)                  |
+| ------------ | ----------------------------------------------- | ----------------------------------------------------- |
+| Trigger      | Token overflow (context window full — reactive) | Token threshold (~30k, proactive)                     |
+| Approach     | LLM-generated summary (blocking)                | Background Observer agents creating observation log   |
+| Timing       | Reactive (blocks when overflow)                 | Proactive (async background buffering)                |
+| Message tail | Full history re-sent until ~192k                | Only unobserved tail (`last_observed_at` boundary)    |
+| Safety net   | Emergency compaction at overflow                | `lastMessages` cap (default 40) before first Observer |
 
 ### Current Prompt Caching (`src/session/llm.ts` + `src/provider/transform.ts`)
-
-**lightcodev2 has sophisticated prompt caching — this was incorrectly described as absent.**
 
 4 cache breakpoints, applied in `applyCaching()`:
 
 ```
-BP1: Last tool definition (1h TTL, Anthropic) — tools[] alphabetically sorted for stable order
-BP2: system[0] — agent prompt (1h TTL, Anthropic) — most stable
-BP3: system[1] — env + skills (5min TTL) — stable within session
-BP4: conversation[N-2] — penúltimo mensaje (5min TTL) — cache READ guaranteed on next turn
-system[2] — date + model identity — DELIBERATELY NOT CACHED (volatile, changes every turn)
+BP1: Last tool definition (1h TTL, Anthropic) — tools[] alphabetically sorted
+BP2: system[0] — agent prompt + env + skills + instructions (1h TTL)
+BP3: system[1] — OM observations OR sentinel "<!-- ctx -->" (5min TTL)
+BP4: conversation[N-2] — penultimate message (5min TTL)
+system[2] — Engram recall (session-frozen, NOT cached — ~2k tokens, acceptable)
+system[last] — volatile: date + model identity — DELIBERATELY NOT CACHED
 ```
 
-Providers covered: Anthropic, OpenRouter, AWS Bedrock, GitHub Copilot, OpenAI-compatible proxies.
+### Current Session Storage
 
-Tools sorted alphabetically before every call → deterministic order → maximum cache hit rate.
+SQLite via Drizzle. `ObservationTable` and `ObservationBufferTable` are fully implemented and active.
 
-### Current Session Storage (`packages/opencode/src/storage/schema.ts`)
+### OM Implementation Status
 
-SQLite via Drizzle (snake_case columns). No observation table exists yet.
+All components shipped:
 
-### What's Missing for OM in lightcodev2
-
-1. **OM record table** — stores active observations + last_observed_at boundary
-2. **Buffered chunks table** — stores pre-computed observation chunks
-3. **ObserverRunner** — background LLM agent that produces observations
-4. **ReflectorRunner** — secondary agent for condensing when observations grow
-5. **BufferingCoordinator** — async state machine (idle → running → complete → activation)
-6. **Token counter** — fast local estimation (already exists at `src/util/token.ts` — reuse!)
-7. **System prompt injection** — add observations to `system[1]` (keep `system[0]` for agent prompt)
-
-> **Integration note on caching**: OM observations should be injected into `system[1]` (the env+skills block), NOT `system[0]`. This preserves the 1h cache on `system[0]` (agent prompt) while the observation content gets its own 5min TTL breakpoint. Alternatively, add a `system[1.5]` between env and volatile — observations are stable within an observation cycle, making them good candidates for 5min caching.
+| Component                       | File                                  | Status     |
+| ------------------------------- | ------------------------------------- | ---------- |
+| ObservationTable                | `src/session/session.sql.ts`          | ✅         |
+| ObservationBufferTable          | `src/session/session.sql.ts`          | ✅         |
+| Observer (background LLM agent) | `src/session/om/observer.ts`          | ✅         |
+| Reflector (condense when large) | `src/session/om/reflector.ts`         | ✅         |
+| OMBuf state machine             | `src/session/om/buffer.ts`            | ✅         |
+| OM CRUD                         | `src/session/om/record.ts`            | ✅         |
+| Observation groups              | `src/session/om/groups.ts`            | ✅         |
+| Recall tool                     | `src/tool/recall.ts`                  | ✅         |
+| System prompt injection (BP3)   | `src/session/llm.ts:131-138`          | ✅ Gap D+C |
+| Tool parts in Observer          | `src/session/om/observer.ts:249-262`  | ✅ Gap E   |
+| Tail boundary filter            | `src/session/prompt.ts:1776-1789`     | ✅ Gap F   |
+| Continuation hint               | `src/session/system.ts` + `prompt.ts` | ✅ Gap 1   |
+| Timing fix (last_observed_at)   | `src/session/prompt.ts`               | ✅ Gap 2   |
+| lastMessages safety cap         | `src/session/prompt.ts` + `config.ts` | ✅ Gap 3   |
 
 ---
 
@@ -517,19 +518,19 @@ packages/opencode/src/config/config.ts         ← observationalMemory config op
 
 ## 12. Reference: Mastra OM Default Values
 
-| Parameter                            | Default                   | Notes                                 |
-| ------------------------------------ | ------------------------- | ------------------------------------- |
-| `observation.messageTokens`          | 30,000                    | Trigger for Observer                  |
-| `observation.bufferTokens`           | 0.2 (20%)                 | Interval: every 6k tokens             |
-| `observation.bufferActivation`       | 0.8                       | Keep 20% of messages after activation |
-| `observation.blockAfter`             | 1.2x                      | Force sync at 36k tokens              |
-| `observation.previousObserverTokens` | 2,000                     | Context for Observer                  |
-| `reflection.observationTokens`       | 40,000                    | Trigger for Reflector                 |
-| `reflection.bufferActivation`        | 0.5                       | Start background reflection at 50%    |
-| `reflection.blockAfter`              | 1.2x                      | Force sync at 48k tokens              |
-| Observer temperature                 | 0.3                       | Consistent but not rigid              |
-| Reflector temperature                | 0.0                       | Maximum consistency                   |
-| Default model                        | `google/gemini-2.5-flash` | Fast, 128k context, cheap             |
+| Parameter                            | Default                   | Notes                                   |
+| ------------------------------------ | ------------------------- | --------------------------------------- |
+| `observation.messageTokens`          | 30,000                    | Trigger for Observer                    |
+| `observation.bufferTokens`           | 0.2 (20%)                 | Interval: every 6k tokens               |
+| `observation.bufferActivation`       | 0.8                       | Keep 20% of messages after activation   |
+| `observation.blockAfter`             | 1.2x                      | Apply backpressure when OM falls behind |
+| `observation.previousObserverTokens` | 2,000                     | Context for Observer                    |
+| `reflection.observationTokens`       | 40,000                    | Trigger for Reflector                   |
+| `reflection.bufferActivation`        | 0.5                       | Start background reflection at 50%      |
+| `reflection.blockAfter`              | 1.2x                      | Force sync at 48k tokens                |
+| Observer temperature                 | 0.3                       | Consistent but not rigid                |
+| Reflector temperature                | 0.0                       | Maximum consistency                     |
+| Default model                        | `google/gemini-2.5-flash` | Fast, 128k context, cheap               |
 
 ---
 

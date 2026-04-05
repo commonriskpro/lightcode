@@ -1,0 +1,1 @@
+ALTER TABLE `session_observation` ADD `observed_message_ids` text;

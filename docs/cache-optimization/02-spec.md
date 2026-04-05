@@ -1,5 +1,7 @@
 # Specification: Cache-Optimized Context Management
 
+> **Status (2026-04-05):** REQ-1 through REQ-3 ✅ implemented. REQ-4 through REQ-10 (compaction requirements) are **obsolete** — the compaction system was deleted. See `docs/om-replace-compaction.md` for the replacement architecture.
+
 ## Requirements
 
 ### REQ-1: Breakpoint Placement by Volatility

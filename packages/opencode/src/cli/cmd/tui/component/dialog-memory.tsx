@@ -4,7 +4,7 @@ import { useDialog } from "@tui/ui/dialog"
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
 
-const REFLECTOR_THRESHOLD = 40_000
+const REFLECTOR_THRESHOLD = 120_000
 
 type MemoryState = {
   observations: string | null

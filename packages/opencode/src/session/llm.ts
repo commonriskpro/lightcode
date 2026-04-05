@@ -128,12 +128,13 @@ export namespace LLM {
       system.length = 0
       system.push(header, rest.join("\n"))
     }
-    // Insert recall context at system[1] — 5min cache boundary, stable per session
-    if (input.recall) system.splice(1, 0, input.recall)
-    // Insert observations at system[2] — after recall, before volatile
-    if (input.observations) system.splice(input.recall ? 2 : 1, 0, input.observations)
-    // Append volatile context as last — NOT cached by applyCaching
-    // (applyCaching only places breakpoints on system[0] and system[1])
+    // system[1] = observations (BP3 slot — stable between Observer cycles, cacheable)
+    // system[2] = recall (session-frozen, uncached, small ~2k tokens — acceptable)
+    // system[last] = volatile (model ID + date — not cached by design)
+    // Sentinel "<!-- ctx -->" ensures BP3 always points at stable content even when
+    // no observations exist yet (new session before first Observer activation).
+    system.splice(1, 0, input.observations ?? "<!-- ctx -->")
+    if (input.recall) system.splice(2, 0, input.recall)
     system.push(SystemPrompt.volatile(input.model))
 
     const variant =

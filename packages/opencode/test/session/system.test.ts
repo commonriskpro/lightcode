@@ -124,6 +124,7 @@ describe("SystemPrompt.observations — reflections priority", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 50_000,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -155,6 +156,7 @@ describe("SystemPrompt.observations — reflections priority", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 10,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -185,6 +187,7 @@ describe("SystemPrompt.observations — reflections priority", () => {
             last_observed_at: Date.now(),
             generation_count: 0,
             observation_tokens: 0,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }

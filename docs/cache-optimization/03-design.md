@@ -1,5 +1,14 @@
 # Technical Design: Cache-Optimized Context Management
 
+> **Status (2026-04-05):**
+>
+> - Phase 1 (breakpoint ordering, volatile extraction) ✅ implemented
+> - Phase 2 (system slot stability) ✅ implemented — including Gap D+C reorder (observations at BP3)
+> - Phase 3 (cut-point compaction refactor) ❌ **SUPERSEDED** — `compaction.ts`, `cut-point.ts`, `overflow.ts` were deleted entirely
+> - Phase 4 (iterative summaries) ❌ **SUPERSEDED** — replaced by OM Observer approach
+>
+> See `docs/om-replace-compaction.md` for the architectural decision that superseded Phases 3–4.
+
 ## Overview
 
 Four phases, each independently deployable. No database migrations. No schema changes. No new dependencies.

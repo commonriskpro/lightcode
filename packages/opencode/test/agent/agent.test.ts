@@ -27,9 +27,9 @@ test("returns default native agents when no config", async () => {
       expect(names).toContain("plan")
       expect(names).toContain("general")
       expect(names).toContain("explore")
-      expect(names).toContain("compaction")
       expect(names).toContain("title")
       expect(names).toContain("summary")
+      expect(names).not.toContain("compaction")
     },
   })
 })
@@ -107,17 +107,13 @@ test("general agent denies todo tools", async () => {
   })
 })
 
-test("compaction agent denies all permissions", async () => {
+test("compaction agent no longer exists", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
       const compaction = await Agent.get("compaction")
-      expect(compaction).toBeDefined()
-      expect(compaction?.hidden).toBe(true)
-      expect(evalPerm(compaction, "bash")).toBe("deny")
-      expect(evalPerm(compaction, "edit")).toBe("deny")
-      expect(evalPerm(compaction, "read")).toBe("deny")
+      expect(compaction).toBeUndefined()
     },
   })
 })
@@ -654,7 +650,7 @@ test("defaultAgent throws when default_agent points to subagent", async () => {
   })
 })
 
-test("defaultAgent throws when default_agent points to hidden agent", async () => {
+test("defaultAgent throws when default_agent points to non-existent native agent", async () => {
   await using tmp = await tmpdir({
     config: {
       default_agent: "compaction",
@@ -663,7 +659,7 @@ test("defaultAgent throws when default_agent points to hidden agent", async () =
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      await expect(Agent.defaultAgent()).rejects.toThrow('default agent "compaction" is hidden')
+      await expect(Agent.defaultAgent()).rejects.toThrow()
     },
   })
 })

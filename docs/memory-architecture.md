@@ -84,7 +84,7 @@ Verified at `src/session/om/buffer.ts:5`.
 
 - `TRIGGER = 30_000`
 - `INTERVAL = 6_000`
-- `FORCE = 36_000`
+- `blockAfter = 1.2x activation threshold` (default, configurable via `observer_block_after`)
 
 Verified at `src/session/om/buffer.ts:10-12`.
 
@@ -174,10 +174,16 @@ Verified at `src/session/om/observer.ts:23-38`.
 #### `run()` signature and return
 
 ```ts
-run(input: { sid: SessionID; msgs: MessageV2.WithParts[]; prev?: string }): Promise<string | undefined>
+run(input: {
+  sid: SessionID
+  msgs?: MessageV2.WithParts[]
+  prev?: string
+  prevBudget?: number | false
+  priorCurrentTask?: string
+}): Promise<ObserverResult | undefined>
 ```
 
-Verified at `src/session/om/observer.ts:74-78`.
+Verified at `src/session/om/observer.ts`.
 
 #### `condense()` signature and behavior
 
@@ -218,9 +224,9 @@ Verified at `src/session/om/observer.ts:52-57,66-71,87-97,113,123-129`.
 
 #### What messages are passed to Observer
 
-`run()` filters incoming `msgs` to roles `user|assistant`; from parts, keeps only `type === "text"`; joins text parts per message; emits `[User]: ...` / `[Assistant]: ...` blocks.
+`run()` filters incoming `msgs` to roles `user|assistant`; from parts, includes both `type === "text"` AND `type === "tool"` (completed tool results, capped at `experimental.observer_max_tool_result_tokens ?? 500` tokens each); joins per message; emits `[User]: ...` / `[Assistant]: ...` blocks with `[Tool: name]\noutput` lines.
 
-Verified at `src/session/om/observer.ts:99-112`.
+Verified at `src/session/om/observer.ts:249-262`.
 
 ---
 
@@ -414,18 +420,24 @@ In `LLM.stream`:
    - `input.user.system` if present
 2. plugin hook `experimental.chat.system.transform` can mutate array
 3. if array grew and header unchanged, it re-collapses into `[header, rest.join("\n")]`
-4. if recall exists: insert at index 1
-5. if observations exists: insert at index `2` when recall exists else `1`
+4. observations always inserted at index 1 (with `"<!-- ctx -->"` sentinel if absent)
+5. recall inserted at index 2 only if present
 6. append volatile string as last element
 
-Verified at `src/session/llm.ts:105-137`.
+Verified at `src/session/llm.ts:131-138`.
 
-### Recall and observations splice positions
+### Recall and observations splice positions (Gap D+C)
 
-- Recall splice: `system.splice(1, 0, input.recall)`.
-- Observations splice: `system.splice(input.recall ? 2 : 1, 0, input.observations)`.
+```ts
+// system[1] = observations (BP3 — cacheable, stable between Observer cycles)
+// system[2] = recall (session-frozen, NOT cached)
+system.splice(1, 0, input.observations ?? "<!-- ctx -->")
+if (input.recall) system.splice(2, 0, input.recall)
+```
 
-Verified at `src/session/llm.ts:132-134`.
+Verified at `src/session/llm.ts:131-138`.
+
+**Rationale:** Observations are stable between Observer cycles (~every 30k tokens), making them suitable for BP3. Recall is session-frozen (fetched once at step 1) so the cost of resending ~2k tokens uncached per turn is negligible. This is the inverse of the original design.
 
 ### Where volatile is pushed
 
@@ -526,14 +538,24 @@ Verified at `src/session/prompt.ts:1516-1569`.
 step===1 ? recall = SystemPrompt.recall(projectID) : keep previous recall
 obs = SystemPrompt.observations(sessionID) // every turn
 
+// Gap F: tail filtering
+omBoundary = OM.get(sessionID)?.last_observed_at ?? 0
+lastMessages = cfg.experimental?.last_messages ?? 40
+tail = omBoundary > 0
+  ? msgs.filter(created > omBoundary)
+  : msgs.slice(-lastMessages)
+
+// Gap 1: continuation hint
+if omBoundary > 0: prepend synthetic user message to tail
+
 LLM.system construction:
   system[0] = header
-  + splice recall at [1] (if present)
-  + splice obs at [2] or [1]
+  + splice observations (or sentinel) at [1] — BP3
+  + splice recall at [2] if present — uncached
   + push volatile last
 ```
 
-Verified at `src/session/prompt.ts:1740-1745`, `src/session/llm.ts:132-137`.
+Verified at `src/session/prompt.ts:1776-1816`, `src/session/llm.ts:131-138`.
 
 ### Idle AutoDream flow
 
@@ -574,12 +596,12 @@ Verified at `src/dream/index.ts:118-160,182-207`.
    - `src/session/prompt.ts:1536,1562`, `src/session/om/record.ts:46`, `src/session/system.ts:66-69`
 2. **One-turn race window**: `buffer/activate` path is forked, so observation update can lag by one or more turns while next LLM call already proceeds.
    - `src/session/prompt.ts:1518-1543`
-3. **Boundary drift risk**: `last_observed_at` is set with `Date.now()` (not last message timestamp), while filtering uses message `time.created > boundary`; clock/timing ordering can skip edge messages.
-   - `src/session/prompt.ts:1521-1523,1534,1547-1549,1560`
+3. ~~**Boundary drift risk**: `last_observed_at` set with `Date.now()`~~ — **FIXED (Gap 2)**: both `buffer` and `force` paths now use `unobserved.at(-1)?.info.time?.created ?? Date.now()`. The boundary is now the timestamp of the last observed message, not the time the Observer finished.
+   - `src/session/prompt.ts` — `ends_at` and `last_observed_at` assignments
 4. **`OMBuf.pending` is unused**, suggesting incomplete state semantics.
    - `src/session/om/buffer.ts:5`
-5. **ObservationBuffer table path is effectively dormant in turn loop**: runLoop writes directly to `ObservationTable` with `OM.upsert` and never calls `OM.addBuffer/OM.activate`.
-   - `src/session/prompt.ts:1529-1539,1555-1565`; `src/session/om/record.ts:32-74`
+5. ~~**ObservationBuffer table path dormant**~~ — **FIXED**: `buffer` signal path calls `OM.addBuffer(...)` and `activate` signal path calls `OM.activate(sessionID)`. Both paths are active. The `force` signal path continues to use `OM.upsert` directly.
+   - `src/session/prompt.ts:1530-1566` (buffer), `1568-1586` (activate), `1588-1630` (force)
 6. **`experimental.autodream` flag is checked in `idle()` at runtime** — if `false`, consolidation is skipped immediately after `Engram.ensure()`. The idle subscription is always installed at bootstrap, but the flag is respected before any model call.
    - `src/dream/index.ts:187-189`
 7. **`readState()` in AutoDream is currently unused** (state is written but never read in this module).

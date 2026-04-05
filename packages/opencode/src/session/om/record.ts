@@ -9,6 +9,12 @@ import { wrapInObservationGroup } from "./groups"
 export type ObservationRecord = typeof ObservationTable.$inferSelect
 export type ObservationBuffer = typeof ObservationBufferTable.$inferSelect
 
+function mergeIds(existing: string | null, next: string[]): string {
+  const set = new Set<string>(existing ? (JSON.parse(existing) as string[]) : [])
+  for (const id of next) set.add(id)
+  return JSON.stringify([...set])
+}
+
 export namespace OM {
   export function get(sid: SessionID): ObservationRecord | undefined {
     return Database.use((db) => db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get())
@@ -53,6 +59,7 @@ export namespace OM {
     const obs = range ? wrapInObservationGroup(merged, range) : merged
     const latest = bufs[bufs.length - 1]
     const tok = Token.estimate(obs)
+    const ids = bufs.flatMap((b) => [b.first_msg_id, b.last_msg_id]).filter((id) => id !== null) as string[]
 
     if (rec) {
       const updated: ObservationRecord = {
@@ -61,6 +68,7 @@ export namespace OM {
         last_observed_at: latest.ends_at,
         generation_count: rec.generation_count + bufs.length,
         observation_tokens: tok,
+        observed_message_ids: mergeIds(rec.observed_message_ids ?? null, ids),
         time_updated: Date.now(),
       }
       Database.use((db) => db.update(ObservationTable).set(updated).where(eq(ObservationTable.id, rec.id)).run())
@@ -75,6 +83,7 @@ export namespace OM {
         last_observed_at: latest.ends_at,
         generation_count: bufs.length,
         observation_tokens: tok,
+        observed_message_ids: mergeIds(null, ids),
         time_created: Date.now(),
         time_updated: Date.now(),
       }
@@ -89,6 +98,19 @@ export namespace OM {
       db
         .update(ObservationTable)
         .set({ reflections: txt, time_updated: Date.now() })
+        .where(eq(ObservationTable.session_id, sid))
+        .run(),
+    )
+  }
+
+  export function trackObserved(sid: SessionID, ids: string[]): void {
+    const rec = get(sid)
+    if (!rec) return
+    const merged = mergeIds(rec.observed_message_ids ?? null, ids)
+    Database.use((db) =>
+      db
+        .update(ObservationTable)
+        .set({ observed_message_ids: merged, time_updated: Date.now() })
         .where(eq(ObservationTable.session_id, sid))
         .run(),
     )

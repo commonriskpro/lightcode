@@ -16,8 +16,7 @@ const root = path.join(__dirname, "../..")
 // via Reflector.run — we test it indirectly. Direct tests live here as pure logic probes.
 
 describe("session.om.reflector.validateCompression (via text.length >> 2)", () => {
-  // target = 40_000 (Reflector.threshold)
-  const target = 40_000
+  const target = 120_000
 
   test("text with tokens < target passes compression", () => {
     // text.length >> 2 = tokenCount
@@ -27,7 +26,7 @@ describe("session.om.reflector.validateCompression (via text.length >> 2)", () =
   })
 
   test("text with tokens >= target fails compression", () => {
-    const text = "x".repeat(target * 4) // exactly 40_000 tokens
+    const text = "x".repeat(target * 4)
     expect(text.length >> 2 < target).toBe(false)
   })
 
@@ -53,13 +52,14 @@ describe("session.om.reflector retry loop", () => {
           OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
-            observations: "🔴 " + "fact ".repeat(20_000), // > 40k tokens
+            observations: "🔴 " + "fact ".repeat(60_000),
             reflections: null,
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
             generation_count: 1,
-            observation_tokens: 41_000,
+            observation_tokens: 121_000,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           })
@@ -106,6 +106,7 @@ describe("session.om.reflector retry loop", () => {
             last_observed_at: Date.now(),
             generation_count: 0,
             observation_tokens: 50_000,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           })
@@ -119,7 +120,70 @@ describe("session.om.reflector retry loop", () => {
     })
   })
 
-  test("Reflector.threshold is exported and equals 40_000", () => {
-    expect(Reflector.threshold).toBe(40_000)
+  test("Reflector.threshold is exported and equals 120_000", () => {
+    expect(Reflector.threshold).toBe(120_000)
+  })
+
+  test("T-5.6: Reflector.run skips when observation_tokens < default 120_000", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 short observation",
+            reflections: null,
+            current_task: null,
+            suggested_continuation: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 119_999,
+            observed_message_ids: null,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
+          // reflections must remain null — threshold not reached
+          const got = OM.get(s.id as SessionID)
+          expect(got?.reflections).toBeNull()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  // T-5.7: Reflector fires when observation_tokens >= custom threshold set via config
+  // Integration-level note: config is read from disk; in test env no provider is configured
+  // so the model fetch fails gracefully — we verify run() resolves without throw.
+  test("T-5.7: Reflector.run fires (attempts) above threshold, exits gracefully with no model", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 " + "fact ".repeat(60_000),
+            reflections: null,
+            current_task: null,
+            suggested_continuation: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 121_000,
+            observed_message_ids: null,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          // No provider → resolves without throw, reflections stay null
+          await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
   })
 })

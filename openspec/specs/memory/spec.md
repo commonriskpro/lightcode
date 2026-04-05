@@ -125,15 +125,16 @@ The system MUST track unobserved tokens and trigger the Observer or buffering pr
 
 #### Scenario: Tokens reach activation threshold
 
-- GIVEN a session has between 30k and 36k unobserved tokens
+- GIVEN a session reaches the effective activation threshold
 - WHEN a turn completes
 - THEN the system MUST activate the Observer to process the buffered tokens and unobserved messages via a non-blocking fiber
 
-#### Scenario: Tokens exceed force-sync threshold
+#### Scenario: Tokens exceed blockAfter threshold
 
-- GIVEN a session exceeds 36k unobserved tokens
+- GIVEN a session exceeds `blockAfter`
 - WHEN a turn completes
-- THEN the system MUST force-sync the Observer immediately and block further context accumulation until complete
+- THEN the system MUST apply backpressure and wait for OM to catch up
+- AND MUST NOT run a duplicate synchronous Observer path
 
 ### Requirement: Observer LLM Output Storage
 

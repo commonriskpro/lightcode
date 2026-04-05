@@ -34,16 +34,16 @@ At session start (step 1 only), `SystemPrompt.recall(pid)` calls `mem_context` o
 
 ### Layer 2 — Intra-Session Observer
 
-Background LLM extracts structured facts from the conversation every **6k tokens** (buffered) and fires the full pass at **30k tokens**. Forces a blocking pass at **36k tokens**.
+Background LLM extracts structured facts from the conversation every **6k tokens** (buffered) and activates asynchronously once the message threshold is reached. If OM falls behind, the main loop applies **backpressure** instead of running a duplicate synchronous observer path.
 
 **OMBuf thresholds:**
 
-| Signal     | Condition           | Action                 |
-| ---------- | ------------------- | ---------------------- |
-| `idle`     | < 6k new tokens     | no-op                  |
-| `buffer`   | crossed 6k boundary | fork observer pipeline |
-| `activate` | ≥ 30k cumulative    | fork observer pipeline |
-| `force`    | ≥ 36k cumulative    | blocking observer pass |
+| Signal     | Condition           | Action                  |
+| ---------- | ------------------- | ----------------------- |
+| `idle`     | < 6k new tokens     | no-op                   |
+| `buffer`   | crossed 6k boundary | fork observer pipeline  |
+| `activate` | ≥ 30k cumulative    | fork observer pipeline  |
+| `block`    | ≥ `blockAfter`      | wait for OM to catch up |
 
 Observations stored in `ObservationTable` (SQLite, session-scoped). Injected at `system[2]` each turn as `<local-observations>...</local-observations>`.
 
@@ -389,11 +389,11 @@ Detection: `ProviderTransform.supportsNativeDeferred(model)` — `src/provider/t
 
 Token usage and estimated cost are tracked per-turn and displayed in multiple TUI locations:
 
-| Location              | What it shows                                                           |
-| --------------------- | ----------------------------------------------------------------------- |
-| Sidebar context panel | Last-message token count + % of context limit + total session cost      |
-| Subagent footer       | Cost per subagent task                                                  |
-| Prompt input area     | `{context} · {cost}` per assistant message                              |
+| Location              | What it shows                                                          |
+| --------------------- | ---------------------------------------------------------------------- |
+| Sidebar context panel | Last-message token count + % of context limit + total session cost     |
+| Subagent footer       | Cost per subagent task                                                 |
+| Prompt input area     | `{context} · {cost}` per assistant message                             |
 | **Sidebar footer**    | **⚠ Not yet implemented** — spec exists in `docs/cost-tracker-arch.md` |
 
 Cost computation: `Session.getUsage()` called at `finish-step` via `processor.ts`. Handles cache tokens, reasoning tokens, pricing tiers, and Decimal.js precision.

@@ -329,11 +329,6 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
         })
         .catch(() => undefined)
 
-      if (parts?.data.parts?.some((part) => part.type === "compaction")) {
-        output.headers["x-initiator"] = "agent"
-        return
-      }
-
       const session = await sdk.session
         .get({
           path: {

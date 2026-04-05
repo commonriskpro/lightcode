@@ -10,6 +10,7 @@ import { Flag } from "@/flag/flag"
 import { useToast } from "../ui/toast"
 import { DialogDreamModel } from "./dialog-dream-model"
 import { DialogObserverModel } from "./dialog-observer-model"
+import { DialogObserverThresholds } from "./dialog-observer-thresholds"
 
 interface Feature {
   id: string
@@ -19,6 +20,8 @@ interface Feature {
   config?: string
   /** Model config key — when set, Enter opens the model picker */
   modelConfig?: string
+  /** When true, Enter opens a custom sub-dialog (no toggle) */
+  customDialog?: boolean
   enabled: () => boolean
   /** Current model string shown as subtitle when configured */
   currentModel?: () => string | undefined
@@ -134,6 +137,13 @@ export function DialogFeature() {
         enabled: () => isEnabled("observer", false),
         currentModel: () => currentModel("observer_model") ?? "google/gemini-2.5-flash",
       },
+      {
+        id: "observer_thresholds",
+        title: "Observer Thresholds",
+        description: "Configure trigger, backpressure, reflector, tool cap and message limits",
+        customDialog: true,
+        enabled: () => true,
+      },
     ]
   })
 
@@ -142,12 +152,14 @@ export function DialogFeature() {
     return features().map((f) => ({
       value: f.id,
       title: f.title,
-      description: f.config
-        ? f.modelConfig
-          ? `${f.description} — enter to configure model`
-          : f.description
-        : `${f.description} (env only)`,
-      footer: (
+      description: f.customDialog
+        ? `${f.description} — enter to configure`
+        : f.config
+          ? f.modelConfig
+            ? `${f.description} — enter to configure model`
+            : f.description
+          : `${f.description} (env only)`,
+      footer: f.customDialog ? undefined : (
         <Status
           enabled={f.enabled()}
           loading={cur === f.id}
@@ -157,11 +169,13 @@ export function DialogFeature() {
     }))
   })
 
-  function openModelDialog(id: string) {
+  function openSubDialog(id: string) {
     if (id === "autodream") {
       dialog.push(() => <DialogDreamModel />)
     } else if (id === "observer") {
       dialog.push(() => <DialogObserverModel />)
+    } else if (id === "observer_thresholds") {
+      dialog.push(() => <DialogObserverThresholds />)
     }
   }
 
@@ -174,6 +188,7 @@ export function DialogFeature() {
 
         const feature = features().find((f) => f.id === option.value)
         if (!feature) return
+        if (feature.customDialog) return // custom dialog features don't toggle
         if (!feature.config) return
 
         const current = feature.enabled()
@@ -217,10 +232,10 @@ export function DialogFeature() {
       keybind={keybinds()}
       onSelect={(option) => {
         const feature = features().find((f) => f.id === option.value)
-        if (feature?.modelConfig) {
-          openModelDialog(feature.id)
+        if (feature?.customDialog || feature?.modelConfig) {
+          openSubDialog(feature.id)
         }
-        // Features without modelConfig don't close on enter — only on escape
+        // Features without sub-dialog don't close on enter — only on escape or space toggle
       }}
     />
   )

@@ -9,6 +9,9 @@ import { MessageV2 } from "../session/message-v2"
 import { Token } from "../util/token"
 import { OM } from "../session/om"
 import type { SessionID } from "../session/schema"
+import { Instance } from "../project/instance"
+import { ensureDaemon } from "./ensure"
+import { Server } from "../server/server"
 
 import PROMPT from "./prompt.txt"
 
@@ -22,16 +25,7 @@ export namespace AutoDream {
 
   const statePath = path.join(Global.Path.state, "autodream.json")
 
-  async function readState(): Promise<DreamState> {
-    try {
-      const raw = await Bun.file(statePath).text()
-      return JSON.parse(raw)
-    } catch {
-      return { lastConsolidatedAt: 0, lastSessionCount: 0 }
-    }
-  }
-
-  async function writeState(state: DreamState): Promise<void> {
+  export async function writeState(state: DreamState): Promise<void> {
     await Bun.write(statePath, JSON.stringify(state, null, 2))
   }
 
@@ -39,27 +33,6 @@ export namespace AutoDream {
   let _dreaming = false
   export function dreaming() {
     return _dreaming
-  }
-
-  // SDK client injected from TUI
-  interface SDKClient {
-    session: {
-      create: (params: Record<string, unknown>) => Promise<{ data?: { id: string } }>
-      promptAsync: (params: Record<string, unknown>) => Promise<unknown>
-      status: (params?: Record<string, unknown>) => Promise<{ data?: Record<string, { type: string }> }>
-    }
-  }
-  let sdk: SDKClient | undefined
-
-  export function setSDK(client: SDKClient) {
-    sdk = client
-  }
-
-  // Model injected from TUI config
-  let configuredModel: string | undefined
-
-  export function setModel(model: string | undefined) {
-    configuredModel = model
   }
 
   function isText(p: MessageV2.Part): p is MessageV2.TextPart {
@@ -115,92 +88,57 @@ export namespace AutoDream {
     return prompt
   }
 
-  async function spawn(focus?: string, obs?: string, model?: string): Promise<string> {
-    if (!sdk) throw new Error("AutoDream SDK not initialized")
-
-    const resolved = model ?? configuredModel
-    if (!resolved) throw new Error("No model configured. Use /dreammodel or set autodream_model in config.")
-
-    const title = focus ? `Dream: ${focus}` : "AutoDream consolidation"
-    const res = await sdk.session.create({ title })
-    const sessionID = res.data?.id
-    if (!sessionID) throw new Error("Failed to create dream session")
-
-    const prompt = buildSpawnPrompt(PROMPT, focus, obs)
-    const parts = resolved.split("/")
-    const providerID = parts[0]
-    const modelID = parts.slice(1).join("/")
-
-    log.info("spawning dream session", { sessionID, providerID, modelID })
-
-    // Fire the prompt (returns immediately)
-    await sdk.session.promptAsync({
-      sessionID,
-      model: { providerID, modelID },
-      agent: "dream",
-      parts: [{ type: "text", text: prompt }],
-    })
-
-    // Poll session status until dream finishes
-    for (let i = 0; i < 300; i++) {
-      await new Promise((r) => setTimeout(r, 2000))
-      try {
-        const res = await sdk.session.status()
-        const status = res.data?.[sessionID]
-        if (!status || status.type === "idle") {
-          log.info("dream session completed", { sessionID })
-          return "Dream consolidation completed"
-        }
-      } catch {
-        // status check failed, keep polling
-      }
-    }
-
-    log.warn("dream session timed out", { sessionID })
-    return "Dream consolidation timed out (10 min)"
-  }
-
   /** Manual trigger from /dream command */
   export async function run(focus?: string): Promise<string> {
     const available = await Engram.ensure()
     if (!available) return "Engram not available. Install with: brew install gentleman-programming/tap/engram"
 
     try {
-      _dreaming = true
-      log.info("dream started", { focus })
-      const result = await spawn(focus)
-      await writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: 0 })
-      log.info("dream completed")
-      return result
+      const { Config } = await import("../config/config")
+      const cfg = await Config.get()
+      const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
+      const dir = Instance.directory
+      const sock = await ensureDaemon(dir)
+      // @ts-ignore — Bun-native unix socket fetch option
+      const res = await fetch("http://localhost/trigger", {
+        unix: sock,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ focus, model }),
+      })
+      const data = (await res.json()) as { ok: boolean; error?: string }
+      return data.ok ? "Dream started" : `Dream failed: ${data.error}`
     } catch (err) {
       log.error("dream failed", { error: err instanceof Error ? err.message : String(err) })
       return `Dream failed: ${err instanceof Error ? err.message : String(err)}`
-    } finally {
-      _dreaming = false
     }
   }
 
   async function idle(sid: string): Promise<void> {
     const available = await Engram.ensure()
     if (!available) return
-    // Respect experimental.autodream flag — if explicitly false, skip
     const { Config } = await import("../config/config")
     const cfg = await Config.get()
     if (cfg.experimental?.autodream === false) return
-    // Use configured model or fall back to a sensible default
-    const model = configuredModel ?? cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
-    if (!sdk) return
+    const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
+
+    // LIGHTCODE_SERVER_URL must be set by the server process before idle fires
+    const url = Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
+    if (url) process.env.LIGHTCODE_SERVER_URL = url
+
     try {
-      _dreaming = true
-      log.info("idle dream started", { sid })
+      const sock = await ensureDaemon(Instance.directory)
       const obs = await summaries(sid)
-      await spawn(undefined, obs, model)
-      await writeState({ lastConsolidatedAt: Date.now(), lastSessionCount: 0 })
-      log.info("idle dream completed")
+      // @ts-ignore — Bun-native unix socket fetch option
+      await fetch("http://localhost/trigger", {
+        unix: sock,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, obs }),
+      })
+      log.info("dream triggered via daemon", { sock })
     } catch (err) {
-      log.error("idle dream failed", { error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      _dreaming = false
+      log.warn("autodream daemon unavailable", { error: err instanceof Error ? err.message : String(err) })
     }
   }
 

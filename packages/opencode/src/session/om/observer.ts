@@ -185,6 +185,29 @@ export function truncateObsToBudget(obs: string, budget: number): string {
   return parts.join("\n")
 }
 
+export function sanitizeToolResult(val: unknown, seen = new WeakSet()): unknown {
+  if (typeof val !== "object" || val === null) return val
+  if (seen.has(val as object)) return "[circular]"
+  seen.add(val as object)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+    // Check circular before serializing to avoid JSON.stringify throwing on cycles
+    if (typeof v === "object" && v !== null && seen.has(v as object)) {
+      out[k] = "[circular]"
+      continue
+    }
+    if (/encrypted|secret|token/i.test(k)) {
+      const serialized = typeof v === "string" ? v : (JSON.stringify(v) ?? "")
+      if (serialized.length > 256) {
+        out[k] = `[stripped: ${serialized.length} chars]`
+        continue
+      }
+    }
+    out[k] = sanitizeToolResult(v, seen)
+  }
+  return out
+}
+
 export namespace Observer {
   // Condense multiple observation chunks into one coherent log via LLM.
   // Falls back to naive join if model not configured or LLM fails.
@@ -246,14 +269,23 @@ export namespace Observer {
     })
     if (!language) return undefined
 
+    const cap = (cfg.experimental?.observer_max_tool_result_tokens ?? 2_000) * 4
     const context = (input.msgs ?? [])
       .filter((m) => m.info.role === "user" || m.info.role === "assistant")
       .map((m) => {
         const role = m.info.role === "user" ? "User" : "Assistant"
-        const text = m.parts
-          .filter((p): p is MessageV2.TextPart => p.type === "text")
-          .map((p) => p.text)
-          .join("\n")
+        const parts = m.parts.flatMap((p): string[] => {
+          if (p.type === "text") return p.text ? [p.text] : []
+          if (p.type === "tool" && p.state.status === "completed") {
+            const sanitized =
+              typeof p.state.output === "string" ? p.state.output : JSON.stringify(sanitizeToolResult(p.state.output))
+            const raw = sanitized
+            const out = raw.length > cap ? raw.slice(0, cap) + "\n... [truncated]" : raw
+            return [`[Tool: ${p.tool}]\n${out}`]
+          }
+          return []
+        })
+        const text = parts.join("\n")
         if (!text.trim()) return null
         return `[${role}]: ${text}`
       })

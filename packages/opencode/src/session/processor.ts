@@ -10,7 +10,7 @@ import { Log } from "@/util/log"
 import { Session } from "."
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
-import { isOverflow } from "./overflow"
+
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
@@ -25,7 +25,7 @@ export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
   const log = Log.create({ service: "session.processor" })
 
-  export type Result = "compact" | "stop" | "continue"
+  export type Result = "stop" | "continue"
 
   export type Event = LLM.Event
 
@@ -51,7 +51,7 @@ export namespace SessionProcessor {
     shouldBreak: boolean
     snapshot: string | undefined
     blocked: boolean
-    needsCompaction: boolean
+
     currentText: MessageV2.TextPart | undefined
     reasoningMap: Record<string, MessageV2.ReasoningPart>
     editedFiles: Set<string>
@@ -99,7 +99,6 @@ export namespace SessionProcessor {
           shouldBreak: false,
           snapshot: initialSnapshot,
           blocked: false,
-          needsCompaction: false,
           currentText: undefined,
           reasoningMap: {},
           editedFiles: new Set(),
@@ -350,12 +349,6 @@ export namespace SessionProcessor {
                 sessionID: ctx.sessionID,
                 messageID: ctx.assistantMessage.parentID,
               })
-              if (
-                !ctx.assistantMessage.summary &&
-                isOverflow({ cfg: yield* config.get(), tokens: usage.tokens, model: ctx.model })
-              ) {
-                ctx.needsCompaction = true
-              }
               return
             }
 
@@ -465,7 +458,7 @@ export namespace SessionProcessor {
           log.error("process", { error: e, stack: e instanceof Error ? e.stack : undefined })
           const error = parse(e)
           if (MessageV2.ContextOverflowError.isInstance(error)) {
-            ctx.needsCompaction = true
+            ctx.assistantMessage.error = error
             yield* bus.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
             return
           }
@@ -492,7 +485,6 @@ export namespace SessionProcessor {
 
         const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
           log.info("process")
-          ctx.needsCompaction = false
           ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
 
           return yield* Effect.gen(function* () {
@@ -503,7 +495,6 @@ export namespace SessionProcessor {
 
               yield* stream.pipe(
                 Stream.tap((event) => handleEvent(event)),
-                Stream.takeUntil(() => ctx.needsCompaction),
                 Stream.runDrain,
               )
             }).pipe(
@@ -531,7 +522,6 @@ export namespace SessionProcessor {
             if (aborted && !ctx.assistantMessage.error) {
               yield* abort()
             }
-            if (ctx.needsCompaction) return "compact"
             if (ctx.blocked || ctx.assistantMessage.error || aborted) return "stop"
             return "continue"
           }).pipe(Effect.onInterrupt(() => abort().pipe(Effect.asVoid)))

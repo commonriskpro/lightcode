@@ -64,7 +64,9 @@ In an interactive coding session with 10+ turns, **every token that stays in cac
 
 ---
 
-## 3. What LightCode Does Today
+## 3. What LightCode Does Today (HISTORICAL — see current state below)
+
+> ⚠️ This section describes the pre-implementation state. The current cache structure is documented in `docs/system-prompt-architecture.md` and `docs/context-cache-analysis.md`. The problems identified in Section 4 are all resolved.
 
 ### Current Cache Structure
 
@@ -348,8 +350,15 @@ Assume 80K token conversation, compaction keeps 20K recent tokens:
 
 ---
 
-## 9. Key Takeaway
+## 9. Key Takeaway (updated 2026-04-05)
 
-> **The single highest-ROI optimization for LightCode is restructuring the prompt to maximize cache hits on stable content (tools + system prompt + AGENTS.md) and switching to cut-point compaction to preserve cache across compactions.**
+The optimizations described in this document have been implemented. The current architecture:
+
+- Breakpoints placed by volatility: BP1 (tools, 1h), BP2 (agent prompt, 1h), BP3 (observations, 5min), BP4 (penultimate message, 5min)
+- OM-based tail filtering replaces compaction — context window never reaches overflow in normal use
+- Observer compresses tool results + conversation into observations (5min TTL at BP3)
+- `lastMessages` safety cap (default 40) prevents growth before first Observer cycle
+
+> **Cut-point compaction was not implemented** — instead, the entire compaction system was deleted and replaced by OM proactive compression. The cache-across-compaction savings are now irrelevant since compaction no longer happens.
 >
-> A 10-turn session on Sonnet 4 currently costs ~$1.10 in input tokens. With optimal caching, it costs ~$0.29 — a **74% reduction**. With cut-point compaction preserving cache across boundaries, the savings compound further for long-running sessions.
+> The remaining opportunity is `cache.read` tokens for observations (BP3 hits every turn between Observer cycles), which compounds for long sessions.

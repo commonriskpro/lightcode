@@ -1003,24 +1003,7 @@ export namespace Config {
           url: z.string().optional().describe("Enterprise URL"),
         })
         .optional(),
-      compaction: z
-        .object({
-          auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),
-          prune: z.boolean().optional().describe("Enable pruning of old tool outputs (default: true)"),
-          reserved: z
-            .number()
-            .int()
-            .min(0)
-            .optional()
-            .describe("Token buffer for compaction. Leaves enough window to avoid overflow during compaction."),
-          keep: z
-            .number()
-            .int()
-            .min(0)
-            .optional()
-            .describe("Tokens of recent conversation to keep verbatim after cut-point compaction (default: 20000)."),
-        })
-        .optional(),
+
       experimental: z
         .object({
           disable_paste_summary: z.boolean().optional(),
@@ -1072,6 +1055,36 @@ export namespace Config {
             .optional()
             .describe(
               "Token budget for previous observations passed to Observer. Default 2000. Set false to disable truncation.",
+            ),
+          observer_max_tool_result_tokens: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe(
+              "Max tokens per tool result included in Observer LLM input. Default 2000. Increase for richer tool compression.",
+            ),
+          observer_block_after: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe(
+              "Backpressure ceiling for Observer buffer (tokens). When accumulated message tokens exceed this value the main loop waits for OM to catch up. Default 180_000.",
+            ),
+          observer_reflection_tokens: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Observation-token threshold at which the Reflector runs compression. Default 120_000."),
+          last_messages: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe(
+              "Safety cap on the number of messages sent to the LLM when OM has not yet observed (boundary=0). Default 80. Has no effect once OM has fired — the lastObservedAt boundary takes over.",
             ),
         })
         .optional(),
@@ -1482,13 +1495,6 @@ export namespace Config {
 
           if (result.autoshare === true && !result.share) {
             result.share = "auto"
-          }
-
-          if (Flag.OPENCODE_DISABLE_AUTOCOMPACT) {
-            result.compaction = { ...result.compaction, auto: false }
-          }
-          if (Flag.OPENCODE_DISABLE_PRUNE) {
-            result.compaction = { ...result.compaction, prune: false }
           }
 
           return {

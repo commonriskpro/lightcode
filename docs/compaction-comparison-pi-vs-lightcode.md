@@ -1,5 +1,12 @@
 # Context Compaction: Pi vs LightCode — Honest Comparison
 
+> ⚠️ **OBSOLETE — 2026-04-05**
+> LightCode's emergency compaction system (`compaction.ts`, `cut-point.ts`, `overflow.ts`) was **deleted entirely** and replaced by OM-based context management (tail filtering via `lastObservedAt`, `lastMessages` safety cap, Observer tool compression). The LightCode side of every comparison in this document now describes deleted code.
+>
+> For the current architecture see: `docs/om-replace-compaction.md` and `docs/om-gap-implementations.md`.
+
+---
+
 > An evidence-based, side-by-side analysis of two approaches to context window management.
 
 ---

@@ -218,52 +218,6 @@ it.live("session.processor effect tests capture llm input cleanly", () =>
   ),
 )
 
-it.live("session.processor effect tests stop after token overflow requests compaction", () =>
-  provideTmpdirServer(
-    ({ dir, llm }) =>
-      Effect.gen(function* () {
-        const { processors, session, provider } = yield* boot()
-
-        yield* llm.text("after", { usage: { input: 100, output: 0 } })
-
-        const chat = yield* session.create({})
-        const parent = yield* user(chat.id, "compact")
-        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
-        const base = yield* provider.getModel(ref.providerID, ref.modelID)
-        const mdl = { ...base, limit: { context: 20, output: 10 } }
-        const handle = yield* processors.create({
-          assistantMessage: msg,
-          sessionID: chat.id,
-          model: mdl,
-        })
-
-        const value = yield* handle.process({
-          user: {
-            id: parent.id,
-            sessionID: chat.id,
-            role: "user",
-            time: parent.time,
-            agent: parent.agent,
-            model: { providerID: ref.providerID, modelID: ref.modelID },
-          } satisfies MessageV2.User,
-          sessionID: chat.id,
-          model: mdl,
-          agent: agent(),
-          system: [],
-          messages: [{ role: "user", content: "compact" }],
-          tools: {},
-        })
-
-        const parts = MessageV2.parts(msg.id)
-
-        expect(value).toBe("compact")
-        expect(parts.some((part) => part.type === "text" && part.text === "after")).toBe(true)
-        expect(parts.some((part) => part.type === "step-finish")).toBe(true)
-      }),
-    { git: true, config: (url) => providerCfg(url) },
-  ),
-)
-
 it.live("session.processor effect tests capture reasoning from http mock", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
@@ -501,7 +455,7 @@ it.live("session.processor effect tests publish retry status updates", () =>
   ),
 )
 
-it.live("session.processor effect tests compact on structured context overflow", () =>
+it.live("session.processor effect tests error on structured context overflow", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -510,7 +464,7 @@ it.live("session.processor effect tests compact on structured context overflow",
         yield* llm.error(400, { type: "error", error: { code: "context_length_exceeded" } })
 
         const chat = yield* session.create({})
-        const parent = yield* user(chat.id, "compact json")
+        const parent = yield* user(chat.id, "overflow json")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
         const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
         const handle = yield* processors.create({
@@ -532,13 +486,14 @@ it.live("session.processor effect tests compact on structured context overflow",
           model: mdl,
           agent: agent(),
           system: [],
-          messages: [{ role: "user", content: "compact json" }],
+          messages: [{ role: "user", content: "overflow json" }],
           tools: {},
         })
 
-        expect(value).toBe("compact")
+        // Context overflow is now surfaced as a session error, not a compaction trigger
+        expect(value).toBe("stop")
         expect(yield* llm.calls).toBe(1)
-        expect(handle.message.error).toBeUndefined()
+        expect(handle.message.error).toBeDefined()
       }),
     { git: true, config: (url) => providerCfg(url) },
   ),

@@ -10,7 +10,7 @@ import { Agent } from "../agent/agent"
 import { Provider } from "../provider/provider"
 import { ModelID, ProviderID } from "../provider/schema"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { SessionCompaction } from "./compaction"
+
 import { Instance } from "../project/instance"
 import { Bus } from "../bus"
 import { ProviderTransform } from "../provider/transform"
@@ -109,7 +109,6 @@ export namespace SessionPrompt {
       const agents = yield* Agent.Service
       const provider = yield* Provider.Service
       const processor = yield* SessionProcessor.Service
-      const compaction = yield* SessionCompaction.Service
       const plugin = yield* Plugin.Service
       const commands = yield* Command.Service
       const permission = yield* Permission.Service
@@ -1478,14 +1477,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             let lastUser: MessageV2.User | undefined
             let lastAssistant: MessageV2.Assistant | undefined
             let lastFinished: MessageV2.Assistant | undefined
-            let tasks: (MessageV2.CompactionPart | MessageV2.SubtaskPart)[] = []
+            let tasks: MessageV2.SubtaskPart[] = []
             for (let i = msgs.length - 1; i >= 0; i--) {
               const msg = msgs[i]
               if (!lastUser && msg.info.role === "user") lastUser = msg.info
               if (!lastAssistant && msg.info.role === "assistant") lastAssistant = msg.info
               if (!lastFinished && msg.info.role === "assistant" && msg.info.finish) lastFinished = msg.info
               if (lastUser && lastFinished) break
-              const task = msg.parts.filter((part) => part.type === "compaction" || part.type === "subtask")
+              const task = msg.parts.filter((part): part is MessageV2.SubtaskPart => part.type === "subtask")
               if (task && !lastFinished) tasks.push(...task)
             }
 
@@ -1520,18 +1519,54 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             // Observer buffer trigger — accumulate tokens and fire Observer if threshold reached
             const tok = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
             const obsRec = OM.get(sessionID)
+            let freshObsRec: typeof obsRec
             const omCfg = yield* Effect.promise(() => Config.get())
             const sig = OMBuf.check(
               sessionID,
               tok,
               obsRec?.observation_tokens,
               omCfg.experimental?.observer_message_tokens,
+              omCfg.experimental?.observer_block_after,
             )
+            const activate = async () => {
+              await OMBuf.awaitInFlight(sessionID)
+              OMBuf.setObserving(true)
+              try {
+                await OM.activate(sessionID)
+                const fresh = OM.get(sessionID)
+                if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
+                  OMBuf.setReflecting(true)
+                  try {
+                    await Reflector.run(sessionID)
+                  } finally {
+                    OMBuf.setReflecting(false)
+                  }
+                }
+                freshObsRec = OM.get(sessionID)
+              } finally {
+                OMBuf.setObserving(false)
+              }
+            }
             if (sig === "buffer") {
               if (!OMBuf.getInFlight(sessionID)) {
                 const rec = OM.get(sessionID)
                 const boundary = rec?.last_observed_at ?? 0
-                const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
+                const obsIds = new Set<string>(
+                  rec?.observed_message_ids ? (JSON.parse(rec.observed_message_ids) as string[]) : [],
+                )
+                const sealed = OMBuf.sealedAt(sessionID)
+                const unobserved = msgs.filter(
+                  (m) =>
+                    (m.info.time?.created ?? 0) > boundary &&
+                    !obsIds.has(m.info.id) &&
+                    (sealed === 0 || (m.info.time?.created ?? 0) > sealed),
+                )
+                const sealAt = unobserved.at(-1)?.info.time?.created ?? 0
+                if (sealAt > 0) OMBuf.seal(sessionID, sealAt)
+                OM.trackObserved(
+                  sessionID,
+                  unobserved.map((m) => m.info.id),
+                )
                 const p = (async () => {
                   OMBuf.setObserving(true)
                   try {
@@ -1549,7 +1584,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                         message_tokens: tok,
                         observation_tokens: result.observations.length >> 2,
                         starts_at: boundary,
-                        ends_at: Date.now(),
+                        // Use last observed message timestamp so the boundary is precise.
+                        ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),
                         first_msg_id: unobserved[0]?.info.id ?? null,
                         last_msg_id: unobserved.at(-1)?.info.id ?? null,
                         time_created: Date.now(),
@@ -1567,65 +1603,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               }
             }
             if (sig === "activate") {
-              yield* Effect.promise(async () => {
-                await OMBuf.awaitInFlight(sessionID)
-                OMBuf.setObserving(true)
-                try {
-                  await OM.activate(sessionID)
-                  const fresh = OM.get(sessionID)
-                  if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
-                    OMBuf.setReflecting(true)
-                    try {
-                      await Reflector.run(sessionID)
-                    } finally {
-                      OMBuf.setReflecting(false)
-                    }
-                  }
-                } finally {
-                  OMBuf.setObserving(false)
-                }
-              }).pipe(Effect.ignore, Effect.forkIn(scope))
+              yield* Effect.promise(activate).pipe(Effect.ignore, Effect.forkIn(scope))
             }
-            if (sig === "force") {
-              yield* Effect.promise(async () => {
-                OMBuf.setObserving(true)
-                try {
-                  const rec = OM.get(sessionID)
-                  const boundary = rec?.last_observed_at ?? 0
-                  const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
-                  const result = await Observer.run({
-                    sid: sessionID,
-                    msgs: unobserved,
-                    prev: rec?.observations ?? undefined,
-                    priorCurrentTask: rec?.current_task ?? undefined,
-                  })
-                  if (result)
-                    OM.upsert({
-                      id: sessionID,
-                      session_id: sessionID,
-                      observations: result.observations,
-                      reflections: null,
-                      current_task: result.currentTask ?? null,
-                      suggested_continuation: result.suggestedContinuation ?? null,
-                      last_observed_at: Date.now(),
-                      generation_count: (rec?.generation_count ?? 0) + 1,
-                      observation_tokens: result.observations.length >> 2,
-                      time_created: rec?.time_created ?? Date.now(),
-                      time_updated: Date.now(),
-                    })
-                  const fresh = OM.get(sessionID)
-                  if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
-                    OMBuf.setReflecting(true)
-                    try {
-                      await Reflector.run(sessionID)
-                    } finally {
-                      OMBuf.setReflecting(false)
-                    }
-                  }
-                } finally {
-                  OMBuf.setObserving(false)
-                }
-              }).pipe(Effect.ignore)
+            if (sig === "block") {
+              yield* Effect.promise(activate).pipe(Effect.ignore)
             }
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
@@ -1633,27 +1614,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
             if (task?.type === "subtask") {
               yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
-              continue
-            }
-
-            if (task?.type === "compaction") {
-              const result = yield* compaction.process({
-                messages: msgs,
-                parentID: lastUser.id,
-                sessionID,
-                auto: task.auto,
-                overflow: task.overflow,
-              })
-              if (result === "stop") break
-              continue
-            }
-
-            if (
-              lastFinished &&
-              lastFinished.summary !== true &&
-              (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
-            ) {
-              yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
               continue
             }
 
@@ -1713,15 +1673,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               })
 
               if (result === "stop") break
-              if (result === "compact") {
-                yield* compaction.create({
-                  sessionID,
-                  agent: lastUser.agent,
-                  model: lastUser.model,
-                  auto: true,
-                  overflow: true,
-                })
-              }
               continue
             }
 
@@ -1804,11 +1755,51 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 // Load observations every turn — they update during the session
                 obs = yield* Effect.promise(() => SystemPrompt.observations(sessionID))
 
+                // Gap F: apply lastObservedAt boundary — send only the unobserved tail to the LLM.
+                // Previously-observed messages are already compressed into the observations block
+                // in the system prompt (system[1]). When boundary=0 (OM has never fired), use
+                // the full msgs array — but cap it with lastMessages as a safety net for the
+                // window before OM fires (first ~30k tokens of a new session).
+                const omBoundary = (freshObsRec ?? obsRec)?.last_observed_at ?? 0
+                const lastMessages = omCfg.experimental?.last_messages ?? 80
+                const tail =
+                  omBoundary > 0
+                    ? msgs.filter((m) => (m.info.time?.created ?? 0) > omBoundary)
+                    : msgs.slice(-lastMessages)
+
+                // Continuation hint: when the tail starts mid-conversation (OM has observed
+                // previous turns), inject a stable synthetic user message at the very start so
+                // the model knows it is continuing, not starting fresh. createdAt=0 (epoch) sorts
+                // before all real messages. The string is a constant — never varies, never busts cache.
+                const hintMsg: MessageV2.WithParts | undefined =
+                  omBoundary > 0
+                    ? {
+                        info: {
+                          id: "om-continuation" as MessageID,
+                          sessionID,
+                          role: "user" as const,
+                          time: { created: 0 },
+                          agent: lastUser.agent,
+                          model: lastUser.model,
+                        },
+                        parts: [
+                          {
+                            id: "om-continuation-part" as PartID,
+                            messageID: "om-continuation" as MessageID,
+                            sessionID,
+                            type: "text" as const,
+                            text: SystemPrompt.OBSERVATION_CONTINUATION_HINT,
+                            time: { start: 0, end: 0 },
+                          } satisfies MessageV2.TextPart,
+                        ],
+                      }
+                    : undefined
+
                 const [skills, env, instructions, modelMsgs] = yield* Effect.all([
                   Effect.promise(() => SystemPrompt.skills(agent)),
                   Effect.promise(() => SystemPrompt.environment(model)),
                   instruction.system().pipe(Effect.orDie),
-                  Effect.promise(() => MessageV2.toModelMessages(msgs, model)),
+                  Effect.promise(() => MessageV2.toModelMessages(hintMsg ? [hintMsg, ...tail] : tail, model)),
                 ])
                 const deferredSection = deferredIndex.length ? ToolSearch.fmt(deferredIndex) : ""
                 const system = [
@@ -1859,15 +1850,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 }
 
                 if (result === "stop") return "break" as const
-                if (result === "compact") {
-                  yield* compaction.create({
-                    sessionID,
-                    agent: lastUser.agent,
-                    model: lastUser.model,
-                    auto: true,
-                    overflow: !handle.message.finish,
-                  })
-                }
                 return "continue" as const
               }),
               Effect.fnUntraced(function* (exit) {
@@ -1879,7 +1861,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             continue
           }
 
-          yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
           return yield* lastAssistant(sessionID)
         },
       )
@@ -2222,7 +2203,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     Effect.sync(() =>
       layer.pipe(
         Layer.provide(SessionStatus.layer),
-        Layer.provide(SessionCompaction.defaultLayer),
         Layer.provide(SessionProcessor.defaultLayer),
         Layer.provide(Command.defaultLayer),
         Layer.provide(Permission.defaultLayer),

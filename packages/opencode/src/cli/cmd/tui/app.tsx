@@ -264,14 +264,9 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const sdk = useSDK()
   const toast = useToast()
 
-  // Inject SDK client for Engram + AutoDream (avoids InstanceState context error)
+  // Inject SDK client for Engram (avoids InstanceState context error)
   Engram.setRegistrar(async (name, config) => {
     await sdk.client.mcp.add({ name, config })
-  })
-  AutoDream.setSDK(sdk.client as any)
-  createEffect(() => {
-    const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
-    AutoDream.setModel(exp?.autodream_model as string | undefined)
   })
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState

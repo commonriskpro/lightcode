@@ -525,8 +525,8 @@ describe("session.agent-resolution", () => {
 // ─── Reflector threshold gating ───────────────────────────────────────────────
 
 describe("session.prompt.reflector-threshold", () => {
-  test("Reflector.threshold is 40_000", () => {
-    expect(Reflector.threshold).toBe(40_000)
+  test("Reflector.threshold is 120_000", () => {
+    expect(Reflector.threshold).toBe(120_000)
   })
 
   test("Reflector does not fire when observation_tokens is below threshold", async () => {
@@ -545,6 +545,7 @@ describe("session.prompt.reflector-threshold", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 1_000,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -576,7 +577,8 @@ describe("session.prompt.reflector-threshold", () => {
             suggested_continuation: null,
             last_observed_at: Date.now(),
             generation_count: 1,
-            observation_tokens: 40_000,
+            observation_tokens: 120_000,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }

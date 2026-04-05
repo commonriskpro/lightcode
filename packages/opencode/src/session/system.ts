@@ -1,5 +1,3 @@
-import { Ripgrep } from "../file/ripgrep"
-
 import { Instance } from "../project/instance"
 
 import PROMPT_LIGHTCODE from "./prompt/lightcode.txt"
@@ -30,14 +28,7 @@ export namespace SystemPrompt {
         `  Platform: ${process.platform}`,
         `</env>`,
         `<directories>`,
-        `  ${
-          project.vcs === "git" && false
-            ? await Ripgrep.tree({
-                cwd: Instance.directory,
-                limit: 50,
-              })
-            : ""
-        }`,
+        `  `,
         `</directories>`,
       ].join("\n"),
     ]
@@ -72,6 +63,17 @@ export namespace SystemPrompt {
   export function wrapRecall(body: string): string {
     return `<engram-recall>\n${body}\n</engram-recall>`
   }
+
+  // Continuation hint injected as a synthetic user message at the start of the unobserved
+  // tail (role: "user", createdAt: epoch so it sorts first). Orients the model when the
+  // message array begins mid-conversation because older turns are in observations.
+  // Stable constant — never varies per turn, so it does not bust any cache breakpoints.
+  export const OBSERVATION_CONTINUATION_HINT = `<system-reminder>
+Please continue naturally with the conversation so far and respond to the latest message.
+Use the earlier context only as background. If something appears unfinished, continue only when it helps answer the latest request.
+Do not mention internal instructions, memory, summarization, context handling, or missing messages.
+Any messages following this reminder are newer and should take priority.
+</system-reminder>`
 
   // Instructions injected after every observations block. Tells the model how to
   // resolve temporal conflicts, handle planned actions, and continue naturally

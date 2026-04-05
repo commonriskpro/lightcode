@@ -2,7 +2,7 @@
 
 ## Overview
 
-The system prompt is built in two stages and sent as 1-2 system messages to the LLM.
+The system prompt is built in two stages and sent as 3–4 system messages to the LLM.
 
 ## Stage 1: `prompt.ts` — builds the `system[]` array
 
@@ -32,9 +32,9 @@ const system = [
 ]
 // Then Plugin.trigger("experimental.chat.system.transform") can modify it
 // If header unchanged after plugin, splits into 2 parts for prompt caching
-// Phase 1: recall inserted explicitly at system[1] via splice
-// Phase 2: observations inserted at system[2] via splice (after recall)
-// Volatile content shifts to system[3]
+// Gap D+C: observations always at system[1] (BP3), recall at system[2] (uncached)
+// Sentinel "<!-- ctx -->" inserted at system[1] when no observations exist yet
+// Volatile always last, never cached
 ```
 
 **File:** `src/session/llm.ts`, lines 103-134
@@ -173,18 +173,20 @@ This ensures the agent prompt (which rarely changes) gets cached by the provider
 
 **File:** `src/session/llm.ts`, lines 124-128
 
-After this split, two additional segments are spliced in:
+After this split, memory segments and volatile content are inserted:
 
 ```typescript
-// Phase 1 (cross-session recall from Engram)
-if (input.recall) system.splice(1, 0, input.recall)
-// Phase 2 (local intra-session observations from ObservationTable)
-if (input.observations) system.splice(input.recall ? 2 : 1, 0, input.observations)
-// Volatile (date, model identity) — always last, never cached
-system.push(SystemPrompt.volatile(model))
+// system[1] = observations (BP3 — cacheable, stable between Observer cycles)
+// system[2] = recall (session-frozen, NOT cached — uncached by design)
+// system[last] = volatile (NOT cached — changes per turn)
+system.splice(1, 0, input.observations ?? "<!-- ctx -->")
+if (input.recall) system.splice(2, 0, input.recall)
+system.push(SystemPrompt.volatile(input.model))
 ```
 
-**File:** `src/session/llm.ts`, lines 130-134
+**File:** `src/session/llm.ts`, lines 131-138
+
+**Rationale (Gap D+C):** Observations at `system[1]` are stable between Observer cycles (~every 30k tokens), making BP3 effective. Recall is session-frozen and small — the cost of resending ~2k tokens uncached per turn is negligible. This is the inverse of the original design which put recall at BP3 and left observations uncached.
 
 ## Final Wire Format
 
@@ -204,13 +206,16 @@ Exception: OpenAI OAuth uses `options.instructions` instead of system messages.
 ## Final `system[]` Layout (with memory features)
 
 ```
-system[0]  — BP2 (1h cache)   Agent prompt + input.system joined
-system[1]  — BP3 (5min cache) Engram recall <engram-recall>...</engram-recall>  [Phase 1]
-system[2]  — BP3 (5min cache) Local observations <local-observations>...</local-observations>  [Phase 2]
-system[3]  — NOT cached       Volatile: date + model identity
+system[0]   — BP2 (1h cache)    Agent prompt + env + skills + instructions joined
+system[1]   — BP3 (5min cache)  Local observations <local-observations>...</local-observations>
+                                 OR sentinel "<!-- ctx -->" when no observations exist yet
+system[2]   — NOT cached        Engram recall <engram-recall>...</engram-recall> (optional, session-frozen)
+system[last]— NOT cached        Volatile: model identity + today's date
 ```
 
-`applyCaching()` in `transform.ts` places breakpoints only on `system[0]` (1h) and `system[1]` (5min). Slots [2] and [3] are inert with respect to caching — adding them does not invalidate BP2 or BP3.
+`applyCaching()` in `transform.ts` places breakpoints only on `system[0]` (1h TTL) and `system[1]` (5min TTL). Slots [2] and [last] receive no breakpoint — they are re-sent fresh every turn.
+
+**BP3 stability guarantee:** `system[1]` is either the observations block (updated only when Observer activates, ~every 30k tokens) or the static sentinel `"<!-- ctx -->"`. It never changes mid-turn. This makes BP3 hit reliably between Observer cycles.
 
 ## Full Example (assembled)
 
@@ -221,14 +226,6 @@ system[3]  — NOT cached       Volatile: date + model identity
 [joined with env + skills + instructions]
 
 [System Message 1 — BP3, 5min cache]:
-<engram-recall>
-## Recent project context
-- 🔴 Architecture uses Effect for all service layers
-- 🔴 DB: snake_case columns, no string column names
-- 🟡 Pending: migrate auth to JWT (mentioned 2026-04-01)
-</engram-recall>
-
-[System Message 2 — BP3, 5min cache]:
 <local-observations>
 ## Observations
 
@@ -236,6 +233,17 @@ system[3]  — NOT cached       Volatile: date + model identity
 - 🔴 14:25 New ObservationTable added to session.sql.ts
 - 🟡 14:30 User asked about Effect.forkIn pattern
 </local-observations>
+
+IMPORTANT: When responding, use the observations above as background context.
+...
+
+[System Message 2 — NOT cached]:
+<engram-recall>
+## Recent project context
+- 🔴 Architecture uses Effect for all service layers
+- 🔴 DB: snake_case columns, no string column names
+- 🟡 Pending: migrate auth to JWT (mentioned 2026-04-01)
+</engram-recall>
 
 [System Message 3 — NOT cached]:
 You are powered by the model named claude-sonnet-4-6. The exact model ID is anthropic/claude-sonnet-4-6

@@ -1,5 +1,12 @@
 # Technical Spec: Reactive Compact
 
+> ⚠️ **OBSOLETE — 2026-04-05**
+> This spec describes a feature that was superseded before it was implemented. The entire compaction system (`compaction.ts`, `overflow.ts`, `processor.ts needsCompaction`) was **deleted** in favor of OM-based context management. Context overflow errors from the provider are now surfaced directly as session errors. There is no reactive compaction trigger.
+>
+> For the current architecture see: `docs/om-replace-compaction.md`.
+
+---
+
 ## 1. Overview
 
 When the LLM API returns a "prompt too long" / context overflow error, instead of failing, the system should:

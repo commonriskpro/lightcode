@@ -11,6 +11,7 @@ import {
   parseObserverOutput,
   PROMPT,
   truncateObsToBudget,
+  sanitizeToolResult,
 } from "../../src/session/om/observer"
 import {
   wrapInObservationGroup,
@@ -50,28 +51,26 @@ describe("session.om.buffer.check", () => {
     expect(OMBuf.check(s, 1)).toBe("buffer")
   })
 
-  test("returns activate at 30k", () => {
-    const s = sid("act30k")
-    // 29999 → still buffer range
-    expect(OMBuf.check(s, 29_999)).toBe("buffer")
-
-    expect(OMBuf.check(s, 1)).toBe("activate")
+  test("returns activate at 140k (adaptive default max when no obsTokens)", () => {
+    const s = sid("act140k")
+    const highBlock = 200_000
+    expect(OMBuf.check(s, 139_999, undefined, undefined, highBlock)).toBe("buffer")
+    expect(OMBuf.check(s, 1, undefined, undefined, highBlock)).toBe("activate")
   })
 
-  test("returns force at > 36k", () => {
-    const s = sid("force36k")
-    // Jump straight to force threshold
-    expect(OMBuf.check(s, 36_001)).toBe("force")
+  test("returns block at > default 180k", () => {
+    const s = sid("block180k")
+    expect(OMBuf.check(s, 180_001)).toBe("block")
   })
 
-  test("returns force when exactly at 36k", () => {
-    const s = sid("force-exact")
-    expect(OMBuf.check(s, 36_000)).toBe("force")
+  test("returns block when exactly at default 180k", () => {
+    const s = sid("block-exact")
+    expect(OMBuf.check(s, 180_000)).toBe("block")
   })
 
-  test("returns activate when exactly at 30k", () => {
+  test("returns activate when exactly at 140k (adaptive default max)", () => {
     const s = sid("act-exact")
-    expect(OMBuf.check(s, 30_000)).toBe("activate")
+    expect(OMBuf.check(s, 140_000, undefined, undefined, 200_000)).toBe("activate")
   })
 
   test("returns buffer when exactly at 6k", () => {
@@ -217,6 +216,7 @@ describe("session.system.observations", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 10,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -269,6 +269,7 @@ describe("session.om.record", () => {
             last_observed_at: 12345,
             generation_count: 1,
             observation_tokens: 5,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -465,8 +466,8 @@ describe("session.llm.system-layout", () => {
 // ─── Reflector ────────────────────────────────────────────────────────────────
 
 describe("session.om.reflector", () => {
-  test("threshold constant is 40_000", () => {
-    expect(Reflector.threshold).toBe(40_000)
+  test("threshold constant is 120_000", () => {
+    expect(Reflector.threshold).toBe(120_000)
   })
 
   test("OM.reflect updates reflections without touching observations", async () => {
@@ -485,6 +486,7 @@ describe("session.om.reflector", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 50_000,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -679,6 +681,7 @@ describe("session.om.record currentTask round-trip", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 100,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           })
@@ -708,6 +711,7 @@ describe("session.om.record currentTask round-trip", () => {
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 10,
+            observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
           })
@@ -1052,6 +1056,51 @@ describe("OM.activate group wrapping", () => {
   })
 })
 
+// ─── OMBuf.seal ─────────────────────────────────────────────────────────────
+
+describe("OMBuf.seal", () => {
+  function sid(suffix: string): SessionID {
+    return `test-seal-${suffix}-${Math.random().toString(36).slice(2)}` as SessionID
+  }
+
+  test("seal sets the seal for a session", () => {
+    const s = sid("set")
+    OMBuf.seal(s, 1000)
+    expect(OMBuf.sealedAt(s)).toBe(1000)
+  })
+
+  test("sealedAt returns 0 for unsealed session", () => {
+    const s = sid("unseal")
+    expect(OMBuf.sealedAt(s)).toBe(0)
+  })
+
+  test("seal does not decrease — higher value wins", () => {
+    const s = sid("nodecr")
+    OMBuf.seal(s, 1000)
+    OMBuf.seal(s, 500)
+    expect(OMBuf.sealedAt(s)).toBe(1000)
+  })
+
+  test("seal updates to higher value", () => {
+    const s = sid("higher")
+    OMBuf.seal(s, 1000)
+    OMBuf.seal(s, 2000)
+    expect(OMBuf.sealedAt(s)).toBe(2000)
+  })
+
+  test("message with time.created === sealed is excluded from unobserved", () => {
+    const sealed: number = 1000
+    const filter = (created: number) => created > 0 && (sealed === 0 || created > sealed)
+    expect(filter(1000)).toBe(false) // at boundary — excluded
+  })
+
+  test("message with time.created > sealed is included in unobserved", () => {
+    const sealed: number = 1000
+    const filter = (created: number) => created > 0 && (sealed === 0 || created > sealed)
+    expect(filter(1001)).toBe(true) // after boundary — included
+  })
+})
+
 // ─── session.om.groups ──────────────────────────────────────────────────────
 
 describe("session.om.groups", () => {
@@ -1166,5 +1215,176 @@ describe("session.om.groups", () => {
     // Should still produce a wrapped output (either assigned or fallback)
     expect(result).toContain("<observation-group")
     expect(result).toContain("entirely new unrelated summary")
+  })
+})
+
+// ─── sanitizeToolResult ──────────────────────────────────────────────────────
+
+describe("sanitizeToolResult", () => {
+  test("strips string field matching pattern when value > 256 chars", () => {
+    const long = "x".repeat(257)
+    const result = sanitizeToolResult({ token: long }) as Record<string, unknown>
+    expect(typeof result.token).toBe("string")
+    expect((result.token as string).startsWith("[stripped:")).toBe(true)
+    expect(result.token).toContain("257 chars")
+  })
+
+  test("strips nested field matching pattern when value > 256 chars", () => {
+    const long = "s".repeat(300)
+    const result = sanitizeToolResult({ outer: { secret: long } }) as Record<string, unknown>
+    const inner = result.outer as Record<string, unknown>
+    expect((inner.secret as string).startsWith("[stripped:")).toBe(true)
+  })
+
+  test("handles circular reference — returns [circular] for that node", () => {
+    const obj: Record<string, unknown> = { name: "safe" }
+    obj.self = obj
+    const result = sanitizeToolResult(obj) as Record<string, unknown>
+    expect(result.name).toBe("safe")
+    expect(result.self).toBe("[circular]")
+  })
+
+  test("leaves short fields intact even if name matches pattern", () => {
+    const short = "tok"
+    const result = sanitizeToolResult({ token: short }) as Record<string, unknown>
+    expect(result.token).toBe("tok")
+  })
+
+  test("leaves fields with non-matching names intact regardless of length", () => {
+    const long = "y".repeat(500)
+    const result = sanitizeToolResult({ data: long }) as Record<string, unknown>
+    expect(result.data).toBe(long)
+  })
+})
+
+// ─── OM.trackObserved ────────────────────────────────────────────────────────
+
+describe("OM.trackObserved", () => {
+  test("persists IDs to DB", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 fact",
+            reflections: null,
+            current_task: null,
+            suggested_continuation: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 10,
+            observed_message_ids: null,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          OM.trackObserved(s.id as SessionID, ["msg-1", "msg-2"])
+          const got = OM.get(s.id as SessionID)
+          expect(got?.observed_message_ids).not.toBeNull()
+          const ids = JSON.parse(got!.observed_message_ids!)
+          expect(ids).toContain("msg-1")
+          expect(ids).toContain("msg-2")
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("merges IDs across calls (deduplication)", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 fact",
+            reflections: null,
+            current_task: null,
+            suggested_continuation: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 10,
+            observed_message_ids: null,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          OM.trackObserved(s.id as SessionID, ["msg-1", "msg-2"])
+          OM.trackObserved(s.id as SessionID, ["msg-2", "msg-3"])
+          const got = OM.get(s.id as SessionID)
+          const ids: string[] = JSON.parse(got!.observed_message_ids!)
+          expect(ids).toContain("msg-1")
+          expect(ids).toContain("msg-2")
+          expect(ids).toContain("msg-3")
+          expect(ids.filter((id) => id === "msg-2")).toHaveLength(1)
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("does nothing when no OM record exists", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          // No upsert — record does not exist — should not throw
+          expect(() => OM.trackObserved(s.id as SessionID, ["msg-1"])).not.toThrow()
+          expect(OM.get(s.id as SessionID)).toBeUndefined()
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("legacy record with null observed_message_ids — ID filter skipped (empty set)", () => {
+    // obsIds = new Set from null → empty Set → !obsIds.has(id) always true
+    const raw: string | null = null
+    const obsIds = new Set<string>(raw ? (JSON.parse(raw) as string[]) : [])
+    expect(obsIds.size).toBe(0)
+    expect(obsIds.has("any-id")).toBe(false)
+  })
+
+  test("mergeIds deduplicates correctly via trackObserved", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          OM.upsert({
+            id: s.id as SessionID,
+            session_id: s.id as SessionID,
+            observations: "🔴 fact",
+            reflections: null,
+            current_task: null,
+            suggested_continuation: null,
+            last_observed_at: Date.now(),
+            generation_count: 1,
+            observation_tokens: 10,
+            observed_message_ids: null,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          // Call three times with overlapping IDs
+          OM.trackObserved(s.id as SessionID, ["a", "b"])
+          OM.trackObserved(s.id as SessionID, ["b", "c"])
+          OM.trackObserved(s.id as SessionID, ["a", "c", "d"])
+          const got = OM.get(s.id as SessionID)
+          const ids: string[] = JSON.parse(got!.observed_message_ids!)
+          // Exactly 4 unique IDs — no duplicates
+          expect(ids).toHaveLength(4)
+          expect(new Set(ids).size).toBe(4)
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
   })
 })

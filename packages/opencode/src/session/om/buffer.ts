@@ -22,10 +22,11 @@ export function calculateDynamicThreshold(threshold: number | ThresholdRange, ob
   return Math.max(threshold.min, threshold.max - obsTokens)
 }
 
+const DEFAULT_RANGE: ThresholdRange = { min: 80_000, max: 140_000 }
+
 export namespace OMBuf {
-  const TRIGGER = 30_000
   const INTERVAL = 6_000
-  const FORCE = 36_000
+  const BLOCK_AFTER = 180_000
 
   function ensure(sid: SessionID): State {
     const s = state.get(sid)
@@ -40,15 +41,17 @@ export namespace OMBuf {
     tok: number,
     obsTokens?: number,
     configThreshold?: number | ThresholdRange,
-  ): "buffer" | "activate" | "force" | "idle" {
+    blockAfter?: number,
+  ): "buffer" | "activate" | "block" | "idle" {
     const s = ensure(sid)
     s.tok += tok
-    if (s.tok >= FORCE) return "force"
-    // Resolve trigger: use config ThresholdRange when provided, else fixed TRIGGER constant.
+    // Resolve trigger: use config threshold when provided, else adaptive DEFAULT_RANGE.
     // When obsTokens is known, apply adaptive shrink so total budget stays within max.
-    const base = configThreshold ?? TRIGGER
+    const base = configThreshold ?? DEFAULT_RANGE
     const trigger =
       obsTokens !== undefined ? calculateDynamicThreshold(base, obsTokens) : typeof base === "number" ? base : base.max
+    const limit = blockAfter ?? BLOCK_AFTER
+    if (s.tok >= limit) return "block"
     if (s.tok >= trigger) return "activate"
     // Fire "buffer" only when crossing a new INTERVAL boundary, not every turn
     const intervals = Math.floor(s.tok / INTERVAL)
@@ -105,5 +108,18 @@ export namespace OMBuf {
   }
   export function setReflecting(v: boolean): void {
     _reflecting = v
+  }
+
+  // In-memory seal map: session → sealed_at timestamp
+  // Prevents the mega-message bug: excludes messages at/before the Observer snapshot boundary.
+  const seals = new Map<string, number>()
+
+  export function seal(sid: string, at: number): void {
+    const existing = seals.get(sid)
+    if (!existing || at > existing) seals.set(sid, at)
+  }
+
+  export function sealedAt(sid: string): number {
+    return seals.get(sid) ?? 0
   }
 }

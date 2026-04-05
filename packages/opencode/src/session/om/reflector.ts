@@ -8,7 +8,6 @@ import { detectDegenerateRepetition } from "./observer"
 import { renderObservationGroupsForReflection, reconcileObservationGroupsFromReflection } from "./groups"
 
 const log = Log.create({ service: "session.reflector" })
-const THRESHOLD = 40_000
 
 export type CompressionLevel = 0 | 1 | 2 | 3 | 4
 
@@ -101,14 +100,16 @@ Rules:
 - Preserve ✅ completion markers — they signal resolved tasks and prevent repeated work`
 
 export namespace Reflector {
-  export const threshold = THRESHOLD
+  export const threshold = 120_000
 
   export async function run(sid: SessionID): Promise<void> {
     const rec = OM.get(sid)
     if (!rec?.observations) return
-    if ((rec.observation_tokens ?? 0) <= THRESHOLD) return
 
     const cfg = await Config.get()
+    const t = cfg.experimental?.observer_reflection_tokens ?? 120_000
+    if ((rec.observation_tokens ?? 0) <= t) return
+
     if (cfg.experimental?.observer === false) return
     const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
 
@@ -155,7 +156,7 @@ export namespace Reflector {
       const tok = result.text.length >> 2
       if (!best || tok < best.tok) best = { text: result.text, tok }
 
-      if (validateCompression(result.text, THRESHOLD)) {
+      if (validateCompression(result.text, t)) {
         const reconciled = reconcileObservationGroupsFromReflection(result.text, rec.observations)
         OM.reflect(sid, reconciled)
         if (level > 0) log.info("reflector: compressed at level", { level })

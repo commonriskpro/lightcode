@@ -1,5 +1,7 @@
 # Change Proposal: Cache-Optimized Context Management
 
+> **Status (2026-04-05):** Phases 1–2 ✅ implemented. Phases 3–4 (compaction improvements) are **superseded** — the emergency compaction system was deleted entirely and replaced by OM-based context management. See `docs/om-replace-compaction.md`.
+
 ## Intent
 
 Restructure LightCode's prompt assembly and compaction system to maximize prompt cache hits across Anthropic, OpenAI, and Google Gemini — reducing input token costs by ~74% on a typical 10-turn session without changing user-visible behavior.
