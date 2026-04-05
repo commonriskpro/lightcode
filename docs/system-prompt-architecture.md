@@ -209,11 +209,12 @@ Exception: OpenAI OAuth uses `options.instructions` instead of system messages.
 system[0]   — BP2 (1h cache)    Agent prompt + env + skills + instructions joined
 system[1]   — BP3 (5min cache)  Local observations <local-observations>...</local-observations>
                                  OR sentinel "<!-- ctx -->" when no observations exist yet
-system[2]   — NOT cached        Engram recall <engram-recall>...</engram-recall> (optional, session-frozen)
+system[2]   — NOT cached        Semantic recall <memory-recall>...</memory-recall> (optional, session-frozen)
+system[3]   — NOT cached        Working memory <working-memory>...</working-memory> (optional, session-frozen)
 system[last]— NOT cached        Volatile: model identity + today's date
 ```
 
-`applyCaching()` in `transform.ts` places breakpoints only on `system[0]` (1h TTL) and `system[1]` (5min TTL). Slots [2] and [last] receive no breakpoint — they are re-sent fresh every turn.
+`applyCaching()` in `transform.ts` places breakpoints only on `system[0]` (1h TTL) and `system[1]` (5min TTL). Slots [2], [3], and [last] receive no breakpoint — they are re-sent fresh every turn.
 
 **BP3 stability guarantee:** `system[1]` is either the observations block (updated only when Observer activates, ~every 30k tokens) or the static sentinel `"<!-- ctx -->"`. It never changes mid-turn. This makes BP3 hit reliably between Observer cycles.
 
@@ -238,28 +239,38 @@ IMPORTANT: When responding, use the observations above as background context.
 ...
 
 [System Message 2 — NOT cached]:
-<engram-recall>
+<memory-recall>
 ## Recent project context
 - 🔴 Architecture uses Effect for all service layers
 - 🔴 DB: snake_case columns, no string column names
 - 🟡 Pending: migrate auth to JWT (mentioned 2026-04-01)
-</engram-recall>
+</memory-recall>
 
 [System Message 3 — NOT cached]:
+<working-memory>
+### tech_stack (project)
+TypeScript + SQLite
+
+### current_goal (agent)
+Finish auth refactor safely
+</working-memory>
+
+[System Message 4 — NOT cached]:
 You are powered by the model named claude-sonnet-4-6. The exact model ID is anthropic/claude-sonnet-4-6
 Today's date: Sat Apr 04 2026
 ```
 
 ## Related Files
 
-| File                               | Purpose                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------ |
-| `src/session/prompt.ts:1588-1602`  | Stage 1: builds system array                                                         |
-| `src/session/llm.ts:100-162`       | Stage 2: assembles with agent prompt, caching, wire format, recall+obs splice        |
-| `src/session/system.ts`            | `SystemPrompt.provider()`, `environment()`, `skills()`, `recall()`, `observations()` |
-| `src/session/instruction.ts`       | `Instruction.system()` — AGENTS.md/CLAUDE.md loading                                 |
-| `src/session/om/record.ts`         | `OM` namespace — ObservationTable CRUD                                               |
-| `src/session/om/observer.ts`       | `Observer.run()` — background LLM call for intra-session compression                 |
-| `src/session/om/buffer.ts`         | `OMBuf` state machine — 6k/30k/36k token thresholds                                  |
-| `src/session/prompt/lightcode.txt` | Unified LightCode agent prompt (all models)                                          |
-| `src/tool/search.ts:61-69`         | `ToolSearch.fmt()` — deferred tools section                                          |
+| File                               | Purpose                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `src/session/prompt.ts:1588-1602`  | Stage 1: builds system array                                                  |
+| `src/session/llm.ts:100-162`       | Stage 2: assembles with agent prompt, caching, wire format, recall+obs splice |
+| `src/session/system.ts`            | `SystemPrompt.provider()`, `environment()`, `skills()`, `observations()`      |
+| `src/memory/provider.ts`           | `Memory.buildContext()` — semantic recall + working memory assembly           |
+| `src/session/instruction.ts`       | `Instruction.system()` — AGENTS.md/CLAUDE.md loading                          |
+| `src/session/om/record.ts`         | `OM` namespace — ObservationTable CRUD                                        |
+| `src/session/om/observer.ts`       | `Observer.run()` — background LLM call for intra-session compression          |
+| `src/session/om/buffer.ts`         | `OMBuf` state machine — 6k/30k/36k token thresholds                           |
+| `src/session/prompt/lightcode.txt` | Unified LightCode agent prompt (all models)                                   |
+| `src/tool/search.ts:61-69`         | `ToolSearch.fmt()` — deferred tools section                                   |

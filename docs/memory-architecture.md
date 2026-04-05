@@ -1,4 +1,6 @@
-# LightCode v2 Memory Architecture (Code-Verified)
+# LightCode v2 Memory Architecture (Historical)
+
+> **Historical architecture note (2026-04-05):** this document describes an older Engram-backed phase of the LightCode memory system and is no longer the source of truth for the current runtime. The current native architecture is documented in `docs/LIGHTCODE_MEMORY_PRODUCTION_SPEC.md` and validated in `docs/LIGHTCODE_MEMORY_PRODUCTION_VALIDATION.md`.
 
 This document is based on direct source inspection only. Every behavioral claim is tied to code locations.
 

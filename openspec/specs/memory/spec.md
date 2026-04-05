@@ -1,5 +1,7 @@
 # Observational Memory + Engram Integration Specification
 
+> **Historical spec (2026-04-05):** this spec describes the older Engram-backed memory architecture. The current implementation uses `Memory.buildContext()` plus native SQLite-backed recall, working memory, and artifacts. This document is preserved as design history.
+
 ## Purpose
 
 Implement continuous memory for sessions by integrating cross-session recall from Engram at session start, and proactive memory writing during session idle states (AutoDream).

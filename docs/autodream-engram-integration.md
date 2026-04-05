@@ -1,5 +1,7 @@
 # AutoDream + Engram Integration — Design Rationale
 
+> **Historical architecture note (2026-04-05):** this document describes the older Engram-backed AutoDream phase. The current implementation uses the native LightCode memory store: AutoDream writes to `memory_artifacts` via `Memory.indexArtifact()`. This file remains useful as design history and rationale only.
+
 ## What Is Each Thing
 
 ### Engram

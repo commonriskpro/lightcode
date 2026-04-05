@@ -1,6 +1,6 @@
 # LightCode Feature Catalog
 
-> Code-verified. Every claim is tied to a source file. Last updated: 2026-04-04.
+> Code-verified. Every claim is tied to a source file. Last updated: 2026-04-05.
 
 ---
 
@@ -21,16 +21,21 @@
 
 ## 1. Memory System
 
-LightCode has a **3-layer memory system** that persists context across and within sessions.
+LightCode has a native SQLite-backed memory system that persists context across and within sessions.
 
 ### Layer 1 — Cross-Session Recall
 
-At session start (step 1 only), `SystemPrompt.recall(pid)` calls `mem_context` on Engram MCP and injects the result into `system[1]` as `<engram-recall>...</engram-recall>`.
+At session start (step 1 only), `Memory.buildContext()` loads native cross-session context from `lightcode.db`:
 
-- Token cap: 2000 tokens (`capRecallBody`, char/4 heuristic)
-- Cache slot: BP3 (5min)
-- Graceful degradation: any failure returns `undefined` — turn never blocked
-- Source: `src/session/system.ts:87-110`
+- **Semantic recall**: `SemanticRecall.search()` against `memory_artifacts` using the first user message as the query, with `recent()` fallback when FTS returns nothing
+- **Working memory**: `WorkingMemory.getForScopes()` across `thread > agent > project`
+
+Injected as:
+
+- `system[2]` → `<memory-recall>`
+- `system[3]` → `<working-memory>`
+
+- Source: `src/session/prompt.ts`, `src/memory/provider.ts`, `src/memory/semantic-recall.ts`, `src/memory/working-memory.ts`
 
 ### Layer 2 — Intra-Session Observer
 
@@ -45,7 +50,7 @@ Background LLM extracts structured facts from the conversation every **6k tokens
 | `activate` | ≥ 30k cumulative    | fork observer pipeline  |
 | `block`    | ≥ `blockAfter`      | wait for OM to catch up |
 
-Observations stored in `ObservationTable` (SQLite, session-scoped). Injected at `system[2]` each turn as `<local-observations>...</local-observations>`.
+Observations stored in `ObservationTable` (SQLite, session-scoped). Injected at `system[1]` each turn as `<local-observations>...</local-observations>`.
 
 - Default model: `google/gemini-2.5-flash`
 - Opt-out: `experimental.observer: false`
@@ -62,21 +67,23 @@ When `observation_tokens` exceeds **40,000**, the Reflector condenses observatio
 
 ### Layer 4 — AutoDream (Cross-Session Consolidation)
 
-When a session goes idle, a sandboxed `dream` agent reads local observations + compaction summaries and calls `mem_save` on Engram with structured project-scoped observations.
+When a session goes idle, a sandboxed `dream` agent reads local observations + compaction summaries and writes a project-scoped artifact into native memory.
 
 - Trigger: `SessionStatus.Event.Idle` → `AutoDream.idle(sid)`
+- Persistence: `AutoDream.persistConsolidation()` → `Memory.indexArtifact()` → `memory_artifacts`
 - Flag check: skips if `experimental.autodream === false`
-- Model fallback: `configuredModel ?? cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"`
+- Model fallback: `cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"`
 - Manual trigger: `/dream [focus]`
-- Source: `src/dream/index.ts:183-215`
+- Source: `src/dream/index.ts`, `src/dream/daemon.ts`
 
 ### Memory Pipeline Summary
 
 ```
 system[0]  BP2 1h    Agent prompt + env + instructions
-system[1]  BP3 5min  Engram recall (cross-session, step 1 only)
-system[2]  BP3 5min  Local observations or reflections (every turn)
-system[3]  uncached  Volatile: date + model identity
+system[1]  BP3 5min  Local observations or reflections (every turn)
+system[2]  uncached  Semantic recall (step 1 only, session-frozen)
+system[3]  uncached  Working memory (step 1 only, session-frozen)
+system[last] uncached Volatile: date + model identity
 ```
 
 ---
@@ -200,16 +207,16 @@ LSP diagnostics are deferred to end-of-step rather than blocking inline per tool
 
 Built-in agents available via `/agents`:
 
-| Agent        | Description                                                                            | Tools                       |
-| ------------ | -------------------------------------------------------------------------------------- | --------------------------- |
-| `build`      | Default agent. Executes tools based on configured permissions.                         | All permitted tools         |
-| `plan`       | Plan mode — all edit tools disallowed. Reasoning only.                                 | Read-only tools             |
-| `general`    | General-purpose for research and multi-step tasks. Can spawn parallel subtasks.        | All + `task`                |
-| `explore`    | Fast codebase exploration. Accepts thoroughness hint: quick / medium / very thorough.  | Read tools + `task`         |
-| `compaction` | Internal — generates session summaries during compaction. Not user-facing.             | None (no tools)             |
-| `title`      | Internal — generates session titles. Not user-facing.                                  | None                        |
-| `summary`    | Internal — generates compaction summaries. Not user-facing.                            | None                        |
-| `dream`      | Background memory consolidation. Has Engram MCP + read-only tools. No edit/write/task. | Engram + read + grep + glob |
+| Agent        | Description                                                                           | Tools                            |
+| ------------ | ------------------------------------------------------------------------------------- | -------------------------------- |
+| `build`      | Default agent. Executes tools based on configured permissions.                        | All permitted tools              |
+| `plan`       | Plan mode — all edit tools disallowed. Reasoning only.                                | Read-only tools                  |
+| `general`    | General-purpose for research and multi-step tasks. Can spawn parallel subtasks.       | All + `task`                     |
+| `explore`    | Fast codebase exploration. Accepts thoroughness hint: quick / medium / very thorough. | Read tools + `task`              |
+| `compaction` | Internal — generates session summaries during compaction. Not user-facing.            | None (no tools)                  |
+| `title`      | Internal — generates session titles. Not user-facing.                                 | None                             |
+| `summary`    | Internal — generates compaction summaries. Not user-facing.                           | None                             |
+| `dream`      | Background memory consolidation. Produces native consolidation summaries.             | No edit/write/task in agent flow |
 
 Custom agents can be defined in `lightcode.jsonc` under the `agents` key.
 
@@ -274,15 +281,15 @@ All accessible via the command palette (`/` prefix) or keybinds.
 
 Accessible via `/features`. Space to toggle, Enter to configure model (where available).
 
-| Feature            |   Toggle    | Model Picker | Default | Notes                                                         |
-| ------------------ | :---------: | :----------: | ------- | ------------------------------------------------------------- |
-| Deferred Tools     |     ✅      |      —       | off     | Also togglable via `OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS`     |
-| Batch Tool         |     ✅      |      —       | off     | Run multiple tools in parallel                                |
-| Continue on Deny   |     ✅      |      —       | off     | Keep agent loop running when tool call denied                 |
-| Markdown Rendering | ❌ env only |      —       | on      | `OPENCODE_EXPERIMENTAL_MARKDOWN`                              |
-| OpenTelemetry      |     ✅      |      —       | off     | AI SDK span tracing                                           |
-| AutoDream          |     ✅      |      ✅      | off     | Requires Engram MCP connected                                 |
-| Observer Memory    |     ✅      |      ✅      | off     | Requires Engram MCP; default model: `google/gemini-2.5-flash` |
+| Feature            |   Toggle    | Model Picker | Default | Notes                                                                 |
+| ------------------ | :---------: | :----------: | ------- | --------------------------------------------------------------------- |
+| Deferred Tools     |     ✅      |      —       | off     | Also togglable via `OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS`             |
+| Batch Tool         |     ✅      |      —       | off     | Run multiple tools in parallel                                        |
+| Continue on Deny   |     ✅      |      —       | off     | Keep agent loop running when tool call denied                         |
+| Markdown Rendering | ❌ env only |      —       | on      | `OPENCODE_EXPERIMENTAL_MARKDOWN`                                      |
+| OpenTelemetry      |     ✅      |      —       | off     | AI SDK span tracing                                                   |
+| AutoDream          |     ✅      |      ✅      | off     | Native background consolidation into `memory_artifacts`               |
+| Observer Memory    |     ✅      |      ✅      | off     | Native observational memory; default model: `google/gemini-2.5-flash` |
 
 Features that are **env only** (LSP Tool, Plan Mode, Workspaces) are not shown in `/features` — they must be set via environment variable and cannot be toggled at runtime.
 
