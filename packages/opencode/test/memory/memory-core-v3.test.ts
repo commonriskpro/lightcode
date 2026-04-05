@@ -85,8 +85,8 @@ describe("V3-1: Fork step guard is step === 1 (not 0)", () => {
 
 // ─── V3-2: Fork path loads memory context ────────────────────────────────────
 
-describe("V3-2: Fork path calls Memory.buildContext()", () => {
-  test("prompt.ts fork block calls Memory.buildContext()", () => {
+describe("V3-2: Fork path calls runtime memory loader", () => {
+  test("prompt.ts fork block calls loadRuntimeMemory()", () => {
     const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
 
     // Find the fork section
@@ -94,11 +94,9 @@ describe("V3-2: Fork path calls Memory.buildContext()", () => {
     const forkEnd = src.indexOf("const maxSteps = agent.steps")
     const forkSection = src.slice(forkStart, forkEnd)
 
-    // Must call Memory.buildContext in fork block
-    expect(forkSection).toContain("Memory.buildContext(")
-    // Must use forkMemCtx results
-    expect(forkSection).toContain("forkMemCtx.semanticRecall")
-    expect(forkSection).toContain("forkMemCtx.workingMemory")
+    expect(forkSection).toContain("loadRuntimeMemory(sessionID, agent.name, msgs)")
+    expect(forkSection).toContain("forkMemory.recall")
+    expect(forkSection).toContain("forkMemory.workingMemory")
   })
 
   test("Memory.buildContext() returns correct structure for fork scope", async () => {
@@ -125,7 +123,7 @@ describe("V3-2: Fork path calls Memory.buildContext()", () => {
 // ─── V3-3: Memory.buildContext() is canonical in normal path ──────────────────
 
 describe("V3-3: Memory.buildContext() is canonical in normal hot path", () => {
-  test("prompt.ts step===1 block calls Memory.buildContext() not scattered calls", () => {
+  test("prompt.ts step===1 block calls loadRuntimeMemory() not scattered calls", () => {
     const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
 
     // Find the step===1 block
@@ -133,10 +131,10 @@ describe("V3-3: Memory.buildContext() is canonical in normal hot path", () => {
     const step1End = src.indexOf("// Load observations every turn", step1Start)
     const step1Section = src.slice(step1Start, step1End)
 
-    // Must use Memory.buildContext()
-    expect(step1Section).toContain("Memory.buildContext(")
-    expect(step1Section).toContain("memCtx.semanticRecall")
-    expect(step1Section).toContain("memCtx.workingMemory")
+    // Must use the extracted runtime memory helper
+    expect(step1Section).toContain("loadRuntimeMemory(sessionID, agent.name, msgs)")
+    expect(step1Section).toContain("mem.recall")
+    expect(step1Section).toContain("mem.workingMemory")
 
     // Must NOT use the old scattered calls (check code lines, not comments)
     const step1NoComments = step1Section.replace(/\/\/[^\n]*/g, "")
@@ -345,7 +343,7 @@ describe("V3-7: Auto-indexing writes OM observations to memory_artifacts", () =>
     expect(matching[0].title).toBe("Session obs v2")
   })
 
-  test("prompt.ts has auto-indexing code at session end", () => {
+  test("prompt.ts calls session-end indexing helper", () => {
     const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
 
     // After loop exit, before return lastAssistant
@@ -353,10 +351,7 @@ describe("V3-7: Auto-indexing writes OM observations to memory_artifacts", () =>
     const returnStatement = src.indexOf("return yield* lastAssistant(sessionID)")
     const autoIndexSection = src.slice(loopEnd, returnStatement)
 
-    expect(autoIndexSection).toContain("Memory.indexArtifact(")
-    expect(autoIndexSection).toContain("finalObs?.observations")
-    expect(autoIndexSection).toContain('scope_type: "project"')
-    expect(autoIndexSection).toContain("topic_key: `session/")
+    expect(autoIndexSection).toContain("indexSessionArtifacts(sessionID)")
   })
 })
 

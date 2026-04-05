@@ -130,7 +130,10 @@ export const TaskTool = Tool.define("task", async (ctx) => {
           // so a restarted process can reconstruct useful child context without fresh LLM calls.
           try {
             const parentOm = OM.get(ctx.sessionID as SessionID)
-            const wmKeys = Memory.getWorkingMemory({ type: "project", id: Instance.project.id }).map((r) => r.key)
+            const wmSnapshot = Memory.getWorkingMemory({ type: "project", id: Instance.project.id }).map((r) => ({
+              key: r.key,
+              value: r.value,
+            }))
             Memory.writeForkContext({
               session_id: session.id,
               parent_session_id: ctx.sessionID,
@@ -140,7 +143,7 @@ export const TaskTool = Tool.define("task", async (ctx) => {
                 taskDescription: params.description,
                 currentTask: parentOm?.current_task ?? null,
                 suggestedContinuation: parentOm?.suggested_continuation ?? null,
-                workingMemoryKeys: wmKeys,
+                workingMemorySnapshot: wmSnapshot,
               }),
             })
           } catch {

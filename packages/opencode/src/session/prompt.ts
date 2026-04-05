@@ -89,6 +89,125 @@ export namespace SessionPrompt {
     return activeContexts.get(sessionID)
   }
 
+  function lastUserText(msgs: MessageV2.WithParts[]): string | undefined {
+    return msgs
+      .findLast((m) => m.info.role === "user")
+      ?.parts.filter((p) => p.type === "text")
+      .map((p) => (p as { type: "text"; text: string }).text)
+      .join(" ")
+      .trim()
+  }
+
+  function appendBlock(base: string | undefined, tag: string, body: string | undefined): string | undefined {
+    if (!body?.trim()) return base
+    const next = `<${tag}>\n${body.trim()}\n</${tag}>`
+    return base ? `${base}\n\n${next}` : next
+  }
+
+  function durableChildHydration(sessionID: SessionID): {
+    workingMemory?: string
+    observations?: string
+  } {
+    const handoff = Memory.getHandoff(sessionID)
+    const fork = Memory.getForkContext(sessionID)
+
+    let workingMemory: string | undefined
+    let observations: string | undefined
+
+    if (handoff?.working_memory_snap) {
+      try {
+        const wm = JSON.parse(handoff.working_memory_snap) as Array<{ key: string; value: string }>
+        if (wm.length) {
+          workingMemory = appendBlock(
+            workingMemory,
+            "durable-handoff-working-memory",
+            wm.map((r) => `### ${r.key}\n${r.value}`).join("\n\n"),
+          )
+        }
+      } catch {}
+    }
+
+    if (handoff?.observation_snap) {
+      observations = appendBlock(observations, "durable-handoff", handoff.observation_snap)
+    }
+
+    if (fork?.context) {
+      try {
+        const ctx = JSON.parse(fork.context) as {
+          taskDescription?: string
+          currentTask?: string | null
+          suggestedContinuation?: string | null
+          workingMemorySnapshot?: Array<{ key: string; value: string }>
+        }
+        const forkObs = [ctx.taskDescription, ctx.currentTask, ctx.suggestedContinuation].filter(Boolean).join("\n")
+        observations = appendBlock(observations, "durable-fork", forkObs)
+        if (ctx.workingMemorySnapshot?.length) {
+          workingMemory = appendBlock(
+            workingMemory,
+            "durable-fork-working-memory",
+            ctx.workingMemorySnapshot.map((r) => `### ${r.key}\n${r.value}`).join("\n\n"),
+          )
+        }
+      } catch {}
+    }
+
+    return { workingMemory, observations }
+  }
+
+  async function loadRuntimeMemory(
+    sessionID: SessionID,
+    agentName: string,
+    msgs: MessageV2.WithParts[],
+  ): Promise<{
+    recall: string | undefined
+    workingMemory: string | undefined
+    durableObservations: string | undefined
+  }> {
+    const memCtx = await Memory.buildContext({
+      scope: { type: "thread", id: sessionID },
+      ancestorScopes: [
+        { type: "agent", id: agentName },
+        { type: "project", id: Instance.project.id },
+      ],
+      semanticQuery: lastUserText(msgs),
+    })
+    const durable = durableChildHydration(sessionID)
+    return {
+      recall: memCtx.semanticRecall,
+      workingMemory: appendBlock(memCtx.workingMemory, "durable-child-working-memory", durable.workingMemory),
+      durableObservations: durable.observations,
+    }
+  }
+
+  function indexSessionArtifacts(sessionID: SessionID): void {
+    const finalObs = OM.get(sessionID)
+    const obsContent = finalObs?.reflections ?? finalObs?.observations
+    if (!obsContent || obsContent.length <= 100) return
+
+    const obsTitle =
+      finalObs?.current_task ||
+      obsContent
+        .split("\n")
+        .find((l) => l.trim().length > 10)
+        ?.trim()
+        .slice(0, 100) ||
+      `Session ${new Date().toISOString().slice(0, 10)}`
+
+    Memory.indexArtifact({
+      scope_type: "project",
+      scope_id: Instance.project.id,
+      type: "observation",
+      title: obsTitle,
+      content: obsContent,
+      topic_key: `session/${sessionID}/observations`,
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
+  }
+
   export interface Interface {
     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -1468,6 +1587,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           let recall: string | undefined
           let obs: string | undefined
           let workingMem: string | undefined
+          let durableObs: string | undefined
           const session = yield* sessions.get(sessionID)
 
           while (true) {
@@ -1653,6 +1773,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             // V3 fix: guard was `step === 0` but step++ fires before this check, making it
             // always false. Fixed to `step === 1` (first iteration of the loop).
             const fork = forks.get(sessionID)
+            const durableFork = !fork ? Memory.getForkContext(sessionID) : undefined
             if (fork && step === 1) {
               forks.delete(sessionID)
               // V3: clean up activeContexts entry for this session on fork consumption
@@ -1662,29 +1783,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               // V3: load memory context for the child session — fork children previously got
               // recall=undefined, obs=undefined, workingMem=undefined because memory loading
               // was only done at step===1 in the normal path, which was never reached for forks.
-              const forkLastUserText = msgs
-                .findLast((m) => m.info.role === "user")
-                ?.parts.filter((p) => p.type === "text")
-                .map((p) => (p as { type: "text"; text: string }).text)
-                .join(" ")
-                .trim()
-              const forkMemCtx = yield* Effect.promise(() =>
-                Memory.buildContext({
-                  scope: { type: "thread", id: sessionID },
-                  // Production: include agent scope between thread and project.
-                  // Agent scope holds this agent's own operational working memory
-                  // across sessions (separate from project-wide memory).
-                  ancestorScopes: [
-                    { type: "agent", id: agent.name },
-                    { type: "project", id: Instance.project.id },
-                  ],
-                  semanticQuery: forkLastUserText,
-                }),
-              )
+              const forkMemory = yield* Effect.promise(() => loadRuntimeMemory(sessionID, agent.name, msgs))
               // Populate recall/obs/workingMem from child's own memory context
-              recall = forkMemCtx.semanticRecall
-              obs = forkMemCtx.observations ?? (yield* Effect.promise(() => SystemPrompt.observations(sessionID)))
-              workingMem = forkMemCtx.workingMemory
+              recall = forkMemory.recall
+              durableObs = forkMemory.durableObservations
+              obs = appendBlock(
+                yield* Effect.promise(() => SystemPrompt.observations(sessionID)),
+                "durable-child-context",
+                forkMemory.durableObservations,
+              )
+              workingMem = forkMemory.workingMemory
 
               const msg: MessageV2.Assistant = {
                 id: MessageID.ascending(),
@@ -1729,6 +1837,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
               if (result === "stop") break
               continue
+            }
+            if (durableFork && step === 1) {
+              log.info("using durable fork recovery", { sessionID })
             }
 
             const maxSteps = agent.steps ?? Infinity
@@ -1813,30 +1924,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   // Single entry point for all memory layers: semantic recall +
                   // working memory (thread + agent + project scopes).
                   // Observations are loaded separately every turn (see below).
-                  const lastUserText = msgs
-                    .findLast((m) => m.info.role === "user")
-                    ?.parts.filter((p) => p.type === "text")
-                    .map((p) => (p as { type: "text"; text: string }).text)
-                    .join(" ")
-                    .trim()
-                  const memCtx = yield* Effect.promise(() =>
-                    Memory.buildContext({
-                      scope: { type: "thread", id: sessionID },
-                      // Production: thread > agent > project scope chain.
-                      // thread keys override agent keys; agent keys override project keys.
-                      ancestorScopes: [
-                        { type: "agent", id: agent.name },
-                        { type: "project", id: Instance.project.id },
-                      ],
-                      semanticQuery: lastUserText,
-                    }),
-                  )
-                  recall = memCtx.semanticRecall
-                  workingMem = memCtx.workingMemory
+                  const mem = yield* Effect.promise(() => loadRuntimeMemory(sessionID, agent.name, msgs))
+                  recall = mem.recall
+                  workingMem = mem.workingMemory
+                  durableObs = mem.durableObservations
                 }
 
                 // Load observations every turn — they update during the session
                 obs = yield* Effect.promise(() => SystemPrompt.observations(sessionID))
+                obs = appendBlock(obs, "durable-child-context", durableObs)
 
                 // Gap F: apply lastObservedAt boundary — send only the unobserved tail to the LLM.
                 // Previously-observed messages are already compressed into the observations block
@@ -1954,35 +2050,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // Final: use reflections (higher quality) when available; use current_task as title
           // for better FTS5 searchability vs the generic date-only title from V3.
           try {
-            const finalObs = OM.get(sessionID)
-            // Prefer reflections (condensed) > observations. Must be at least 100 chars.
-            const obsContent = finalObs?.reflections ?? finalObs?.observations
-            if (obsContent && obsContent.length > 100) {
-              // Build a meaningful title for FTS5 recall quality.
-              // current_task → first line of content → generic date fallback.
-              const obsTitle =
-                finalObs?.current_task ||
-                obsContent
-                  .split("\n")
-                  .find((l) => l.trim().length > 10)
-                  ?.trim()
-                  .slice(0, 100) ||
-                `Session ${new Date().toISOString().slice(0, 10)}`
-
-              Memory.indexArtifact({
-                scope_type: "project",
-                scope_id: Instance.project.id,
-                type: "observation",
-                title: obsTitle,
-                content: obsContent,
-                topic_key: `session/${sessionID}/observations`,
-                normalized_hash: null,
-                revision_count: 1,
-                duplicate_count: 1,
-                last_seen_at: null,
-                deleted_at: null,
-              })
-            }
+            indexSessionArtifacts(sessionID)
           } catch {
             // Non-fatal — session end indexing failure does not affect session result
           }

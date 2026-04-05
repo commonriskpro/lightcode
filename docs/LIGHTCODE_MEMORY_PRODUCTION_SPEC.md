@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The LightCode Memory system currently has foundational features in place but suffers from several critical and medium-severity bugs that prevent it from being production-ready. These issues range from incorrect working memory precedence and poor FTS5 recall quality to dead code paths and unmaintained flags. This initiative aims to address these findings from the recent code audit to stabilize the memory system and bring it up to production standards.
+The LightCode Memory system already has a native SQLite-backed core in production use, but still required a final code-truth cleanup to tighten precedence semantics, improve recall quality, operationalize agent scope, and consume durable child-session state more meaningfully. This initiative addresses those remaining code-level issues without rebuilding the architecture.
 
 ## 2. Problem Statements (Code Audit Findings)
 
@@ -36,12 +36,18 @@ The LightCode Memory system currently has foundational features in place but suf
 - **File:** Main runLoop implementation
 - **Problem:** The main `runLoop` is a 452-line `while(true)` loop handling 12 distinct concerns without helper functions for OM coordination or prompt assembly. This high coupling makes adding new memory behaviors risky and hinders maintainability.
 
+### Bug 7 — Durable fork/handoff state was write-heavy but read-light (MEDIUM)
+
+- **Files:** `packages/opencode/src/tool/task.ts`, `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/memory/handoff.ts`
+- **Problem:** Durable fork and handoff state was being written to the DB but the runtime still depended too heavily on in-memory state. Child-session hydration needed to consume `Memory.getHandoff()` / `Memory.getForkContext()` in the hot path so restart recovery was meaningfully useful.
+
 ## 3. Product Goals
 
 - Ensure working memory correctly applies precedence rules (most specific scope wins).
 - Improve semantic recall quality so users get relevant historical context even with partial or multi-word queries.
 - Ensure the memory system degrades gracefully (falling back to recent memory when search yields no results).
 - Streamline memory tool usage by exposing operational scopes logically to the agents.
+- Make durable child-session recovery useful enough to matter after restart.
 
 ## 4. Technical Goals
 
@@ -50,6 +56,7 @@ The LightCode Memory system currently has foundational features in place but suf
 - Connect the semantic recall fallback in the runtime hot path (`Memory.buildContext()`).
 - Reduce ambiguity inside the overloaded `runLoop` by clarifying ownership boundaries in code and isolating the canonical memory/OM sections, without requiring a risky full extraction in this initiative.
 - Clean up dead code, unreferenced flags, and document dormant features to reduce technical debt.
+- Keep the fast in-memory fork path as an optimization while making DB-backed hydration a meaningful fallback.
 
 ## 5. Success Criteria
 
@@ -59,6 +66,7 @@ The LightCode Memory system currently has foundational features in place but suf
 - **Bug 4/6:** `OPENCODE_MEMORY_USE_ENGRAM`, `recallEngram()`, and `recallNative()` are removed from live runtime implementations and no core runtime path depends on them.
 - **Bug 5:** The `agent` scope is passed in the hot path and exposed in `UpdateWorkingMemoryTool`.
 - **Bug 6:** The main `runLoop` has clearer ownership boundaries for OM coordination and memory assembly, and production maintainability is improved without changing runtime behavior incorrectly.
+- **Bug 7:** Child sessions can hydrate useful context from durable fork/handoff records when needed.
 
 ## 6. Non-Goals
 

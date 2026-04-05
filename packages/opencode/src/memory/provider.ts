@@ -30,8 +30,11 @@ import type {
 
 // ─── System prompt wrappers ───────────────────────────────────────────────────
 
+const WORKING_MEMORY_GUIDANCE =
+  'When you make a significant architectural decision, technology choice, or discover a key constraint or goal for this project, call `update_working_memory` with scope="project" or scope="agent" to persist it for future sessions. Keep entries concise and factual.'
+
 function wrapWorkingMemory(body: string, scope: string): string {
-  return `<working-memory scope="${scope}">\n${body}\n</working-memory>`
+  return `<working-memory scope="${scope}">\n${body}\n</working-memory>\n\n${WORKING_MEMORY_GUIDANCE}`
 }
 
 function wrapSemanticRecall(body: string): string {

@@ -394,6 +394,46 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   })
 })
 
+// ─── P-5B: DB-first durable child recovery ───────────────────────────────────
+
+describe("P-5B: Durable child recovery is consumed from DB state", () => {
+  beforeEach(setup)
+  afterEach(teardown)
+
+  test("prompt.ts reads Memory.getHandoff() and Memory.getForkContext() via durable hydration helper", () => {
+    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
+
+    expect(src).toContain("function durableChildHydration(")
+    expect(src).toContain("Memory.getHandoff(sessionID)")
+    expect(src).toContain("Memory.getForkContext(sessionID)")
+  })
+
+  test("task.ts writes enriched fork snapshot with workingMemorySnapshot values", () => {
+    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/task.ts"), "utf-8") as string
+
+    expect(src).toContain("workingMemorySnapshot")
+    expect(src).toContain("key: r.key")
+    expect(src).toContain("value: r.value")
+  })
+
+  test("Memory.writeHandoff() persists and Memory.getHandoff() retrieves child handoff state", () => {
+    const id = Memory.writeHandoff({
+      parent_session_id: "parent-prod-1",
+      child_session_id: "child-prod-1",
+      context: "Implement auth recovery",
+      working_memory_snap: JSON.stringify([{ key: "goal", value: "ship auth" }]),
+      observation_snap: "Current task: auth recovery",
+      metadata: JSON.stringify({ parentAgent: "build", projectId: "prod-project" }),
+    })
+
+    expect(id).toBeTruthy()
+    const row = Memory.getHandoff("child-prod-1")
+    expect(row).toBeDefined()
+    expect(row!.context).toBe("Implement auth recovery")
+    expect(JSON.parse(row!.working_memory_snap!)[0].value).toBe("ship auth")
+  })
+})
+
 // ─── P-6: runLoop structural comments ────────────────────────────────────────
 
 describe("P-6: runLoop has structural section comments", () => {
@@ -407,6 +447,26 @@ describe("P-6: runLoop has structural section comments", () => {
     const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
 
     expect(src).toContain("Memory Assembler")
+  })
+})
+
+// ─── P-6B: Working memory guidance is live in hot path ───────────────────────
+
+describe("P-6B: Working memory guidance is present in provider hot path output", () => {
+  beforeEach(setup)
+  afterEach(teardown)
+
+  test("Memory.buildContext workingMemory includes update_working_memory guidance", async () => {
+    WorkingMemory.set(projectScope, "goals", "Ship production memory")
+
+    const ctx = await Memory.buildContext({
+      scope: { type: "thread", id: "wm-guidance-test" },
+      ancestorScopes: [agentScope, projectScope],
+    })
+
+    expect(ctx.workingMemory).toBeDefined()
+    expect(ctx.workingMemory).toContain("update_working_memory")
+    expect(ctx.workingMemory).toContain('scope="project"')
   })
 })
 

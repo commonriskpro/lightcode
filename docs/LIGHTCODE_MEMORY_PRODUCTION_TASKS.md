@@ -55,21 +55,29 @@
 - **Dependencies:** None.
 - **Acceptance Criteria:** Code comments clearly state that `user` and `global_pattern` are dormant in V1, while `agent` is operational.
 
-## T8 — Tests (HIGH)
+## T8 — Durable child hydration from DB-backed state (MEDIUM)
+
+- **Goal:** Ensure child sessions can consume durable fork/handoff state, not just write it.
+- **Files:** `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/tool/task.ts`
+- **Dependencies:** None.
+- **Acceptance Criteria:** `prompt.ts` reads `Memory.getHandoff()` / `Memory.getForkContext()` via a helper and merges useful context into child-session runtime memory. `task.ts` stores `workingMemorySnapshot` values, not only key names.
+- **Tests:** Add/adjust tests for durable child hydration and richer fork snapshot content.
+
+## T9 — Tests (HIGH)
 
 - **Goal:** Ensure production readiness and prevent regressions.
 - **Files:** `packages/opencode/tests/memory-core-production.test.ts` (or equivalent)
 - **Dependencies:** T1, T2, T3, T4.
 - **Acceptance Criteria:** Dedicated tests exist for precedence deduplication, FTS5 two-mode fallback, and hot-path recent fallback. All tests pass.
 
-## T9 — Production validation doc (MEDIUM)
+## T10 — Production validation doc (MEDIUM)
 
 - **Goal:** Document the manual or automated validation steps to prove the system is production-ready.
 - **Files:** `docs/LIGHTCODE_MEMORY_PRODUCTION_VALIDATION.md`
 - **Dependencies:** T1-T8.
 - **Acceptance Criteria:** A clear checklist exists for QA or automated pipelines to verify the memory system end-to-end.
 
-## T10 — Final SUPERSEDED.md update + release signoff (LOW)
+## T11 — Final SUPERSEDED.md update + release signoff (LOW)
 
 - **Goal:** Formally document architectural shifts and sign off on the release.
 - **Files:** `SUPERSEDED.md` (root or docs)

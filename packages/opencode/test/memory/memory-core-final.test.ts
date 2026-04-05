@@ -159,7 +159,10 @@ describe("F-3: Fork context snapshot is enriched", () => {
         taskDescription: "Implement auth module",
         currentTask: "JWT implementation",
         suggestedContinuation: "Continue with refresh token logic",
-        workingMemoryKeys: ["tech_stack", "goals"],
+        workingMemorySnapshot: [
+          { key: "tech_stack", value: "TypeScript" },
+          { key: "goals", value: "Ship auth" },
+        ],
       }),
     })
 
@@ -171,7 +174,7 @@ describe("F-3: Fork context snapshot is enriched", () => {
     expect(ctx.projectId).toBe("final-project")
     expect(ctx.taskDescription).toBe("Implement auth module")
     expect(ctx.currentTask).toBe("JWT implementation")
-    expect(ctx.workingMemoryKeys).toContain("tech_stack")
+    expect(ctx.workingMemorySnapshot[0].key).toBe("tech_stack")
   })
 
   test("task.ts includes enriched fields in fork context write", () => {
@@ -181,7 +184,7 @@ describe("F-3: Fork context snapshot is enriched", () => {
     expect(src).toContain("taskDescription")
     expect(src).toContain("currentTask")
     expect(src).toContain("suggestedContinuation")
-    expect(src).toContain("workingMemoryKeys")
+    expect(src).toContain("workingMemorySnapshot")
   })
 })
 
@@ -251,7 +254,7 @@ describe("F-5: Auto-index improved title and content quality", () => {
     expect(results[0].content).toContain("stateless tokens")
   })
 
-  test("prompt.ts uses reflections-first content for auto-indexing", () => {
+  test("prompt.ts delegates auto-indexing to helper", () => {
     const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
 
     const autoIndexSection = src.slice(
@@ -259,11 +262,14 @@ describe("F-5: Auto-index improved title and content quality", () => {
       src.indexOf("return yield* lastAssistant(sessionID)"),
     )
 
-    // Must use reflections > observations
-    expect(autoIndexSection).toContain("finalObs?.reflections ?? finalObs?.observations")
+    expect(autoIndexSection).toContain("indexSessionArtifacts(sessionID)")
 
-    // Must use current_task as title when available
-    expect(autoIndexSection).toContain("finalObs?.current_task")
+    const helperSection = src.slice(
+      src.indexOf("function indexSessionArtifacts("),
+      src.indexOf("export interface Interface"),
+    )
+    expect(helperSection).toContain("finalObs?.reflections ?? finalObs?.observations")
+    expect(helperSection).toContain("finalObs?.current_task")
   })
 })
 
@@ -275,14 +281,14 @@ describe("F-6: SystemPrompt.recall() removed — Memory.buildContext() is canoni
     expect((SystemPrompt as any).recall).toBeUndefined()
   })
 
-  test("prompt.ts calls Memory.buildContext() not SystemPrompt.recall()", () => {
+  test("prompt.ts calls loadRuntimeMemory() not SystemPrompt.recall()", () => {
     const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
 
     const step1Section = src.slice(src.indexOf("if (step === 1) {"), src.indexOf("// Load observations every turn"))
 
     const codeOnly = step1Section.replace(/\/\/[^\n]*/g, "")
     expect(codeOnly).not.toContain("SystemPrompt.recall(")
-    expect(codeOnly).toContain("Memory.buildContext(")
+    expect(codeOnly).toContain("loadRuntimeMemory(sessionID, agent.name, msgs)")
   })
 })
 

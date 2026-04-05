@@ -79,3 +79,22 @@ _Update `SemanticRecall.search()` to execute the query using `sanitizeFTS` first
 
 - **Change:** Add explicit inline comments noting that `user` and `global_pattern` scopes are reserved and dormant in the V1 runtime.
 - **Change:** Add a comment explaining that the `agent` scope is fully operational via the hot path and tool usage.
+
+## D8 — Durable child hydration from DB-backed state
+
+**Files:** `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/tool/task.ts`
+
+- **Change:** Add `durableChildHydration(sessionID)` in `prompt.ts` that reads `Memory.getHandoff()` and `Memory.getForkContext()` and merges useful context into the child session’s runtime memory.
+- **Change:** Enrich fork snapshots in `task.ts` to persist `taskDescription`, OM continuation data, and a `workingMemorySnapshot` with actual values rather than key names only.
+- **Effect:** The runtime still prefers the in-memory fork map for cache sharing, but DB-backed state is now actually consumed and useful after restart or when the in-memory fast path is unavailable.
+
+## D9 — Helper boundaries inside runLoop
+
+**File:** `packages/opencode/src/session/prompt.ts`
+
+- **Change:** Introduce lightweight helper boundaries instead of a deep orchestration rewrite:
+  - `lastUserText()`
+  - `durableChildHydration()`
+  - `loadRuntimeMemory()`
+  - `indexSessionArtifacts()`
+- **Effect:** Ownership is clearer and the hot path is easier to reason about, while preserving stable behavior in a sensitive runtime loop.
