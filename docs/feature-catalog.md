@@ -169,10 +169,10 @@ When `session.create()` is called with a `parentID`, the child session **inherit
 
 Two modes:
 
-- **`picker`**: injects an interactive overlay into the live browser. Click elements to select them, get CSS selectors, box model, accessibility tree. Max 200 elements.
-- **`etch`**: captures before/after DOM snapshots for style diffs and mutation tracking.
+- **`picker`**: injects an interactive overlay into the live browser via CDP. Click elements to select them, get CSS selectors, XPath, box model, accessibility tree, computed styles. Max 200 elements.
+- **`etch`**: captures before/after DOM snapshots for style diffs and mutation tracking. Selectors resolved once at start for consistent diff.
 
-Requires a running browser (Playwright). Source: `src/tool/annotate.ts`, `src/tool/etch.ts`
+Requires Chromium (managed via Puppeteer/CDP — NOT Playwright). Browser instances are reused within a session. Source: `src/tool/annotate.ts`, `src/tool/etch.ts`, `src/tool/browser.ts`
 
 ### Deferred Tools (experimental)
 
@@ -182,11 +182,17 @@ Threshold: 15 tools (configurable via `OPENCODE_DEFERRED_TOOLS_THRESHOLD`).
 
 - Source: `src/tool/search.ts`
 
-### Batched LSP Diagnostics
+### Batched LSP Diagnostics (End-of-Step)
 
-LSP diagnostics are debounced and batched — avoids one MCP call per file, sends all pending diagnostics in a single grouped response.
+LSP diagnostics are deferred to end-of-step rather than blocking inline per tool call. Previously each `edit`/`write`/`apply_patch` blocked 150ms–3s per file waiting for LSP. Now:
 
-- Source: `src/lsp/`
+1. Tools call `LSP.touchFile(path, false)` — fire-and-forget, no wait
+2. Processor accumulates edited files in `ctx.editedFiles: Set<string>`
+3. At `finish-step`, one batched `touchFile(file, true)` + `LSP.diagnostics()` for all files
+
+8-file refactor: from ~24s of diagnostic blocking → single pass at step end.
+
+- Source: `src/session/processor.ts:317-335`, `src/tool/edit.ts:145`
 
 ---
 
@@ -354,6 +360,43 @@ Config file: `~/.config/lightcode/lightcode.jsonc` (or `OPENCODE_CONFIG_DIR`).
 | `OPENCODE_ENABLE_EXA`                  | Enable Exa web search                                |
 
 ---
+
+---
+
+## 11. Performance Features
+
+### Tool Concurrency Safety
+
+Unsafe tools (write, bash, task, edit, apply_patch, todowrite, annotate, batch) are serialized via a promise chain — only one executes at a time. Safe tools (read, glob, grep, webfetch, websearch, codesearch, skill, lsp, tool_search, invalid) run concurrently with everything.
+
+Prevents races on `edit A + bash rm A` or two `bash` commands with side effects.
+
+- Classification via `concurrent: true` flag, set by `safe()` helper in `src/tool/registry.ts:152`
+- Serialization: promise-chain in `src/session/prompt.ts:421-430`
+
+### Native Deferred Tools
+
+For supported models, LightCode sends `defer_loading: true` via `providerOptions` instead of using the client-side `tool_search` tool. The provider handles tool discovery natively.
+
+| Mode   | How                                                            | When                                          |
+| ------ | -------------------------------------------------------------- | --------------------------------------------- |
+| Native | All tools sent with `deferLoading: true` on deferred ones      | Anthropic sonnet-4/opus-4, OpenAI gpt-5/o3/o4 |
+| Hybrid | Only core tools sent; client-side `tool_search` loads deferred | All other models                              |
+
+Detection: `ProviderTransform.supportsNativeDeferred(model)` — `src/provider/transform.ts:963`
+
+### Cost Tracker
+
+Token usage and estimated cost are tracked per-turn and displayed in multiple TUI locations:
+
+| Location              | What it shows                                                           |
+| --------------------- | ----------------------------------------------------------------------- |
+| Sidebar context panel | Last-message token count + % of context limit + total session cost      |
+| Subagent footer       | Cost per subagent task                                                  |
+| Prompt input area     | `{context} · {cost}` per assistant message                              |
+| **Sidebar footer**    | **⚠ Not yet implemented** — spec exists in `docs/cost-tracker-arch.md` |
+
+Cost computation: `Session.getUsage()` called at `finish-step` via `processor.ts`. Handles cache tokens, reasoning tokens, pricing tiers, and Decimal.js precision.
 
 ## Related Docs
 

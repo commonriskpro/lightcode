@@ -61,12 +61,25 @@ AFTER (end-of-step):
   finish-step → touchFile(A,B,C,true) → diagnostics → emit diag part
 ```
 
-## Files to Modify
+## Files Modified
 
-| File                       | Change                                                   |
-| -------------------------- | -------------------------------------------------------- |
-| `src/tool/edit.ts`         | touchFile(path, false), remove diagnostics block         |
-| `src/tool/write.ts`        | touchFile(path, false), remove diagnostics block         |
-| `src/tool/apply_patch.ts`  | touchFile(path, false), remove diagnostics block         |
-| `src/tool/multiedit.ts`    | No change (delegates to edit)                            |
-| `src/session/processor.ts` | Add editedFiles to ctx, batch diagnostics at finish-step |
+| File                          | Change                                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `src/tool/edit.ts:145`        | `touchFile(path, false)` — fire-and-forget, no inline diagnostics                                         |
+| `src/tool/write.ts:55`        | `touchFile(filepath, false)`                                                                              |
+| `src/tool/apply_patch.ts:238` | `touchFile(target, false)` for each changed file                                                          |
+| `src/tool/multiedit.ts`       | No change (delegates to edit)                                                                             |
+| `src/session/processor.ts`    | `editedFiles: Set<string>` on ctx (line 57); tracking at line 234-237; batch at finish-step lines 317-335 |
+
+## Implementation Status
+
+✅ **IMPLEMENTED** — all files changed as specified.
+
+The processor tracks edited files via tool metadata:
+
+- `meta?.filediff?.file` — for edit/multiedit
+- `meta?.filepath` — for write/apply_patch
+
+At `finish-step`, all accumulated files get a single `touchFile(file, true)` + `LSP.diagnostics()` call, and the results are emitted as `<diagnostics file="...">` parts.
+
+> **Note on Trigger Points table above**: the line numbers in "Current Code Path" and "Trigger Points" sections reflect the pre-implementation state. Post-implementation, inline diagnostic blocks have been removed from edit/write/apply_patch. The authoritative current state is `processor.ts:317-335`.

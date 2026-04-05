@@ -63,24 +63,34 @@ cost: z.object({
 
 Pricing available for all models via `models.dev`. Prices in USD per million tokens.
 
-### 2.3 Subagent Footer Already Shows Cost
+### 2.3 Cost Displayed in Multiple Locations (already implemented)
 
-**`src/cli/cmd/tui/routes/session/subagent-footer.tsx` lines 34-56**
+Cost and token tracking is implemented in **three locations**:
 
-The subagent footer ALREADY computes and displays cost:
+**`src/cli/cmd/tui/feature-plugins/sidebar/context.tsx`**
+
+Shows tokens of last message + context percentage of model limit + total session cost:
 
 ```ts
-const cost = msg.reduce((sum, item) => sum + (item.role === "assistant" ? item.cost : 0), 0)
-return { cost: cost > 0 ? money.format(cost) : undefined }
+const cost = createMemo(() => msg().reduce((sum, item) => sum + (item.role === "assistant" ? item.cost : 0), 0))
+// renders: "45,200 tokens" + "$0.42 spent"
 ```
 
-This proves the pattern works.
+**`src/cli/cmd/tui/routes/session/subagent-footer.tsx`**
 
-### 2.4 Current Footer
+Shows cost per subagent task in the subagent footer bar.
 
-**`src/cli/cmd/tui/routes/session/footer.tsx` lines 1-91**
+**`src/cli/cmd/tui/component/prompt/index.tsx`**
 
-Shows: working directory, LSP count, MCP count, `/status` hint, permissions count. NO cost/token info.
+Shows `{context} · {cost}` in the prompt input area footer (e.g. `"45.2K tokens · $0.42"`).
+
+### 2.4 What IS Missing — Main Session Footer
+
+**`src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx`**
+
+The sidebar footer shows: path, git branch, observer/reflector spinners, version. **No token count or cost.** This is the one location where the cost-tracker-arch.md spec calls for adding it — and it has NOT been implemented yet.
+
+> The spec (Section 5) targets `src/cli/cmd/tui/routes/session/footer.tsx`. The actual file is `src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx` — same concept, different path.
 
 ### 2.5 Sync Store
 
@@ -294,3 +304,15 @@ test("session cost aggregation", () => {
 ## 10. Summary
 
 **Implementation effort: ~30 minutes.** The entire data pipeline exists. We just display it.
+
+## 11. Implementation Status
+
+| Location                                                            | Status                     | Notes                                  |
+| ------------------------------------------------------------------- | -------------------------- | -------------------------------------- |
+| `session/processor.ts` — `Session.getUsage()` called at finish-step | ✅ Implemented             | Cost+tokens on every assistant message |
+| `sidebar/context.tsx` — tokens + cost in sidebar panel              | ✅ Implemented             | Shows last-message tokens + total cost |
+| `subagent-footer.tsx` — cost per subagent                           | ✅ Implemented             |                                        |
+| `prompt/index.tsx` — cost in prompt area                            | ✅ Implemented             |                                        |
+| `sidebar/footer.tsx` — tokens + cost in main footer bar             | ❌ **NOT YET IMPLEMENTED** | The spec's Section 5 target — pending  |
+
+The remaining gap is adding a `{N}K tokens · $X.XX` display to `sidebar/footer.tsx`, reusing the same aggregation pattern already used in `sidebar/context.tsx`.

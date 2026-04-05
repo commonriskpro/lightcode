@@ -178,31 +178,35 @@ Both SDK adapters already handle native deferred responses:
 
 No additional code needed in LightCode.
 
-## Files to Modify
+## Files Modified
 
-| File                        | Change                               | Lines     |
-| --------------------------- | ------------------------------------ | --------- |
-| `src/provider/transform.ts` | Add `supportsNativeDeferred()`       | ~15 lines |
-| `src/session/prompt.ts`     | Add native-mode branch before hybrid | ~20 lines |
-| `src/session/llm.ts`        | Extend `transformParams` middleware  | ~15 lines |
+| File                        | Change                                           | Lines     |
+| --------------------------- | ------------------------------------------------ | --------- |
+| `src/provider/transform.ts` | `supportsNativeDeferred()` function              | 963-973   |
+| `src/session/prompt.ts`     | Native-mode branch before hybrid (line 603)      | ~20 lines |
+| `src/session/llm.ts`        | `transformParams` middleware injection (371-382) | ~15 lines |
 
-**Total: ~50 lines of code.**
+## Implementation Status
 
-## Testing
+✅ **IMPLEMENTED** — all three files changed.
 
-### Unit Tests
+### Exact `supportsNativeDeferred()` implementation (`transform.ts:963`)
 
-- `supportsNativeDeferred()` returns correct provider for each model
-- Native mode keeps all tools in dict (no partitioning)
-- Native mode removes `tool_search` from tools
-- Hybrid mode unchanged for non-supported models
+```ts
+export function supportsNativeDeferred(model: Provider.Model): false | "anthropic" | "openai" {
+  const npm = model.api.npm
+  const id = model.api.id
+  if (npm === "@ai-sdk/anthropic" || npm === "@ai-sdk/google-vertex/anthropic") {
+    if (["sonnet-4", "opus-4"].some((v) => id.includes(v))) return "anthropic"
+  }
+  if (npm === "@ai-sdk/openai") {
+    if (["gpt-5", "o3", "o4"].some((v) => id.includes(v))) return "openai"
+  }
+  return false
+}
+```
 
-### Integration Tests
-
-- Anthropic sonnet-4 → native mode → `defer_loading: true` on wire
-- OpenAI gpt-5 → native mode → `defer_loading: true` on wire
-- DeepSeek → hybrid mode → client-side tool_search
-- Ollama → hybrid mode → client-side tool_search
+> **Note**: The Detection section above (spec phase) listed `@ai-sdk/google-vertex/anthropic` as a separate case — the implementation correctly includes it under the Anthropic branch.
 
 ## Risk Assessment
 

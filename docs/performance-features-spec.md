@@ -32,24 +32,28 @@ Execution:
 
 ### Classification
 
-| Tool                                  | Side Effects             | Safe?                   |
-| ------------------------------------- | ------------------------ | ----------------------- |
-| `read`, `glob`, `grep`                | Read-only filesystem     | ✅ safe                 |
-| `webfetch`, `websearch`, `codesearch` | External API (read-only) | ✅ safe                 |
-| `lsp`                                 | LSP queries (read-only)  | ✅ safe                 |
-| `invalid`                             | Error response           | ✅ safe                 |
-| `tool_search`                         | Mutates tools dict       | ✅ safe (no filesystem) |
-| `edit`, `write`, `apply_patch`        | Write files              | ❌ unsafe               |
-| `bash`                                | Arbitrary shell          | ❌ unsafe               |
-| `task`                                | Spawn subagent           | ❌ unsafe               |
-| `question`                            | Block on user input      | ❌ unsafe               |
-| `todowrite`                           | Write state              | ❌ unsafe               |
-| `skill`                               | Load instructions        | ✅ safe                 |
-| MCP tools                             | Unknown                  | ❌ unsafe (default)     |
+| Tool                           | Side Effects             | Safe?                       |
+| ------------------------------ | ------------------------ | --------------------------- |
+| `read`, `glob`, `grep`         | Read-only filesystem     | ✅ safe (registry `safe()`) |
+| `webfetch`                     | External API (read-only) | ✅ safe (registry `safe()`) |
+| `websearch` (Exa)              | External API (read-only) | ✅ safe (registry `safe()`) |
+| `codesearch` (Context7)        | External API (read-only) | ✅ safe (registry `safe()`) |
+| `lsp`                          | LSP queries (read-only)  | ✅ safe (registry `safe()`) |
+| `invalid`                      | Error response           | ✅ safe (registry `safe()`) |
+| `tool_search`                  | Read tools dict          | ✅ safe (registry `safe()`) |
+| `skill`                        | Load instructions        | ✅ safe (registry `safe()`) |
+| `edit`, `write`, `apply_patch` | Write files              | ❌ unsafe (serialized)      |
+| `bash`                         | Arbitrary shell          | ❌ unsafe (serialized)      |
+| `task`                         | Spawn subagent           | ❌ unsafe (serialized)      |
+| `question`                     | Block on user input      | ❌ unsafe (serialized)      |
+| `todowrite`, `todo`            | Write state              | ❌ unsafe (serialized)      |
+| `annotate`                     | Browser automation       | ❌ unsafe (serialized)      |
+| `batch`                        | Parallel execution       | ❌ unsafe (serialized)      |
+| MCP tools                      | Unknown                  | ❌ unsafe default           |
 
-### Design
+### Design (as implemented)
 
-#### 1. Add `concurrent` field to `Tool.Def` (`tool.ts`)
+#### 1. `concurrent` field on `Tool.Info` (`tool.ts:50`)
 
 ```ts
 export interface Def<...> {
@@ -58,49 +62,49 @@ export interface Def<...> {
 }
 ```
 
-#### 2. Wrap unsafe tool execute with semaphore (`prompt.ts`)
+#### 2. Promise-chain serialization (`prompt.ts:421-430`)
 
-In `resolveTools()`, wrap the `execute` function of unsafe tools with a shared semaphore:
-
-```ts
-const sem = new Semaphore(1) // one unsafe tool at a time
-
-const wrapped = tool({
-  execute(args, options) {
-    if (item.concurrent) {
-      return doExecute(args, options)
-    }
-    return sem.acquire().then(() => doExecute(args, options).finally(() => sem.release()))
-  },
-})
-```
-
-#### 3. Mark safe tools in registry
+Unsafe tools are serialized via a promise chain (not a traditional semaphore object):
 
 ```ts
-// In each tool definition file:
-export const GrepTool = Tool.define("grep", async () => ({
-  concurrent: true, // read-only
-  // ...
-}))
+let pending = Promise.resolve()
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const next = pending.then(fn, fn)
+  pending = next.then(
+    () => {},
+    () => {},
+  )
+  return next
+}
+// ...
+execute: isConcurrent ? doExecute : (args, options) => serialize(() => doExecute(args, options))
 ```
 
-### Files to Modify
+#### 3. Safe tools marked in `registry.ts` (not in individual tool files)
 
-| File                    | Change                                        |
-| ----------------------- | --------------------------------------------- |
-| `src/tool/tool.ts`      | Add `concurrent?: boolean` to `Def` interface |
-| `src/session/prompt.ts` | Semaphore wrapping in `resolveTools()`        |
-| `src/tool/read.ts`      | `concurrent: true`                            |
-| `src/tool/glob.ts`      | `concurrent: true`                            |
-| `src/tool/grep.ts`      | `concurrent: true`                            |
-| `src/tool/webfetch.ts`  | `concurrent: true`                            |
-| `src/tool/search.ts`    | `concurrent: true` (tool_search)              |
-| `src/tool/skill.ts`     | `concurrent: true`                            |
-| `src/tool/invalid.ts`   | `concurrent: true`                            |
-| `src/tool/lsp.ts`       | `concurrent: true`                            |
+Concurrent marking happens centrally in `src/tool/registry.ts` via a `safe()` helper:
 
-All other tools default to `false` (unsafe, sequential).
+```ts
+function safe(tool: Tool.Info): Tool.Info {
+  return { ...tool, concurrent: true }
+}
+
+// Applied in the all() function:
+safe(invalid), safe(read), safe(glob), safe(grep),
+defer(safe(skill), "..."), defer(safe(fetch), "..."),
+defer(safe(search), "..."), defer(safe(code), "..."),
+...(lsp_enabled ? [defer(safe(lsp), "...")] : []),
+```
+
+Individual tool source files do NOT have `concurrent: true` — the flag is applied in the registry.
+
+### Files Modified
+
+| File                    | Change                                                     |
+| ----------------------- | ---------------------------------------------------------- |
+| `src/tool/tool.ts`      | Added `concurrent?: boolean` to `Def` interface (line 50)  |
+| `src/session/prompt.ts` | Promise-chain serialization in `resolveTools()` (line 421) |
+| `src/tool/registry.ts`  | `safe()` helper + applied to read-only tools (line 152)    |
 
 ### Risk
 
@@ -207,79 +211,57 @@ When `task` tool is called WITHOUT a `subagent_type` (or with `subagent_type: "f
 3. **Copy the parent's tool set** — skip `resolveTools()`, use the already-resolved tools
 4. **Short directive prompt** — the task prompt is minimal because all context is inherited
 
-#### Implementation
+#### Implementation (as built)
 
-##### 1. Capture parent context in `prompt.ts`
-
-In `handleSubtask()` and `resolveTools()`, capture the resolved system prompt and tools:
+##### 1. `ForkContext` interface in `prompt.ts:74`
 
 ```ts
-// In the runLoop, after building system prompt and resolving tools:
-const forkContext = {
-  system, // the built system prompt array
-  tools, // the resolved tools dict
-  messages: msgs, // the conversation history
+export interface ForkContext {
+  system: string[]
+  tools: Record<string, AITool>
+  messages: readonly any[]
+}
+const forks = new Map<string, ForkContext>()
+
+export function setForkContext(sessionID: string, ctx: ForkContext)
+export function getActiveContext(sessionID: string): ForkContext | undefined
+```
+
+##### 2. Fork detection in `task.ts` (~line 122)
+
+When the `task` tool creates a subagent session and a parent context exists:
+
+```ts
+log.info("fork subagent", { parent: ctx.sessionID, child: session.id })
+SessionPrompt.setForkContext(session.id, parent)
+```
+
+The parent's `ForkContext` (system, tools, messages) is registered for the child session ID before the child's runLoop starts.
+
+##### 3. Fork usage in `prompt.ts runLoop` (~line 1647)
+
+At the start of the child runLoop, before `step 0`:
+
+```ts
+const fork = forks.get(sessionID)
+if (fork && step === 0) {
+  // Use parent's system prompt verbatim — same cache hash
+  system = fork.system
+  // Prepend parent's messages to child's conversation
+  const allMsgs = [...fork.messages, ...childMsgs]
+  // Use parent's resolved tools — no re-resolution
+  tools = fork.tools
 }
 ```
 
-##### 2. New `fork` path in `task.ts`
+No `forkMessages` parameter was added to `SessionPrompt.prompt()` — the fork context is passed out-of-band via `setForkContext()` before the session starts.
 
-When `subagent_type` is missing or `"fork"`:
+### Files Modified
 
-```ts
-// task.ts
-if (!params.subagent_type || params.subagent_type === "fork") {
-  // Use parent's system, tools, and messages
-  const result = await SessionPrompt.prompt({
-    sessionID: session.id,
-    model,
-    agent: "build", // same as parent
-    system: parentContext.system, // inherited
-    tools: parentContext.tools, // inherited, no re-resolution
-    forkMessages: parentContext.messages, // prepended to child history
-    parts: promptParts,
-  })
-}
-```
-
-##### 3. Modify `SessionPrompt.prompt()` to accept fork context
-
-Add optional `forkMessages` and `system` override parameters:
-
-```ts
-interface PromptInput {
-  // ... existing fields
-  forkMessages?: ModelMessage[] // prepend these to child's message history
-  system?: string[] // use these instead of rebuilding system prompt
-}
-```
-
-In `runLoop()`, when `forkMessages` is provided:
-
-- Skip `SystemPrompt.environment()`, `SystemPrompt.skills()`, `resolveTools()` — use provided values
-- Prepend `forkMessages` to the message history sent to the model
-
-##### 4. Fork guard
-
-Prevent fork-within-fork (exponential context explosion):
-
-```ts
-// In task.ts
-const isFork = !params.subagent_type || params.subagent_type === "fork"
-const parentIsFork = ctx.extra?.isFork === true
-if (isFork && parentIsFork) {
-  // Downgrade to regular subagent
-  params.subagent_type = "general"
-}
-```
-
-### Files to Modify
-
-| File                    | Change                                                                |
-| ----------------------- | --------------------------------------------------------------------- |
-| `src/tool/task.ts`      | Fork detection, pass parent context                                   |
-| `src/session/prompt.ts` | Accept `forkMessages` + `system` override, skip rebuild when provided |
-| `src/session/llm.ts`    | Accept pre-built system prompt                                        |
+| File                    | Change                                                        |
+| ----------------------- | ------------------------------------------------------------- |
+| `src/tool/task.ts`      | Fork detection + `SessionPrompt.setForkContext()` call (~122) |
+| `src/session/prompt.ts` | `ForkContext` interface, `forks` map, fork path in runLoop    |
 
 ### Cache Savings Estimate
 

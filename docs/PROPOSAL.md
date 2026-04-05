@@ -297,15 +297,15 @@ LightCode tracks the `dev` branch of [anomalyco/opencode](https://github.com/ano
 
 ## 8. Testing
 
-51 unit tests covering all new features:
+2055 unit + integration tests covering all features (as of 2026-04-05):
 
-- Tool concurrency classification and semaphore behavior
+- Tool concurrency classification and promise-chain serialization
 - Prompt cache stability sorting (deterministic order)
 - Fork subagent context inheritance and guards
 - Batched LSP diagnostics accumulation and emission
 - Native deferred tool detection and mode selection
 - Reactive compaction loop guard and orphan cleanup
-- Multi-step token accumulation
+- Memory system: Observer state machine, OM CRUD, Reflector threshold/retry, recall
 - AutoDream agent definition and gate system
 
 Test command: `bun test` from `packages/opencode`.
@@ -320,21 +320,25 @@ Test command: `bun test` from `packages/opencode`.
 - [x] Tool concurrency safety classification
 - [x] Prompt cache stability sorting
 - [x] Fork subagent (prompt cache sharing)
-- [x] Batched LSP diagnostics
+- [x] Batched LSP diagnostics (end-of-step)
 - [x] Native deferred tools (Anthropic + OpenAI)
-- [x] Compact system prompt (single file)
+- [x] Compact system prompt (single `lightcode.txt`)
 - [x] Reactive compaction hardening
-- [x] AutoDream (background memory consolidation)
-- [x] Fork branding (filesystem coexistence)
+- [x] AutoDream — Phase 1 (cross-session recall via Engram)
+- [x] AutoDream — Phase 2 (intra-session Observer + OMBuf state machine)
+- [x] AutoDream — Phase 3 (Reflector — compression retry loop 0–4 levels)
+- [x] OM Quality — 6 Mastra gaps: structured Observer output, currentTask round-trip, OBSERVATION_CONTEXT_INSTRUCTIONS, degenerate detection, adaptive ThresholdRange, suggestedContinuation hint
+- [x] Fork branding (filesystem coexistence `~/.lightcode/`)
 - [x] Deferred tools ungating (websearch, codesearch)
-- [x] Feature toggle system
+- [x] Feature toggle system (`/features` TUI command)
+- [x] Visual annotate tool (Puppeteer picker + etch modes)
+- [x] Semantic recall (mem_context + mem_search in parallel)
+- [x] Cost tracker (sidebar context panel, subagent footer, prompt area)
+- [x] `/memory` dashboard (observer status, token bar, Engram connection)
 
-### Planned
+### Pending
 
-- [ ] extractMemories (per-turn current-session extraction)
-- [ ] Pre-flight token estimation (proactive overflow prevention)
-- [ ] "Compacting..." status in TUI
-- [ ] AutoDream Phase 3 (session-aware extraction)
+- [ ] Cost tracker in sidebar footer bar (`sidebar/footer.tsx`) — spec in `docs/cost-tracker-arch.md`
 - [ ] Upstream contribution of non-fork-specific improvements
 
 ---
