@@ -5,13 +5,11 @@ import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
-import { MCP } from "@/mcp"
 import { Token } from "@/util/token"
 import { OM } from "./om"
 import { parseObservationGroups } from "./om/groups"
 import type { SessionID } from "./schema"
 import { Memory, SemanticRecall, WorkingMemory } from "@/memory"
-import { Flag } from "@/flag/flag"
 
 export namespace SystemPrompt {
   export function provider(_model: Provider.Model) {
@@ -138,101 +136,17 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     return out
   }
 
-  // Execute a single Engram MCP tool by partial name match, return text content.
-  async function callEngramTool(
-    all: Awaited<ReturnType<typeof MCP.tools>>,
-    name: string,
-    args: Record<string, unknown>,
-  ): Promise<string | undefined> {
-    const key = Object.keys(all).find((k) => k.includes("engram") && k.includes(name))
-    if (!key) return undefined
-    const tool = all[key]
-    if (!tool.execute) return undefined
-    const res = await tool.execute(args as any, {
-      toolCallId: name,
-      messages: [],
-      abortSignal: new AbortController().signal,
-    })
-    const parts = (res as any)?.content
-    if (!Array.isArray(parts) || parts.length === 0) return undefined
-    return (
-      parts
-        .filter((p: any) => p.type === "text" && p.text)
-        .map((p: any) => p.text as string)
-        .join("\n") || undefined
-    )
-  }
-
-  // recall() removed in final cleanup.
+  // Production cleanup: callEngramTool(), recallNative(), and recallEngram() removed.
   //
-  // The canonical recall path since V3 is Memory.buildContext({ semanticQuery, ... })
-  // called from prompt.ts at step===1. Memory.buildContext() assembles all memory layers
-  // including semantic recall via SemanticRecall.search() and SemanticRecall.recent().
+  // These were dead code — no active callers in the runtime since V3 adopted
+  // Memory.buildContext() as the canonical recall path. The OPENCODE_MEMORY_USE_ENGRAM
+  // flag was also removed from flag.ts since it was never checked at a call site.
   //
-  // recallNative() and recallEngram() below are retained as internal helpers for:
-  //   recallNative: test compatibility and potential direct use
-  //   recallEngram: OPENCODE_MEMORY_USE_ENGRAM=true fallback path
+  // Engram recall path cleanup rationale:
+  // - recallNative(): never called from hot path; recallEngram() fallback never called either
+  // - callEngramTool(): only used by recallEngram()
+  // - OPENCODE_MEMORY_USE_ENGRAM flag: defined in flag.ts but no call site checked it
   //
-  // If you need recall from outside the runtime hot path, call Memory.searchArtifacts() directly.
-
-  async function recallNative(pid: string, sessionId?: string, lastUserMessage?: string): Promise<string | undefined> {
-    try {
-      const scopes = [
-        ...(sessionId ? [{ type: "thread" as const, id: sessionId }] : []),
-        { type: "project" as const, id: pid },
-        { type: "user" as const, id: "default" },
-      ]
-
-      // V2 fix: use the actual user message text as the semantic query instead of
-      // the project UUID. Falls back to OM current_task, then to a generic query.
-      const omRec = sessionId ? Memory.getObservations(sessionId) : undefined
-      const query = lastUserMessage?.slice(0, 500) || omRec?.current_task || `project memory`
-
-      // Try FTS5 search first; fall back to recency-ordered results
-      let artifacts = Memory.searchArtifacts(query, scopes, 20)
-      if (!artifacts.length) {
-        // No FTS matches — fall back to most recently updated artifacts for these scopes
-        artifacts = SemanticRecall.recent(scopes, 10)
-      }
-      if (!artifacts.length) return undefined
-      const body = SemanticRecall.format(artifacts, 2000)
-      if (!body) return undefined
-      return wrapRecall(capRecallBody(body))
-    } catch {
-      return undefined
-    }
-  }
-
-  async function recallEngram(pid: string): Promise<string | undefined> {
-    try {
-      const all = await MCP.tools()
-
-      // Run mem_context (recency) and mem_search (semantic keywords) in parallel.
-      const [ctx, search] = await Promise.all([
-        callEngramTool(all, "mem_context", { limit: 20, project: pid }),
-        callEngramTool(all, "mem_search", { query: pid, project: pid, limit: 10 }),
-      ])
-
-      const ctxLines = new Set(
-        (ctx ?? "")
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean),
-      )
-      const searchExtra = (search ?? "")
-        .split("\n")
-        .filter((l) => l.trim() && !ctxLines.has(l.trim()))
-        .join("\n")
-
-      const merged = [ctx, searchExtra.trim() ? `\n### Also relevant\n${searchExtra}` : ""]
-        .filter(Boolean)
-        .join("")
-        .trim()
-
-      if (!merged) return undefined
-      return wrapRecall(capRecallBody(merged))
-    } catch {
-      return undefined
-    }
-  }
+  // For any production recall use outside the hot path, call Memory.searchArtifacts() directly.
+  // The canonical hot path is Memory.buildContext({ semanticQuery }) in prompt.ts at step===1.
 }

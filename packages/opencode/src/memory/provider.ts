@@ -55,8 +55,10 @@ export namespace Memory {
     const oBudget = opts.observationsBudget ?? 4000
     const rBudget = opts.semanticRecallBudget ?? 2000
 
+    const allScopes = [opts.scope, ...(opts.ancestorScopes ?? [])]
+
     // Load all layers in parallel
-    const [wRecords, omRec, artifacts] = await Promise.all([
+    const [wRecords, omRec, ftsArtifacts] = await Promise.all([
       Promise.resolve(WorkingMemory.getForScopes(opts.scope, opts.ancestorScopes ?? [])),
       Promise.resolve(
         opts.scope.type === "thread"
@@ -64,9 +66,15 @@ export namespace Memory {
           : undefined,
       ),
       opts.semanticQuery
-        ? Promise.resolve(SemanticRecall.search(opts.semanticQuery, [opts.scope, ...(opts.ancestorScopes ?? [])], 10))
+        ? Promise.resolve(SemanticRecall.search(opts.semanticQuery, allScopes, 10))
         : Promise.resolve([] as MemoryArtifact[]),
     ])
+
+    // Fallback: if FTS5 returned no results AND a query was provided,
+    // fall back to recency-ordered artifacts for these scopes.
+    // This ensures semanticRecall is never silently empty when artifacts exist.
+    const artifacts =
+      ftsArtifacts.length === 0 && opts.semanticQuery ? SemanticRecall.recent(allScopes, 5) : ftsArtifacts
 
     // Format each layer with token budgets
     const rawWM = WorkingMemory.format(wRecords, wBudget)

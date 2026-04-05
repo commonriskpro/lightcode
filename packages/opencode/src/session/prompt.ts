@@ -1518,7 +1518,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 history: msgs,
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            // Observer buffer trigger — accumulate tokens and fire Observer if threshold reached
+            // ─── OM Coordinator ─────────────────────────────────────────────
+            // Accumulate tokens, check OM threshold, and coordinate the
+            // buffer/activate/block pipeline. Separated from prompt assembly below.
             const tok = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
             const obsRec = OM.get(sessionID)
             let freshObsRec: typeof obsRec
@@ -1530,6 +1532,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               omCfg.experimental?.observer_message_tokens,
               omCfg.experimental?.observer_block_after,
             )
+            // activate(): condense buffered observations into the main OM record,
+            // then run the Reflector if observation tokens exceed the reflection threshold.
+            // Called on "activate" (background) and "block" (blocking) signals.
             const activate = async () => {
               await OMBuf.awaitInFlight(sessionID)
               OMBuf.setObserving(true)
@@ -1666,7 +1671,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               const forkMemCtx = yield* Effect.promise(() =>
                 Memory.buildContext({
                   scope: { type: "thread", id: sessionID },
-                  ancestorScopes: [{ type: "project", id: Instance.project.id }],
+                  // Production: include agent scope between thread and project.
+                  // Agent scope holds this agent's own operational working memory
+                  // across sessions (separate from project-wide memory).
+                  ancestorScopes: [
+                    { type: "agent", id: agent.name },
+                    { type: "project", id: Instance.project.id },
+                  ],
                   semanticQuery: forkLastUserText,
                 }),
               )
@@ -1792,11 +1803,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
                 yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+                // ─── Memory Assembler ──────────────────────────────────────
+                // At step===1: load recall + working memory via Memory.buildContext().
+                // Every turn: load observations (they change as Observer fires).
+                // Intentional split: recall/WM are session-stable (loaded once);
+                // observations are turn-volatile (reload required every turn).
                 if (step === 1) {
-                  // V3: canonical memory assembly via Memory.buildContext().
-                  // Replaces the scattered V2 calls to SystemPrompt.recall() +
-                  // SystemPrompt.projectWorkingMemory(). Memory.buildContext() wraps the same
-                  // primitives but is the single canonical entry point for all memory layers.
+                  // Canonical memory assembly via Memory.buildContext().
+                  // Single entry point for all memory layers: semantic recall +
+                  // working memory (thread + agent + project scopes).
+                  // Observations are loaded separately every turn (see below).
                   const lastUserText = msgs
                     .findLast((m) => m.info.role === "user")
                     ?.parts.filter((p) => p.type === "text")
@@ -1806,7 +1822,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   const memCtx = yield* Effect.promise(() =>
                     Memory.buildContext({
                       scope: { type: "thread", id: sessionID },
-                      ancestorScopes: [{ type: "project", id: Instance.project.id }],
+                      // Production: thread > agent > project scope chain.
+                      // thread keys override agent keys; agent keys override project keys.
+                      ancestorScopes: [
+                        { type: "agent", id: agent.name },
+                        { type: "project", id: Instance.project.id },
+                      ],
                       semanticQuery: lastUserText,
                     }),
                   )

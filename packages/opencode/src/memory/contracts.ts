@@ -1,5 +1,5 @@
 /**
- * LightCode Memory Core V1 — Internal Contracts
+ * LightCode Memory — Internal Contracts
  *
  * Pure TypeScript types and interfaces. No DB imports. No external dependencies.
  * This file is the contract layer between all memory modules.
@@ -7,6 +7,24 @@
 
 // ─── Scope Model ──────────────────────────────────────────────────────────────
 
+/**
+ * Memory scope types — ordered from most specific to least specific.
+ * Precedence in getForScopes(): thread > agent > project > user > global_pattern.
+ *
+ * Operational status:
+ * - "thread"         OPERATIONAL — per-session memory, loaded every turn via buildContext()
+ * - "agent"          OPERATIONAL — per-agent memory across sessions, loaded via buildContext() ancestorScopes
+ *                                  Writable via update_working_memory(scope="agent")
+ * - "project"        OPERATIONAL — shared across all agents/sessions for one project
+ *                                  Writable via update_working_memory(scope="project")
+ *                                  Auto-indexed from OM at session end
+ * - "user"           DORMANT — reserved for user-wide preferences, not yet wired in hot path
+ * - "global_pattern" DORMANT — reserved for cross-project reusable patterns, not yet wired
+ *                              Writes strip <private> tags (safety mechanism already in place)
+ *
+ * To activate "user" scope: add { type: "user", id: "default" } to ancestorScopes in buildContext().
+ * To activate "global_pattern" scope: same pattern, but carefully guard against private data leakage.
+ */
 export type MemoryScope = "thread" | "agent" | "project" | "user" | "global_pattern"
 
 export interface ScopeRef {

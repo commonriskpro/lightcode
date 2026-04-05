@@ -52,17 +52,28 @@ export namespace WorkingMemory {
 
   /**
    * Get working memory records for a chain of scopes.
-   * Returns records from all scopes, most-specific-first order.
-   * Deduplication: if the same key appears in multiple scopes, the most specific wins.
+   *
+   * Returns records from all scopes in precedence order: most-specific first
+   * (primary scope), then ancestors in order. When the same logical key appears
+   * in multiple scopes, the most specific scope wins.
+   *
+   * Precedence order (highest to lowest):
+   *   thread > agent > project > user > global_pattern
+   *
+   * Bug fix (production): the previous dedup key was `"${scope_type}:${key}"`,
+   * which made records from different scope types with the same key name ALL
+   * pass through — defeating the "most specific wins" contract. The key is now
+   * just `r.key` so thread's "goals" overrides project's "goals" correctly.
    */
   export function getForScopes(primary: ScopeRef, ancestors: ScopeRef[]): WorkingMemoryRecord[] {
     const all = [primary, ...ancestors].flatMap((s) => get(s))
-    // Deduplicate by key: most specific scope (first in list) wins
+    // Deduplicate by logical key name across scopes.
+    // Since records are ordered most-specific-first (primary first, then ancestors),
+    // the first occurrence of each key name is the highest-precedence value.
     const seen = new Set<string>()
     return all.filter((r) => {
-      const k = `${r.scope_type}:${r.key}`
-      if (seen.has(k)) return false
-      seen.add(k)
+      if (seen.has(r.key)) return false
+      seen.add(r.key)
       return true
     })
   }

@@ -87,14 +87,15 @@ export namespace Flag {
   export const OPENCODE_AUTODREAM_MIN_SESSIONS = number("OPENCODE_AUTODREAM_MIN_SESSIONS") ?? 5
 
   /**
-   * Memory Core V1 flags.
+   * Memory flags.
    *
-   * OPENCODE_MEMORY_USE_ENGRAM=true  → use legacy Engram MCP path for cross-session recall
-   *                                    (default: false — native MemoryProvider is used)
    * OPENCODE_DREAM_USE_NATIVE_MEMORY=false → use legacy Engram MCP path for AutoDream consolidation
    *                                    (default: true — native Memory.indexArtifact() is used)
+   *
+   * OPENCODE_MEMORY_USE_ENGRAM has been removed. The Engram recall path (recallEngram(),
+   * callEngramTool()) was dead code with no active callers — the flag was never checked.
+   * Native LightCode memory is now the unconditional canonical recall path.
    */
-  export const OPENCODE_MEMORY_USE_ENGRAM = truthy("OPENCODE_MEMORY_USE_ENGRAM")
   export const OPENCODE_DREAM_USE_NATIVE_MEMORY = !falsy("OPENCODE_DREAM_USE_NATIVE_MEMORY")
 
   function number(key: string) {

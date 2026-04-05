@@ -35,17 +35,46 @@ function normalizeTopicKey(k: string | null | undefined): string | null {
   return k.replace(/\s+/g, "-").toLowerCase().trim() || null
 }
 
+function cleanToken(t: string): string {
+  const reserved = new Set(["and", "or", "not"])
+  const next = t.replace(/[^\p{L}\p{N}_-]/gu, "").trim()
+  if (!next) return ""
+  if (reserved.has(next.toLowerCase())) return ""
+  return next
+}
+
 /**
- * Sanitize a search query for FTS5: wrap each token in double quotes.
- * This prevents crashes from FTS5 special chars (AND, OR, NOT, *, etc.)
+ * Sanitize a search query for FTS5 high-precision AND mode.
+ * Each token is double-quoted → exact-token AND matching.
+ * "auth JWT tokens" → "auth" "JWT" "tokens"
+ * ALL tokens must appear in the document (high precision, lower recall).
  */
 function sanitizeFTS(query: string): string {
   return query
     .trim()
     .split(/\s+/)
+    .map(cleanToken)
     .filter(Boolean)
-    .map((t) => `"${t.replace(/"/g, "")}"`)
+    .map((t) => `"${t}"`)
     .join(" ")
+}
+
+/**
+ * Sanitize a search query for FTS5 prefix-OR mode (higher recall fallback).
+ * Each token becomes a prefix wildcard match joined with OR (implicit in FTS5 when tokens are space-separated without AND).
+ * "auth JWT tokens" → auth* OR JWT* OR tokens*
+ * ANY token prefix match returns a result (lower precision, much higher recall).
+ *
+ * Used as a fallback when the high-precision AND mode returns 0 results.
+ */
+function sanitizeFTSPrefix(query: string): string {
+  return query
+    .trim()
+    .split(/\s+/)
+    .map(cleanToken)
+    .filter(Boolean)
+    .map((t) => `${t}*`)
+    .join(" OR ")
 }
 
 function nowId(): string {
@@ -215,38 +244,74 @@ export namespace SemanticRecall {
       }
     }
 
-    // FTS5 search
-    const ftsQuery = sanitizeFTS(query)
-    if (ftsQuery) {
-      try {
-        const raw = Database.use((db) =>
-          db.all(sql`
-            SELECT a.id, a.scope_type, a.scope_id, a.type, a.title, a.content,
-                   a.topic_key, a.normalized_hash, a.revision_count, a.duplicate_count,
-                   a.last_seen_at, a.deleted_at, a.time_created, a.time_updated,
-                   f.rank
-            FROM memory_artifacts_fts f
-            JOIN memory_artifacts a ON a.rowid = f.rowid
-            WHERE memory_artifacts_fts MATCH ${ftsQuery}
-              AND a.deleted_at IS NULL
-              AND (${sql.raw(scopeConditions)})
-            ORDER BY f.rank
-            LIMIT ${limit}
-          `),
-        ) as (MemoryArtifact & { rank: number })[]
+    // FTS5 two-pass search strategy for production-quality recall:
+    //
+    // Pass 1 — High-precision AND mode (all tokens quoted, exact match):
+    //   "auth" "JWT" "tokens" → document must contain ALL tokens exactly.
+    //   Best for short, precise queries. High precision, lower recall.
+    //
+    // Pass 2 — High-recall prefix-OR mode (fallback when AND returns 0):
+    //   auth* OR JWT* OR tokens* → document needs ANY prefix match.
+    //   Catches "authentication" from "auth*", "authorization" from "auth*", etc.
+    //   Much higher recall for natural language queries like "how does auth work".
+    //
+    // This two-pass approach fixes the production recall quality issue where
+    // a query like "authentication system" returned 0 results because "auth"
+    // (with exact-AND) doesn't match "authentication" in the indexed content.
+    const ftsQueryAnd = sanitizeFTS(query)
+    const ftsQueryOr = sanitizeFTSPrefix(query)
 
-        for (const r of raw) {
+    const runFTSQuery = (ftsQuery: string): (MemoryArtifact & { rank: number })[] => {
+      return Database.use((db) =>
+        db.all(sql`
+          SELECT a.id, a.scope_type, a.scope_id, a.type, a.title, a.content,
+                 a.topic_key, a.normalized_hash, a.revision_count, a.duplicate_count,
+                 a.last_seen_at, a.deleted_at, a.time_created, a.time_updated,
+                 f.rank
+          FROM memory_artifacts_fts f
+          JOIN memory_artifacts a ON a.rowid = f.rowid
+          WHERE memory_artifacts_fts MATCH ${ftsQuery}
+            AND a.deleted_at IS NULL
+            AND (${sql.raw(scopeConditions)})
+          ORDER BY f.rank
+          LIMIT ${limit}
+        `),
+      ) as (MemoryArtifact & { rank: number })[]
+    }
+
+    if (ftsQueryAnd) {
+      // Pass 1: AND mode
+      let andResults: (MemoryArtifact & { rank: number })[] = []
+      try {
+        andResults = runFTSQuery(ftsQueryAnd)
+        for (const r of andResults) {
           if (!seen.has(r.id)) {
             results.push(r)
             seen.add(r.id)
           }
         }
       } catch (err) {
-        // Log FTS5 errors — silently swallowing made debugging hard in V1
         const msg = err instanceof Error ? err.message : String(err)
         if (!msg.includes("no such table")) {
-          // Only log real query errors, not missing-table errors (fresh DB)
-          console.warn("[memory] FTS5 search error:", msg)
+          console.warn("[memory] FTS5 AND search error:", msg)
+        }
+      }
+
+      // Pass 2: prefix-OR mode fallback — only if AND returned 0 new results
+      if (results.length === 0 && ftsQueryOr) {
+        try {
+          const orResults = runFTSQuery(ftsQueryOr)
+          for (const r of orResults) {
+            if (!seen.has(r.id)) {
+              results.push(r)
+              seen.add(r.id)
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (!msg.includes("no such table")) {
+            console.warn("[memory] FTS5 OR search error:", msg)
+          }
         }
       }
     }
