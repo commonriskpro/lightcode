@@ -72,7 +72,7 @@ export namespace SystemPrompt {
    * V3: instruction for when agents should write to working memory.
    * Injected alongside the working memory block so agents know when to update it.
    */
-  export const WORKING_MEMORY_GUIDANCE = `When you make a significant architectural decision, technology choice, or discover a key constraint or goal for this project, call \`update_working_memory\` with scope="project" to persist it for future sessions. Keep entries concise and factual.`
+  export const WORKING_MEMORY_GUIDANCE = `When you make a significant architectural decision, technology choice, or discover a key constraint or goal for this project, call \`update_working_memory\` with scope="project" to persist it for future sessions. Use \`update_user_memory\` only when the user explicitly asks you to save a durable personal preference, default, or workflow habit. Keep entries concise and factual.`
 
   /**
    * Wrap working memory content for injection into the system prompt.

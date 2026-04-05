@@ -23,6 +23,8 @@ import { Memory } from "../../src/memory/provider"
 import { SemanticRecall } from "../../src/memory/semantic-recall"
 import { WorkingMemory } from "../../src/memory/working-memory"
 import { Handoff } from "../../src/memory/handoff"
+import { UpdateUserMemoryTool } from "../../src/tool/memory"
+import type { Tool } from "../../src/tool/tool"
 import type { ScopeRef } from "../../src/memory/contracts"
 
 // ─── Test DB setup ────────────────────────────────────────────────────────────
@@ -54,6 +56,7 @@ const threadScope: ScopeRef = { type: "thread", id: "prod-thread" }
 const agentScope: ScopeRef = { type: "agent", id: "build" }
 const projectScope: ScopeRef = { type: "project", id: "prod-project" }
 const userScope: ScopeRef = { type: "user", id: "default" }
+const globalScope: ScopeRef = { type: "global_pattern", id: "prod-global" }
 
 // ─── P-1: Working Memory Precedence ──────────────────────────────────────────
 
@@ -143,6 +146,21 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(goalRecords).toHaveLength(1)
     // Bug condition: if both were returned, this would be 2
     expect(goalRecords[0].scope_type).toBe("thread")
+  })
+
+  test("thread > agent > project > user > global_pattern precedence chain", () => {
+    WorkingMemory.set(globalScope, "mode", "Global mode")
+    WorkingMemory.set(userScope, "mode", "User mode")
+    WorkingMemory.set(projectScope, "mode", "Project mode")
+    WorkingMemory.set(agentScope, "mode", "Agent mode")
+    WorkingMemory.set(threadScope, "mode", "Thread mode")
+
+    const records = WorkingMemory.getForScopes(threadScope, [agentScope, projectScope, userScope, globalScope])
+    const mode = records.filter((r) => r.key === "mode")
+
+    expect(mode).toHaveLength(1)
+    expect(mode[0].scope_type).toBe("thread")
+    expect(mode[0].value).toBe("Thread mode")
   })
 })
 
@@ -391,6 +409,94 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
     // Both should include agent scope
     const agentScopeCount = (src.match(/type: "agent"/g) ?? []).length
     expect(agentScopeCount).toBeGreaterThanOrEqual(2)
+  })
+
+  test("runtime load path includes user scope and keeps global_pattern dormant", () => {
+    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
+    const loadStart = src.indexOf("async function loadRuntimeMemory(")
+    const loadEnd = src.indexOf("function indexSessionArtifacts(", loadStart)
+    const body = src.slice(loadStart, loadEnd)
+
+    expect(body).toContain("Memory.userScope()")
+    expect(body).not.toContain('type: "global_pattern"')
+  })
+
+  test("buildContext includes user working memory when user scope is in ancestry", async () => {
+    WorkingMemory.set(projectScope, "proj_pref", "project default")
+    WorkingMemory.set(userScope, "user_pref", "user default")
+
+    const ctx = await Memory.buildContext({
+      scope: { type: "thread", id: "user-scope-test" },
+      ancestorScopes: [agentScope, projectScope, userScope],
+    })
+
+    expect(ctx.workingMemory).toBeDefined()
+    expect(ctx.workingMemory).toContain("project default")
+    expect(ctx.workingMemory).toContain("user default")
+  })
+
+  test("runtime buildContext does not load global_pattern when hot path omits it", async () => {
+    SemanticRecall.index({
+      scope_type: "global_pattern",
+      scope_id: globalScope.id,
+      type: "pattern",
+      title: "Global pattern only",
+      content: "global pattern should stay dormant in runtime loading",
+      topic_key: null,
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
+
+    const ctx = await Memory.buildContext({
+      scope: { type: "thread", id: "global-dormant-test" },
+      ancestorScopes: [agentScope, projectScope, userScope],
+      semanticQuery: "global pattern dormant",
+    })
+
+    expect(ctx.semanticRecall).toBeUndefined()
+  })
+})
+
+// ─── P-5C: Explicit user memory write path ────────────────────────────────────
+
+describe("P-5C: update_user_memory is explicit and controlled", () => {
+  beforeEach(setup)
+  afterEach(teardown)
+
+  test("tool asks for approval before writing user memory", async () => {
+    let asked = 0
+    const def = await UpdateUserMemoryTool.init()
+    const ctx: Tool.Context = {
+      sessionID: "user-write-test" as never,
+      messageID: "msg-user-write-test" as never,
+      agent: "build",
+      abort: new AbortController().signal,
+      messages: [],
+      metadata() {},
+      ask(input) {
+        asked += 1
+        expect(input.permission).toBe("memory.user.write")
+        expect(input.patterns).toEqual(["default:workflow"])
+        expect(input.always).toEqual([])
+        return Promise.resolve()
+      },
+    }
+
+    await def.execute({ key: "workflow", value: "Prefer concise answers" }, ctx)
+
+    expect(asked).toBe(1)
+    expect(WorkingMemory.get(userScope, "workflow")[0].value).toBe("Prefer concise answers")
+  })
+
+  test("general working memory tool still does not expose user scope", () => {
+    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/memory.ts"), "utf-8") as string
+
+    expect(src).toContain('Tool.define("update_user_memory"')
+    expect(src).toContain('.enum(["thread", "agent", "project"])')
+    expect(src).not.toContain('.enum(["thread", "agent", "project", "user"])')
   })
 })
 

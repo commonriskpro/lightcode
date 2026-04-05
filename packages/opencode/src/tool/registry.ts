@@ -38,7 +38,7 @@ import { Question } from "../question"
 import { Todo } from "../session/todo"
 import { AnnotateTool } from "./annotate"
 import { RecallTool } from "./recall"
-import { UpdateWorkingMemoryTool } from "./memory"
+import { UpdateUserMemoryTool, UpdateWorkingMemoryTool } from "./memory"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -146,6 +146,7 @@ export namespace ToolRegistry {
         const annotate = yield* build(AnnotateTool)
         const recall = yield* build(RecallTool)
         const updateWorkingMemory = yield* build(UpdateWorkingMemoryTool)
+        const updateUserMemory = yield* build(UpdateUserMemoryTool)
 
         const toolSearch = yield* build(ToolSearchTool)
 
@@ -179,6 +180,7 @@ export namespace ToolRegistry {
             defer(safe(code), "Search code via Context7"),
             defer(safe(recall), "Retrieve source messages for an observation group by range"),
             defer(safe(updateWorkingMemory), "Persist stable facts, goals, or decisions to working memory"),
+            defer(safe(updateUserMemory), "Persist user-wide preferences or defaults with explicit approval"),
             defer(patch, "Apply unified diff patches"),
             ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(safe(lsp), "Language server diagnostics and hover")] : []),
             defer(annotate, "Open URL and return visual annotations via Puppeteer"),

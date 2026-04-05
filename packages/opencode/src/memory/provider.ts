@@ -27,11 +27,12 @@ import type {
   ForkContext,
   ObservationRecord,
 } from "./contracts"
+import { DEFAULT_USER_SCOPE_ID } from "./contracts"
 
 // ─── System prompt wrappers ───────────────────────────────────────────────────
 
 const WORKING_MEMORY_GUIDANCE =
-  'When you make a significant architectural decision, technology choice, or discover a key constraint or goal for this project, call `update_working_memory` with scope="project" or scope="agent" to persist it for future sessions. Keep entries concise and factual.'
+  'When you make a significant architectural decision, technology choice, or discover a key constraint or goal for this project, call `update_working_memory` with scope="project" or scope="agent" to persist it for future sessions. Use `update_user_memory` only when the user explicitly asks to save a durable personal preference, default, or workflow habit. Keep entries concise and factual.'
 
 function wrapWorkingMemory(body: string, scope: string): string {
   return `<working-memory scope="${scope}">\n${body}\n</working-memory>\n\n${WORKING_MEMORY_GUIDANCE}`
@@ -44,6 +45,10 @@ function wrapSemanticRecall(body: string): string {
 // ─── Memory namespace ─────────────────────────────────────────────────────────
 
 export namespace Memory {
+  export function userScope(id = DEFAULT_USER_SCOPE_ID): ScopeRef {
+    return { type: "user", id }
+  }
+
   /**
    * Build a composed MemoryContext from all available memory layers.
    *
@@ -118,6 +123,15 @@ export namespace Memory {
     format: "markdown" | "json" = "markdown",
   ): void {
     WorkingMemory.set(scope, key, value, format)
+  }
+
+  export function setUserMemory(
+    key: string,
+    value: string,
+    format: "markdown" | "json" = "markdown",
+    id = DEFAULT_USER_SCOPE_ID,
+  ): void {
+    WorkingMemory.set(userScope(id), key, value, format)
   }
 
   // ─── Observational Memory ───────────────────────────────────────────────────

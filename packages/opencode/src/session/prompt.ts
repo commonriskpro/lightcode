@@ -168,6 +168,7 @@ export namespace SessionPrompt {
       ancestorScopes: [
         { type: "agent", id: agentName },
         { type: "project", id: Instance.project.id },
+        Memory.userScope(),
       ],
       semanticQuery: lastUserText(msgs),
     })
@@ -1922,7 +1923,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 if (step === 1) {
                   // Canonical memory assembly via Memory.buildContext().
                   // Single entry point for all memory layers: semantic recall +
-                  // working memory (thread + agent + project scopes).
+                  // working memory (thread + agent + project + user scopes).
                   // Observations are loaded separately every turn (see below).
                   const mem = yield* Effect.promise(() => loadRuntimeMemory(sessionID, agent.name, msgs))
                   recall = mem.recall

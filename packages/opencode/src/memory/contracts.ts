@@ -18,14 +18,17 @@
  * - "project"        OPERATIONAL — shared across all agents/sessions for one project
  *                                  Writable via update_working_memory(scope="project")
  *                                  Auto-indexed from OM at session end
- * - "user"           DORMANT — reserved for user-wide preferences, not yet wired in hot path
+ * - "user"           OPERATIONAL — user-wide durable memory loaded via buildContext() ancestry
+ *                                  Writable only through explicit user-memory write path
  * - "global_pattern" DORMANT — reserved for cross-project reusable patterns, not yet wired
  *                              Writes strip <private> tags (safety mechanism already in place)
  *
- * To activate "user" scope: add { type: "user", id: "default" } to ancestorScopes in buildContext().
- * To activate "global_pattern" scope: same pattern, but carefully guard against private data leakage.
+ * Runtime precedence remains: thread > agent > project > user > global_pattern.
+ * global_pattern intentionally stays out of the runtime hot path.
  */
 export type MemoryScope = "thread" | "agent" | "project" | "user" | "global_pattern"
+
+export const DEFAULT_USER_SCOPE_ID = "default"
 
 export interface ScopeRef {
   type: MemoryScope
