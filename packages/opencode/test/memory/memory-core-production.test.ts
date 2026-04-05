@@ -19,6 +19,7 @@ import os from "os"
 import path from "path"
 import { rm } from "fs/promises"
 import { Database } from "../../src/storage/db"
+import { DEFAULT_USER_SCOPE_ID } from "../../src/memory/contracts"
 import { Memory } from "../../src/memory/provider"
 import { SemanticRecall } from "../../src/memory/semantic-recall"
 import { WorkingMemory } from "../../src/memory/working-memory"
@@ -26,6 +27,7 @@ import { Handoff } from "../../src/memory/handoff"
 import { UpdateUserMemoryTool, UpdateWorkingMemoryTool } from "../../src/tool/memory"
 import { ToolRegistry } from "../../src/tool/registry"
 import { Instance } from "../../src/project/instance"
+import { SystemPrompt } from "../../src/session/system"
 import type { Tool } from "../../src/tool/tool"
 import type { ScopeRef } from "../../src/memory/contracts"
 import { tmpdir } from "../fixture/fixture"
@@ -587,20 +589,21 @@ describe("P-5B: Durable child recovery is consumed from DB state", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("prompt.ts reads Memory.getHandoff() and Memory.getForkContext() via durable hydration helper", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
+  test("Memory.writeForkContext persists enriched workingMemorySnapshot payloads", () => {
+    Memory.writeForkContext({
+      session_id: "child-prod-fork-1",
+      parent_session_id: "parent-prod-fork-1",
+      context: JSON.stringify({
+        taskDescription: "Implement auth recovery",
+        currentTask: "Ship auth",
+        suggestedContinuation: "Continue with retries",
+        workingMemorySnapshot: [{ key: "goal", value: "ship auth" }],
+      }),
+    })
 
-    expect(src).toContain("function durableChildHydration(")
-    expect(src).toContain("Memory.getHandoff(sessionID)")
-    expect(src).toContain("Memory.getForkContext(sessionID)")
-  })
-
-  test("task.ts writes enriched fork snapshot with workingMemorySnapshot values", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/tool/task.ts"), "utf-8") as string
-
-    expect(src).toContain("workingMemorySnapshot")
-    expect(src).toContain("key: r.key")
-    expect(src).toContain("value: r.value")
+    const row = Memory.getForkContext("child-prod-fork-1")
+    expect(row).toBeDefined()
+    expect(JSON.parse(row!.context).workingMemorySnapshot).toEqual([{ key: "goal", value: "ship auth" }])
   })
 
   test("Memory.writeHandoff() persists and Memory.getHandoff() retrieves child handoff state", () => {
@@ -618,22 +621,6 @@ describe("P-5B: Durable child recovery is consumed from DB state", () => {
     expect(row).toBeDefined()
     expect(row!.context).toBe("Implement auth recovery")
     expect(JSON.parse(row!.working_memory_snap!)[0].value).toBe("ship auth")
-  })
-})
-
-// ─── P-6: runLoop structural comments ────────────────────────────────────────
-
-describe("P-6: runLoop has structural section comments", () => {
-  test("prompt.ts has OM Coordinator section comment", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-
-    expect(src).toContain("OM Coordinator")
-  })
-
-  test("prompt.ts has Memory Assembler section comment", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/prompt.ts"), "utf-8") as string
-
-    expect(src).toContain("Memory Assembler")
   })
 })
 
@@ -660,21 +647,9 @@ describe("P-6B: Working memory guidance is present in provider hot path output",
 // ─── P-7: Dead Engram recall code removed from system.ts ──────────────────────
 
 describe("P-7: Dead Engram recall code removed from system.ts", () => {
-  test("callEngramTool() is removed from system.ts", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/system.ts"), "utf-8") as string
-
-    expect(src).not.toContain("async function callEngramTool(")
-    expect(src).not.toContain("async function recallNative(")
-    expect(src).not.toContain("async function recallEngram(")
-  })
-
-  test("system.ts no longer imports MCP (was only used by callEngramTool)", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/session/system.ts"), "utf-8") as string
-
-    // MCP import was removed when callEngramTool was removed
-    const importLines = src.split("\n").filter((l) => l.startsWith("import") && !l.startsWith("//"))
-    const mcpImport = importLines.find((l) => l.includes("MCP"))
-    expect(mcpImport).toBeUndefined()
+  test("legacy recall APIs are absent from the public runtime surface", () => {
+    expect((SystemPrompt as Record<string, unknown>).recall).toBeUndefined()
+    expect((SystemPrompt as Record<string, unknown>).projectWorkingMemory).toBeUndefined()
   })
 })
 
@@ -692,22 +667,12 @@ describe("P-8: OPENCODE_MEMORY_USE_ENGRAM flag removed from flag.ts", () => {
   })
 })
 
-// ─── P-9: Scope dormancy documented ──────────────────────────────────────────
+// ─── P-9: Scope defaults remain stable ───────────────────────────────────────
 
-describe("P-9: Scope dormancy documented in contracts.ts", () => {
-  test("contracts.ts documents scope operational status", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/memory/contracts.ts"), "utf-8") as string
-
-    expect(src).toContain("OPERATIONAL")
-    expect(src).toContain("DORMANT")
-    expect(src).toContain("user")
-    expect(src).toContain("global_pattern")
-  })
-
-  test("contracts.ts documents Precedence ordering", () => {
-    const src = require("fs").readFileSync(path.join(__dirname, "../../src/memory/contracts.ts"), "utf-8") as string
-
-    expect(src).toContain("thread > agent > project > user > global_pattern")
+describe("P-9: Scope defaults remain stable", () => {
+  test("user scope helper uses the exported default id", () => {
+    expect(DEFAULT_USER_SCOPE_ID).toBe("default")
+    expect(Memory.userScope()).toEqual({ type: "user", id: DEFAULT_USER_SCOPE_ID })
   })
 })
 

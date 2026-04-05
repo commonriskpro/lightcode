@@ -1,15 +1,18 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { Bus } from "../../src/bus"
 import { Instance } from "../../src/project/instance"
 import { Server } from "../../src/server/server"
 import { Session } from "../../src/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
+import { SessionPrompt } from "../../src/session/prompt"
 import { Log } from "../../src/util/log"
 import { tmpdir } from "../fixture/fixture"
 
 Log.init({ print: false })
 
 afterEach(async () => {
+  mock.restore()
   await Instance.disposeAll()
 })
 
@@ -146,14 +149,38 @@ describe("session messages endpoint", () => {
 })
 
 describe("session.prompt_async error handling", () => {
-  test("prompt_async route has error handler for detached prompt call", async () => {
-    const src = await Bun.file(new URL("../../src/server/routes/session.ts", import.meta.url)).text()
-    const start = src.indexOf('"/:sessionID/prompt_async"')
-    const end = src.indexOf('"/:sessionID/command"', start)
-    expect(start).toBeGreaterThan(-1)
-    expect(end).toBeGreaterThan(start)
-    const route = src.slice(start, end)
-    expect(route).toContain(".catch(")
-    expect(route).toContain("Bus.publish(Session.Event.Error")
+  test("prompt_async publishes a session error when detached prompt fails", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await withoutWatcher(() =>
+      Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const session = await Session.create({})
+          const app = Server.Default()
+          const err = new Error("prompt exploded")
+          const prompt = spyOn(SessionPrompt, "prompt").mockRejectedValue(err)
+          const publish = spyOn(Bus, "publish").mockResolvedValue()
+
+          const res = await app.request(`/session/${session.id}/prompt_async`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
+          })
+
+          expect(res.status).toBe(204)
+          for (let i = 0; i < 20 && publish.mock.calls.length === 0; i++) {
+            await new Promise((r) => setTimeout(r, 0))
+          }
+
+          expect(prompt).toHaveBeenCalled()
+          expect(publish).toHaveBeenCalledWith(Session.Event.Error, {
+            sessionID: session.id,
+            error: { name: "UnknownError", data: { message: "prompt exploded" } },
+          })
+
+          await Session.remove(session.id)
+        },
+      }),
+    )
   })
 })
