@@ -116,26 +116,14 @@ export namespace OM {
     )
   }
 
-  /**
-   * Durability-safe observation write + seal advance.
-   *
-   * CRITICAL INVARIANT: do not mark anything as observed before durable
-   * persistence succeeds. This wraps the upsert + seal advance in a single
-   * transaction so that a DB write failure leaves the seal unchanged and the
-   * observation backlog retries on the next threshold crossing.
-   *
-   * Use this instead of bare `upsert()` + `OMBuf.seal()` in session/prompt.ts.
-   */
-  export function observeSafe(sid: SessionID, rec: ObservationRecord, sealAt: number): void {
-    // OMBuf is imported lazily to avoid circular dependency at module load time
-    const { OMBuf } = require("./buffer") as typeof import("./buffer")
-
-    Database.transaction(() => {
-      Database.use((db) =>
-        db.insert(ObservationTable).values(rec).onConflictDoUpdate({ target: ObservationTable.id, set: rec }).run(),
-      )
-      // Advance seal ONLY after the DB write succeeds (inside the same transaction)
-      OMBuf.seal(sid, sealAt)
-    })
-  }
+  // V3: observeSafe() removed.
+  //
+  // It targeted the old direct-upsert+seal pattern (V0 era) and was never called.
+  // The actual OM durability path since V2 is: addBuffer() → (later) activate().
+  // V2 fixed the atomicity by moving seal+trackObserved INSIDE the async Observer closure
+  // after addBuffer() succeeds (prompt.ts). That is the canonical OM durability path.
+  //
+  // If a true transactional addBuffer+seal is needed in the future, implement
+  // addBufferSafe() that wraps the ObservationBufferTable insert and OMBuf.seal()
+  // in a single DB.transaction(). That is architecturally correct for the current path.
 }

@@ -67,12 +67,19 @@ export namespace SystemPrompt {
   }
 
   /**
+   * V3: instruction for when agents should write to working memory.
+   * Injected alongside the working memory block so agents know when to update it.
+   */
+  export const WORKING_MEMORY_GUIDANCE = `When you make a significant architectural decision, technology choice, or discover a key constraint or goal for this project, call \`update_working_memory\` with scope="project" to persist it for future sessions. Keep entries concise and factual.`
+
+  /**
    * Wrap working memory content for injection into the system prompt.
    * Working memory is stable canonical state: facts, goals, constraints, decisions.
    * Separate from observations (narrative) and recall (cross-session artifacts).
+   * V3: includes agent guidance for when to write working memory.
    */
   export function wrapWorkingMemory(body: string): string {
-    return `<working-memory>\n${body}\n</working-memory>\n\nIMPORTANT: The working memory above contains stable facts, goals, and decisions for this project. Use it as authoritative context when answering questions about the project state.`
+    return `<working-memory>\n${body}\n</working-memory>\n\nIMPORTANT: The working memory above contains stable facts, goals, and decisions for this project. Use it as authoritative context.\n\n${WORKING_MEMORY_GUIDANCE}`
   }
 
   /**

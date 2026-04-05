@@ -12,6 +12,8 @@ import { defer } from "@/util/defer"
 import { Config } from "../config/config"
 import { Permission } from "@/permission"
 import { Log } from "@/util/log"
+import { Memory } from "@/memory"
+import { Instance } from "@/project/instance"
 
 const log = Log.create({ service: "task" })
 
@@ -121,6 +123,20 @@ export const TaskTool = Tool.define("task", async (ctx) => {
         if (parent) {
           log.info("fork subagent", { parent: ctx.sessionID, child: session.id })
           SessionPrompt.setForkContext(session.id, parent)
+          // V3: persist fork context to DB for durable restart-safe continuity.
+          // The in-memory forks map is the primary path; DB is the durable fallback.
+          try {
+            Memory.writeForkContext({
+              session_id: session.id,
+              parent_session_id: ctx.sessionID,
+              context: JSON.stringify({
+                parentAgent: ctx.agent,
+                projectId: Instance.project.id,
+              }),
+            })
+          } catch {
+            // Non-fatal — in-memory fork context still works for this process lifetime
+          }
         }
       }
 

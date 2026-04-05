@@ -53,6 +53,7 @@ import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { OM, Observer, OMBuf, Reflector } from "./om"
+import { Memory } from "@/memory"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1631,11 +1632,36 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               throw error
             }
 
-            // Fork path: use pre-built context from parent session
+            // Fork path: use pre-built context from parent session.
+            // V3 fix: guard was `step === 0` but step++ fires before this check, making it
+            // always false. Fixed to `step === 1` (first iteration of the loop).
             const fork = forks.get(sessionID)
-            if (fork && step === 0) {
+            if (fork && step === 1) {
               forks.delete(sessionID)
+              // V3: clean up activeContexts entry for this session on fork consumption
+              activeContexts.delete(sessionID)
               log.info("using fork context", { sessionID })
+
+              // V3: load memory context for the child session — fork children previously got
+              // recall=undefined, obs=undefined, workingMem=undefined because memory loading
+              // was only done at step===1 in the normal path, which was never reached for forks.
+              const forkLastUserText = msgs
+                .findLast((m) => m.info.role === "user")
+                ?.parts.filter((p) => p.type === "text")
+                .map((p) => (p as { type: "text"; text: string }).text)
+                .join(" ")
+                .trim()
+              const forkMemCtx = yield* Effect.promise(() =>
+                Memory.buildContext({
+                  scope: { type: "thread", id: sessionID },
+                  ancestorScopes: [{ type: "project", id: Instance.project.id }],
+                  semanticQuery: forkLastUserText,
+                }),
+              )
+              // Populate recall/obs/workingMem from child's own memory context
+              recall = forkMemCtx.semanticRecall
+              obs = forkMemCtx.observations ?? (yield* Effect.promise(() => SystemPrompt.observations(sessionID)))
+              workingMem = forkMemCtx.workingMemory
 
               const msg: MessageV2.Assistant = {
                 id: MessageID.ascending(),
@@ -1755,19 +1781,25 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
                 if (step === 1) {
-                  // V2: pass last user message text as the semantic recall query.
-                  // The lastUser.id is the message ID; we extract text from the last user message parts.
+                  // V3: canonical memory assembly via Memory.buildContext().
+                  // Replaces the scattered V2 calls to SystemPrompt.recall() +
+                  // SystemPrompt.projectWorkingMemory(). Memory.buildContext() wraps the same
+                  // primitives but is the single canonical entry point for all memory layers.
                   const lastUserText = msgs
                     .findLast((m) => m.info.role === "user")
                     ?.parts.filter((p) => p.type === "text")
-                    .map((p) => (p as { text: string }).text)
+                    .map((p) => (p as { type: "text"; text: string }).text)
                     .join(" ")
                     .trim()
-                  ;[recall, workingMem] = yield* Effect.all([
-                    Effect.promise(() => SystemPrompt.recall(Instance.project.id, sessionID, lastUserText)),
-                    // V2: load project-scope working memory for this session
-                    Effect.promise(() => SystemPrompt.projectWorkingMemory(Instance.project.id)),
-                  ])
+                  const memCtx = yield* Effect.promise(() =>
+                    Memory.buildContext({
+                      scope: { type: "thread", id: sessionID },
+                      ancestorScopes: [{ type: "project", id: Instance.project.id }],
+                      semanticQuery: lastUserText,
+                    }),
+                  )
+                  recall = memCtx.semanticRecall
+                  workingMem = memCtx.workingMemory
                 }
 
                 // Load observations every turn — they update during the session
@@ -1878,6 +1910,33 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             )
             if (outcome === "break") break
             continue
+          }
+
+          // V3: clean up activeContexts on session loop exit.
+          // Previously this grew unboundedly (entries were added every turn but never removed).
+          activeContexts.delete(sessionID)
+
+          // V3: auto-index final OM observations into memory_artifacts at session end.
+          // This makes project memory grow automatically — previously only AutoDream populated it.
+          try {
+            const finalObs = OM.get(sessionID)
+            if (finalObs?.observations && finalObs.observations.length > 100) {
+              Memory.indexArtifact({
+                scope_type: "project",
+                scope_id: Instance.project.id,
+                type: "observation",
+                title: `Session observations ${new Date().toISOString().slice(0, 10)}`,
+                content: finalObs.observations,
+                topic_key: `session/${sessionID}/observations`,
+                normalized_hash: null,
+                revision_count: 1,
+                duplicate_count: 1,
+                last_seen_at: null,
+                deleted_at: null,
+              })
+            }
+          } catch {
+            // Non-fatal — session end indexing failure does not affect session result
           }
 
           return yield* lastAssistant(sessionID)

@@ -1,7 +1,8 @@
 import path from "path"
 import { Global } from "../global"
 import { Log } from "@/util/log"
-import { Engram } from "./engram"
+// V3: Engram import removed from hot path — dream/index.ts no longer calls Engram.ensure()
+// The Engram module is retained as a compatibility module (dream/engram.ts) for TUI auto-registration.
 import { Bus } from "../bus"
 import { SessionStatus } from "../session/status"
 import { Session } from "../session"
@@ -92,9 +93,10 @@ export namespace AutoDream {
 
   /** Manual trigger from /dream command */
   export async function run(focus?: string): Promise<string> {
-    const available = await Engram.ensure()
-    if (!available) return "Engram not available. Install with: brew install gentleman-programming/tap/engram"
-
+    // V3: Removed Engram.ensure() gate. The daemon-based dream path (ensureDaemon)
+    // does not need the Engram binary at all. Engram.ensure() blocked the /dream command
+    // for all users without the Engram binary installed — a V0 holdover that prevented
+    // manual dream triggers from working in native-memory mode.
     try {
       const { Config } = await import("../config/config")
       const cfg = await Config.get()
