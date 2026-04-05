@@ -147,7 +147,8 @@ describe("session.system.wrapObservations", () => {
   test("exact tag format with newlines", () => {
     const body = "fact line"
     const result = SystemPrompt.wrapObservations(body)
-    expect(result).toBe(`<local-observations>\n${body}\n</local-observations>`)
+    expect(result).toContain(`<local-observations>\n${body}\n</local-observations>`)
+    expect(result).toContain(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS)
   })
 
   test("caps body content at 2000 tokens via capRecallBody", () => {
@@ -197,6 +198,8 @@ describe("session.system.observations", () => {
             session_id: s.id as SessionID,
             observations: "🔴 user is a TypeScript developer",
             reflections: null,
+            current_task: null,
+            suggested_continuation: null,
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 10,
@@ -247,6 +250,8 @@ describe("session.om.record", () => {
             session_id: s.id as SessionID,
             observations: "🔴 fact one",
             reflections: null,
+            current_task: null,
+            suggested_continuation: null,
             last_observed_at: 12345,
             generation_count: 1,
             observation_tokens: 5,
@@ -455,6 +460,8 @@ describe("session.om.reflector", () => {
             session_id: s.id as SessionID,
             observations: "🔴 user is a TypeScript developer",
             reflections: null,
+            current_task: null,
+            suggested_continuation: null,
             last_observed_at: Date.now(),
             generation_count: 1,
             observation_tokens: 50_000,

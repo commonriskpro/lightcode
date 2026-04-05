@@ -64,6 +64,8 @@ export namespace OM {
         session_id: sid,
         observations: merged,
         reflections: null,
+        current_task: null,
+        suggested_continuation: null,
         last_observed_at: latest.ends_at,
         generation_count: bufs.length,
         observation_tokens: tok,

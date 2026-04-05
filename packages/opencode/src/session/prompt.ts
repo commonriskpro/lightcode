@@ -1514,7 +1514,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
             // Observer buffer trigger — accumulate tokens and fire Observer if threshold reached
             const tok = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
-            const sig = OMBuf.check(sessionID, tok)
+            const obsRec = OM.get(sessionID)
+            const omCfg = yield* Effect.promise(() => Config.get())
+            const sig = OMBuf.check(
+              sessionID,
+              tok,
+              obsRec?.observation_tokens,
+              omCfg.experimental?.observer_message_tokens,
+            )
             if (sig === "buffer" || sig === "activate") {
               yield* Effect.promise(async () => {
                 OMBuf.setObserving(true)
@@ -1522,20 +1529,23 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   const rec = OM.get(sessionID)
                   const boundary = rec?.last_observed_at ?? 0
                   const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
-                  const obs = await Observer.run({
+                  const result = await Observer.run({
                     sid: sessionID,
                     msgs: unobserved,
                     prev: rec?.observations ?? undefined,
+                    priorCurrentTask: rec?.current_task ?? undefined,
                   })
-                  if (obs)
+                  if (result)
                     OM.upsert({
                       id: sessionID,
                       session_id: sessionID,
-                      observations: obs,
+                      observations: result.observations,
                       reflections: null,
+                      current_task: result.currentTask ?? null,
+                      suggested_continuation: result.suggestedContinuation ?? null,
                       last_observed_at: Date.now(),
                       generation_count: (rec?.generation_count ?? 0) + 1,
-                      observation_tokens: obs.length >> 2,
+                      observation_tokens: result.observations.length >> 2,
                       time_created: rec?.time_created ?? Date.now(),
                       time_updated: Date.now(),
                     })
@@ -1560,20 +1570,23 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   const rec = OM.get(sessionID)
                   const boundary = rec?.last_observed_at ?? 0
                   const unobserved = msgs.filter((m) => (m.info.time?.created ?? 0) > boundary)
-                  const obs = await Observer.run({
+                  const result = await Observer.run({
                     sid: sessionID,
                     msgs: unobserved,
                     prev: rec?.observations ?? undefined,
+                    priorCurrentTask: rec?.current_task ?? undefined,
                   })
-                  if (obs)
+                  if (result)
                     OM.upsert({
                       id: sessionID,
                       session_id: sessionID,
-                      observations: obs,
+                      observations: result.observations,
                       reflections: null,
+                      current_task: result.currentTask ?? null,
+                      suggested_continuation: result.suggestedContinuation ?? null,
                       last_observed_at: Date.now(),
                       generation_count: (rec?.generation_count ?? 0) + 1,
-                      observation_tokens: obs.length >> 2,
+                      observation_tokens: result.observations.length >> 2,
                       time_created: rec?.time_created ?? Date.now(),
                       time_updated: Date.now(),
                     })

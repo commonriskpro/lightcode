@@ -10,6 +10,17 @@ const state = new Map<SessionID, State>()
 let _observing = false
 let _reflecting = false
 
+export type ThresholdRange = { min: number; max: number }
+
+// Calculate dynamic TRIGGER threshold — shrinks as observations grow.
+// When threshold is a plain number, returns it unchanged (no adaptive behavior).
+// When a ThresholdRange, returns max(min, max - obsTokens) so total budget
+// (messages + observations) stays within max.
+export function calculateDynamicThreshold(threshold: number | ThresholdRange, obsTokens: number): number {
+  if (typeof threshold === "number") return threshold
+  return Math.max(threshold.min, threshold.max - obsTokens)
+}
+
 export namespace OMBuf {
   const TRIGGER = 30_000
   const INTERVAL = 6_000
@@ -23,11 +34,21 @@ export namespace OMBuf {
     return next
   }
 
-  export function check(sid: SessionID, tok: number): "buffer" | "activate" | "force" | "idle" {
+  export function check(
+    sid: SessionID,
+    tok: number,
+    obsTokens?: number,
+    configThreshold?: number | ThresholdRange,
+  ): "buffer" | "activate" | "force" | "idle" {
     const s = ensure(sid)
     s.tok += tok
     if (s.tok >= FORCE) return "force"
-    if (s.tok >= TRIGGER) return "activate"
+    // Resolve trigger: use config ThresholdRange when provided, else fixed TRIGGER constant.
+    // When obsTokens is known, apply adaptive shrink so total budget stays within max.
+    const base = configThreshold ?? TRIGGER
+    const trigger =
+      obsTokens !== undefined ? calculateDynamicThreshold(base, obsTokens) : typeof base === "number" ? base : base.max
+    if (s.tok >= trigger) return "activate"
     // Fire "buffer" only when crossing a new INTERVAL boundary, not every turn
     const intervals = Math.floor(s.tok / INTERVAL)
     const lastIntervals = Math.floor(s.lastInterval / INTERVAL)

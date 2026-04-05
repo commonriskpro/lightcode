@@ -7,6 +7,45 @@ import type { SessionID } from "../schema"
 
 const log = Log.create({ service: "session.observer" })
 
+// Detect degenerate LLM output — Gemini Flash repeat-penalty bug where the model
+// enters a loop producing near-identical chunks. Samples 10 positions across the text
+// and checks if consecutive pairs share > 90% character overlap. Returns false for
+// any text under 2000 chars (too short to be a meaningful repetition signal).
+export function detectDegenerateRepetition(text: string): boolean {
+  if (text.length < 2000) return false
+  const chunkSize = 200
+  const positions = Array.from({ length: 10 }, (_, i) => Math.floor((i / 9) * (text.length - chunkSize)))
+  const chunks = positions.map((p) => text.slice(p, p + chunkSize))
+  let similar = 0
+  for (let i = 0; i < chunks.length - 1; i++) {
+    const a = new Set(chunks[i]!.split(""))
+    const b = new Set(chunks[i + 1]!.split(""))
+    const intersection = [...a].filter((c) => b.has(c)).length
+    const union = new Set([...a, ...b]).size
+    if (union > 0 && intersection / union > 0.9) similar++
+  }
+  return similar >= 8
+}
+
+// Parse structured XML output from the Observer LLM.
+// Extracts <observations>, <current-task>, <suggested-response> sections.
+// Falls back to treating the full text as observations when tags are absent.
+export function parseObserverOutput(raw: string): ObserverResult {
+  const obsMatch = raw.match(/<observations>([\s\S]*?)<\/observations>/i)
+  const observations = obsMatch ? obsMatch[1]!.trim() : raw.trim()
+  const taskMatch = raw.match(/<current-task>([\s\S]*?)<\/current-task>/i)
+  const currentTask = taskMatch ? taskMatch[1]!.trim() : undefined
+  const contMatch = raw.match(/<suggested-response>([\s\S]*?)<\/suggested-response>/i)
+  const suggestedContinuation = contMatch ? contMatch[1]!.trim() : undefined
+  return { observations, currentTask, suggestedContinuation }
+}
+
+export interface ObserverResult {
+  observations: string
+  currentTask?: string
+  suggestedContinuation?: string
+}
+
 const CONDENSE_PROMPT = `You are a memory consolidation agent. You receive multiple observation chunks and must produce a single, coherent observation log.
 
 Rules:
@@ -30,12 +69,24 @@ Rules:
 - Mark superseded info explicitly: "~old fact~ → new fact"
 - Skip: routine tool calls, file reads, assistant acknowledgements
 - Keep bullets concise — one fact per bullet
+- USER ASSERTIONS ARE AUTHORITATIVE — the user is the source of truth about their own context
+- When state changes, mark old info superseded: "~old fact~ → new fact"
 
-Output format:
-## Observations
+Output your response using these XML sections:
 
-- 🔴 HH:MM [fact]
-- 🟡 HH:MM [request]`
+<observations>
+Date: [date]
+* 🔴 HH:MM [user assertion]
+* 🟡 HH:MM [user request]
+</observations>
+
+<current-task>
+State what the agent is currently working on (1-2 sentences).
+</current-task>
+
+<suggested-response>
+Hint for the agent's next message to continue naturally (1 sentence).
+</suggested-response>`
 
 export namespace Observer {
   // Condense multiple observation chunks into one coherent log via LLM.
@@ -75,7 +126,8 @@ export namespace Observer {
     sid: SessionID
     msgs: MessageV2.WithParts[]
     prev?: string
-  }): Promise<string | undefined> {
+    priorCurrentTask?: string
+  }): Promise<ObserverResult | undefined> {
     const cfg = await Config.get()
     // Respect explicit opt-out — observer: false disables even the default model
     if (cfg.experimental?.observer === false) return undefined
@@ -112,9 +164,9 @@ export namespace Observer {
 
     if (!context.trim()) return undefined
 
-    const system = input.prev
-      ? `${PROMPT}\n\n## Previous Observations (for context, do not duplicate)\n${input.prev}`
-      : PROMPT
+    let system = PROMPT
+    if (input.prev) system += `\n\n## Previous Observations (for context, do not duplicate)\n${input.prev}`
+    if (input.priorCurrentTask) system += `\n\n## Prior Context — Current Task\n${input.priorCurrentTask}`
 
     const result = await generateText({
       model: language,
@@ -125,7 +177,13 @@ export namespace Observer {
       return undefined
     })
 
-    if (!result) return undefined
-    return result.text || undefined
+    if (!result?.text) return undefined
+
+    if (detectDegenerateRepetition(result.text)) {
+      log.warn("observer: degenerate output discarded")
+      return undefined
+    }
+
+    return parseObserverOutput(result.text)
   }
 }

@@ -1058,6 +1058,15 @@ export namespace Config {
             .describe(
               "Model to use for background observational memory (format: provider/model). Defaults to google/gemini-2.5-flash.",
             ),
+          observer_message_tokens: z
+            .union([
+              z.number().int().positive(),
+              z.object({ min: z.number().int().positive(), max: z.number().int().positive() }),
+            ])
+            .optional()
+            .describe(
+              "Token threshold for observer trigger. Plain number = fixed. Object {min, max} = adaptive (shrinks as observations grow).",
+            ),
         })
         .optional(),
     })

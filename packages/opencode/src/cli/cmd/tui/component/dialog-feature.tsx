@@ -98,27 +98,6 @@ export function DialogFeature() {
         enabled: () => isEnabled("continue_loop_on_deny", false),
       },
       {
-        id: "lsp_tool",
-        title: "LSP Tool",
-        description: "Language server diagnostics and hover",
-        env: "OPENCODE_EXPERIMENTAL_LSP_TOOL",
-        enabled: () => Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL,
-      },
-      {
-        id: "plan_mode",
-        title: "Plan Mode",
-        description: "Plan before executing",
-        env: "OPENCODE_EXPERIMENTAL_PLAN_MODE",
-        enabled: () => Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE,
-      },
-      {
-        id: "workspaces",
-        title: "Workspaces",
-        description: "Multi-workspace support",
-        env: "OPENCODE_EXPERIMENTAL_WORKSPACES",
-        enabled: () => Flag.OPENCODE_EXPERIMENTAL_WORKSPACES,
-      },
-      {
         id: "markdown",
         title: "Markdown Rendering",
         description: "Render markdown in responses",

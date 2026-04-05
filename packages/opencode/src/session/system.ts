@@ -72,8 +72,19 @@ export namespace SystemPrompt {
     return `<engram-recall>\n${body}\n</engram-recall>`
   }
 
-  export function wrapObservations(body: string): string {
-    return `<local-observations>\n${capRecallBody(body)}\n</local-observations>`
+  // Instructions injected after every observations block. Tells the model how to
+  // resolve temporal conflicts, handle planned actions, and continue naturally
+  // without mentioning the memory system.
+  export const OBSERVATION_CONTEXT_INSTRUCTIONS = `IMPORTANT: When responding, use the observations above as background context.
+- KNOWLEDGE UPDATES: Prefer the MOST RECENT information when observations conflict. Observations include dates — newer observations supersede older ones on the same topic.
+- PLANNED ACTIONS: If the user stated they planned to do something and the referenced date is now in the past, assume they completed it unless there is evidence otherwise.
+- MOST RECENT USER INPUT: Treat the most recent user message as the highest-priority signal for what to do next.
+- Do not mention the memory system, summarization, or missing messages.`
+
+  export function wrapObservations(body: string, hint?: string): string {
+    let out = `<local-observations>\n${capRecallBody(body)}\n</local-observations>\n\n${OBSERVATION_CONTEXT_INSTRUCTIONS}`
+    if (hint) out += `\n\n<system-reminder>\n${hint}\n</system-reminder>`
+    return out
   }
 
   export async function observations(sid: SessionID): Promise<string | undefined> {
@@ -81,7 +92,7 @@ export namespace SystemPrompt {
     if (!rec) return undefined
     const body = rec.reflections ?? rec.observations
     if (!body) return undefined
-    return wrapObservations(body)
+    return wrapObservations(body, rec.suggested_continuation ?? undefined)
   }
 
   export async function recall(pid: string): Promise<string | undefined> {

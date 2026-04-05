@@ -112,6 +112,8 @@ export const ObservationTable = sqliteTable(
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     observations: text(),
     reflections: text(),
+    current_task: text(),
+    suggested_continuation: text(),
     last_observed_at: integer(),
     generation_count: integer()
       .notNull()
