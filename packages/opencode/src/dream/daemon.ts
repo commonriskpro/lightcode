@@ -126,7 +126,7 @@ async function doDream(focus?: string, model?: string, obs?: string) {
     //    assistant text, and call persistConsolidation() so it lands in memory_artifacts.
     //    This closes the V1 gap where dream output evaporated after session completion.
     try {
-      const msgsRes = await fetch(`${serverURL}/session/${sessionID}/messages${qs}`)
+      const msgsRes = await fetch(`${serverURL}/session/${sessionID}/message${qs}`)
       if (msgsRes.ok) {
         const msgsData = (await msgsRes.json()) as Array<{
           role: string
@@ -190,7 +190,7 @@ Bun.serve({
     }
 
     if (url.pathname === "/status") {
-      return Response.json({ dreaming, lastCompleted, lastError })
+      return Response.json({ dreaming, lastCompleted, lastError, serverURL })
     }
 
     return new Response("not found", { status: 404 })

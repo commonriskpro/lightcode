@@ -7,7 +7,6 @@ import { Log } from "@/util/log"
 import { Bus } from "../bus"
 import { SessionStatus } from "../session/status"
 import { Session } from "../session"
-import { MessageV2 } from "../session/message-v2"
 import { Token } from "../util/token"
 import { OM } from "../session/om"
 import type { SessionID } from "../session/schema"
@@ -68,51 +67,17 @@ export namespace AutoDream {
     }
   }
 
-  function isText(p: MessageV2.Part): p is MessageV2.TextPart {
-    return p.type === "text"
-  }
-
   export async function summaries(sid: string): Promise<string> {
-    // Priority 1: local observations from ObservationTable (dense, high-quality)
     const rec = OM.get(sid as SessionID)
-    if (rec?.observations) {
-      const est = Token.estimate(rec.observations)
-      if (est <= 4000) return rec.observations
-      return rec.observations.slice(0, 4000 * 4)
-    }
-
-    const msgs = await Session.messages({ sessionID: sid as any })
     const acc: string[] = []
-    let cap = 0
-    const sum = msgs
-      .filter((x) => x.info.role === "assistant" && x.info.summary)
-      .flatMap((x) => x.parts)
-      .filter(isText)
-      .map((x) => x.text)
-    if (sum.length > 0) {
-      for (const txt of sum) {
-        const est = Token.estimate(txt)
-        if (cap + est > 4000) break
-        acc.push(txt)
-        cap += est
-      }
-      return acc.join("\n---\n")
-    }
-
-    const back = msgs
-      .filter((x) => x.info.role === "user" || x.info.role === "assistant")
-      .flatMap((x) => x.parts)
-      .filter(isText)
-      .map((x) => x.text)
-      .slice(-10)
-    cap = 0
-    for (const txt of back) {
-      const est = Token.estimate(txt)
-      if (cap + est > 2000) break
-      acc.push(txt)
-      cap += est
-    }
-    return acc.join("\n---\n")
+    if (rec?.current_task) acc.push(`<current-task>\n${rec.current_task}\n</current-task>`)
+    if (rec?.reflections) acc.push(`<reflections>\n${rec.reflections}\n</reflections>`)
+    if (rec?.observations) acc.push(`<observations>\n${rec.observations}\n</observations>`)
+    const txt = acc.join("\n\n")
+    if (!txt) return ""
+    const est = Token.estimate(txt)
+    if (est <= 4000) return txt
+    return txt.slice(0, 4000 * 4)
   }
 
   export function buildSpawnPrompt(base: string, focus?: string, obs?: string): string {

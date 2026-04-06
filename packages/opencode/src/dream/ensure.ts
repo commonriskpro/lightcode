@@ -47,12 +47,12 @@ async function isAlive(pid: number, sock: string): Promise<boolean> {
 
 async function status(
   sock: string,
-): Promise<{ dreaming: boolean; lastCompleted?: number; lastError?: string } | undefined> {
+): Promise<{ dreaming: boolean; lastCompleted?: number; lastError?: string; serverURL?: string } | undefined> {
   try {
     // @ts-ignore — Bun-native unix socket fetch option
     const res = await fetch("http://localhost/status", { unix: sock })
     if (!res.ok) return
-    return (await res.json()) as { dreaming: boolean; lastCompleted?: number; lastError?: string }
+    return (await res.json()) as { dreaming: boolean; lastCompleted?: number; lastError?: string; serverURL?: string }
   } catch {
     return
   }
@@ -86,7 +86,12 @@ export async function ensureDaemon(dir: string): Promise<string> {
   if (pid > 0 && (await isAlive(pid, p.sock))) {
     const info = await status(p.sock)
     const badUrl = info?.lastError === "LIGHTCODE_SERVER_URL not set" && !!process.env.LIGHTCODE_SERVER_URL
-    if (!badUrl) return p.sock
+    const staleUrl =
+      !!process.env.LIGHTCODE_SERVER_URL && !!info?.serverURL && info.serverURL !== process.env.LIGHTCODE_SERVER_URL
+    const connectErr =
+      (info?.lastError?.includes("Unable to connect") || info?.lastError?.includes("typo in the url or port")) &&
+      !!process.env.LIGHTCODE_SERVER_URL
+    if (!badUrl && !staleUrl && !connectErr) return p.sock
     try {
       process.kill(pid, "SIGTERM")
     } catch {}
