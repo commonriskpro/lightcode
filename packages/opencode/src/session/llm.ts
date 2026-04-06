@@ -214,7 +214,7 @@ export namespace LLM {
         promptProfile.semantic_recall,
         { key: "tail", tokens: promptProfile.tail.tokens, hash: undefined },
       ].filter((x) => x.tokens > 0),
-      cache: { read: 0, write: 0 },
+      cache: { read: 0, write: 0, input: 0 },
     })
 
     const variant =
@@ -364,18 +364,6 @@ export namespace LLM {
     Object.keys(tools).forEach((k) => delete tools[k])
     Object.assign(tools, sorted)
 
-    // BP1: Cache breakpoint on last tool definition (1hr TTL for Anthropic)
-    // Tools are the first element in Anthropic's prefix order (tools → system → messages)
-    const keys = Object.keys(tools)
-    const last = keys[keys.length - 1]
-    if (last && tools[last]) {
-      const tool = tools[last] as any
-      tool.providerOptions = {
-        ...(tool.providerOptions ?? {}),
-        anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } },
-      }
-    }
-
     return streamText({
       stopWhen: stepCountIs(input.maxSteps ?? 1),
       prepareStep() {
@@ -449,6 +437,40 @@ export namespace LLM {
                 args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
               }
 
+              // Cache alignment audit — captures breakpoint placement and surfaces
+              // it in PromptProfile so the TUI /cache-debug dialog can show it.
+              // Only runs for Anthropic-like providers (cache_control breakpoints).
+              if (ProviderTransform.isAnthropicLike(input.model) && args.type === "stream") {
+                const prompt = args.params.prompt as ModelMessage[]
+                const hasBP = (msg: ModelMessage) => {
+                  const po = (msg as any).providerOptions
+                  return !!(po?.anthropic?.cacheControl || po?.bedrock?.cachePoint)
+                }
+                const bpInContent = (msg: ModelMessage) => {
+                  if (!Array.isArray(msg.content)) return false
+                  return msg.content.some(
+                    (p: any) => p?.providerOptions?.anthropic?.cacheControl || p?.providerOptions?.bedrock?.cachePoint,
+                  )
+                }
+                const systemBP = prompt
+                  .filter((m) => m.role === "system")
+                  .map((m, i) => ({ i, hit: hasBP(m) || bpInContent(m) }))
+                  .filter((x) => x.hit)
+                  .map((x) => x.i)
+                const messageBP = prompt
+                  .filter((m) => m.role !== "system")
+                  .map((m, i) => ({ i, role: m.role, hit: hasBP(m) || bpInContent(m) }))
+                  .filter((x) => x.hit)
+                  .map((x) => ({ i: x.i, role: x.role }))
+                const toolBP = (args.params.tools ?? [])
+                  .filter((t: any) => t?.providerOptions?.anthropic?.cacheControl)
+                  .map((t: any) => t.name as string)
+                const total = systemBP.length + messageBP.length + toolBP.length
+                const alignment = { total, limit: 4, ok: total <= 4, systemBP, messageBP, toolBP }
+                l.info("cache alignment", alignment)
+                PromptProfile.updateAlignment(input.sessionID, alignment)
+              }
+
               // Native deferred: inject providerOptions.{provider}.deferLoading
               const native = ProviderTransform.supportsNativeDeferred(input.model)
               if (native && args.params.tools) {
@@ -463,6 +485,30 @@ export namespace LLM {
                     }
                   }
                 }
+              }
+
+              // BP1: Cache breakpoint on last tool definition (1hr TTL for Anthropic)
+              // Done here — after deferLoading is injected — so we can safely skip
+              // deferred tools. Anthropic rejects cache_control + defer_loading on the same tool.
+              if (ProviderTransform.isAnthropicLike(input.model) && args.params.tools) {
+                const hasDefer = (t: any) =>
+                  t?.providerOptions?.anthropic?.deferLoading || t?.providerOptions?.bedrock?.deferLoading
+                const last = [...args.params.tools].reverse().find((t) => !hasDefer(t)) as any
+                if (last) {
+                  last.providerOptions = {
+                    ...(last.providerOptions ?? {}),
+                    anthropic: {
+                      ...(last.providerOptions as any)?.anthropic,
+                      cacheControl: { type: "ephemeral", ttl: "1h" },
+                    },
+                  }
+                }
+              }
+
+              if (args.params.tools) {
+                const names = args.params.tools.filter((t) => t.type === "function").map((t) => t.name)
+                const tokens = Math.ceil(JSON.stringify(args.params.tools).length / 4)
+                PromptProfile.updateTools(input.sessionID, { count: names.length, names, tokens })
               }
 
               return args.params

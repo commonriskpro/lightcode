@@ -255,15 +255,26 @@ export namespace ProviderTransform {
   function memoryCore(msg: ModelMessage) {
     if (msg.role !== "system") return false
     if (typeof msg.content !== "string") return false
-    return ["<working-memory>", "<local-observations>", "<memory-recall>"].some((x) => msg.content.includes(x))
+    // <memory-recall> is intentionally excluded — recall content changes every turn
+    // based on the semantic query, so caching it would always miss and waste a slot.
+    return ["<working-memory>", "<local-observations>"].some((x) => msg.content.includes(x))
+  }
+
+  // Anthropic won't cache blocks shorter than 1024 tokens — placing a breakpoint
+  // on them wastes one of the 4 available slots with no benefit.
+  const MIN_CACHE_TOKENS = 1024
+
+  function tokenLen(msg: ModelMessage): number {
+    if (typeof msg.content === "string") return Math.ceil(msg.content.length / 4)
+    return 0
   }
 
   function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
     const system = msgs.filter((msg) => msg.role === "system")
-    if (system[0]) applyBreakpoint(system[0], cacheOpts(model, true), model)
-    const core = system.slice(1).find(memoryCore)
+    if (system[0] && tokenLen(system[0]) >= MIN_CACHE_TOKENS) applyBreakpoint(system[0], cacheOpts(model, true), model)
+    const core = system.slice(1).find((m) => memoryCore(m) && tokenLen(m) >= MIN_CACHE_TOKENS)
     if (core) applyBreakpoint(core, cacheOpts(model, false), model)
-    const fallback = system.slice(1).find((msg) => stableSystem(msg) && msg !== core)
+    const fallback = system.slice(1).find((m) => stableSystem(m) && m !== core && tokenLen(m) >= MIN_CACHE_TOKENS)
     if (!core && fallback) applyBreakpoint(fallback, cacheOpts(model, false), model)
 
     // Anthropic allows only four explicit breakpoints total. LightCode reserves
@@ -989,7 +1000,11 @@ export namespace ProviderTransform {
   export function supportsNativeDeferred(model: Provider.Model): false | "anthropic" | "openai" {
     const npm = model.api.npm
     const id = model.api.id
-    if (npm === "@ai-sdk/anthropic" || npm === "@ai-sdk/google-vertex/anthropic") {
+    // Native deferred for Anthropic requires the AI SDK to own the full serialization
+    // pipeline. Auth plugins that intercept fetch (e.g. opencode-anthropic-login-via-cli)
+    // re-serialize the body themselves, which exposes `defer_loading` as a raw field that
+    // Anthropic rejects. Only enable for gateway (which proxies without re-serializing).
+    if (npm === "@ai-sdk/google-vertex/anthropic") {
       if (["sonnet-4", "opus-4"].some((v) => id.includes(v))) return "anthropic"
     }
     if (npm === "@ai-sdk/openai") {

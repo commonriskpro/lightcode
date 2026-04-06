@@ -6,12 +6,22 @@ import { useSDK } from "@tui/context/sdk"
 import { useRouteData } from "@tui/context/route"
 
 type Layer = { key: string; tokens: number; hash?: string }
+type Alignment = {
+  total: number
+  limit: number
+  ok: boolean
+  systemBP: number[]
+  messageBP: { i: number; role: string }[]
+  toolBP: string[]
+}
 type Profile = {
   sessionID: string
   requestAt: number
   recallReused: boolean
   layers: Layer[]
-  cache: { read: number; write: number }
+  cache: { read: number; write: number; input: number }
+  tools?: { count: number; names: string[]; tokens: number }
+  alignment?: Alignment
 }
 
 const LABELS: Record<string, string> = {
@@ -21,6 +31,7 @@ const LABELS: Record<string, string> = {
   observations_stable: "Obs Stable    ",
   observations_live: "Obs Live      ",
   semantic_recall: "Recall        ",
+  tools: "Tools         ",
   tail: "Messages      ",
 }
 
@@ -68,11 +79,18 @@ export function DialogCacheDebug() {
   onCleanup(() => clearInterval(interval))
 
   const total = createMemo(() => profile()?.layers.reduce((s, l) => s + l.tokens, 0) ?? 0)
+  const providerInput = createMemo(() => {
+    const p = profile()
+    if (!p) return 0
+    return p.cache.read + p.cache.write + p.cache.input
+  })
 
   const readPct = createMemo(() => {
     const p = profile()
-    if (!p || total() === 0) return 0
-    return Math.round((p.cache.read / total()) * 100)
+    if (!p) return 0
+    const totalInput = p.cache.read + p.cache.write + p.cache.input
+    if (totalInput === 0) return 0
+    return Math.round((p.cache.read / totalInput) * 100)
   })
 
   return (
@@ -117,8 +135,59 @@ export function DialogCacheDebug() {
               </text>
             </box>
 
-            {/* Total */}
-            <text fg={theme.textMuted}>total {fmt(total())} tokens</text>
+            <Show when={p().tools}>
+              {(t) => (
+                <box flexDirection="row" gap={2}>
+                  <text fg={theme.textMuted}>tools</text>
+                  <text fg={theme.text}>{t().count}</text>
+                  <text fg={theme.textMuted}>defs</text>
+                  <text fg={theme.accent}>{fmt(t().tokens)} tkns</text>
+                  <text fg={theme.textMuted}>
+                    {t().names.slice(0, 4).join(",")}
+                    {t().names.length > 4 ? ",…" : ""}
+                  </text>
+                </box>
+              )}
+            </Show>
+
+            {/* Cache alignment — breakpoint audit (Anthropic only) */}
+            <Show when={p().alignment}>
+              {(a) => (
+                <box gap={1}>
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>breakpoints</text>
+                    <text fg={a().ok ? theme.success : theme.error} attributes={TextAttributes.BOLD}>
+                      {a().total}/{a().limit}
+                    </text>
+                    <text fg={a().ok ? theme.success : theme.error}>{a().ok ? "✓ ok" : "✗ over limit"}</text>
+                  </box>
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>{"  system"}</text>
+                    <text fg={a().systemBP.length > 0 ? theme.success : theme.error}>
+                      {a().systemBP.length > 0 ? `[${a().systemBP.join(",")}]` : "none"}
+                    </text>
+                    <text fg={theme.textMuted}>{"tools"}</text>
+                    <text fg={a().toolBP.length > 0 ? theme.success : theme.warning}>
+                      {a().toolBP.length > 0 ? a().toolBP[a().toolBP.length - 1] : "none"}
+                    </text>
+                    <text fg={theme.textMuted}>{"msgs"}</text>
+                    <text fg={a().messageBP.length > 0 ? theme.success : theme.textMuted}>
+                      {a().messageBP.length > 0
+                        ? a()
+                            .messageBP.map((m) => `${m.role}[${m.i}]`)
+                            .join(",")
+                        : "none"}
+                    </text>
+                  </box>
+                </box>
+              )}
+            </Show>
+
+            {/* Totals */}
+            <box flexDirection="row" gap={2}>
+              <text fg={theme.textMuted}>local prompt {fmt(total())} tokens</text>
+              <text fg={theme.textMuted}>provider input {fmt(providerInput())} tokens</text>
+            </box>
 
             {/* Per-layer breakdown */}
             <For each={p().layers}>

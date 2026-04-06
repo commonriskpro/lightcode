@@ -166,7 +166,7 @@ export namespace ToolRegistry {
           return [
             safe(invalid),
             ...(question ? [ask] : []),
-            bash,
+            defer(bash, "Execute shell commands when file tools are insufficient"),
             safe(read),
             safe(glob),
             safe(grep),

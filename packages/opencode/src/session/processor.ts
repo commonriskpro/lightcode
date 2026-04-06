@@ -299,7 +299,12 @@ export namespace SessionProcessor {
                   reasoning: usage.tokens.reasoning,
                 },
               })
-              PromptProfile.updateCache(ctx.sessionID, usage.tokens.cache.read, usage.tokens.cache.write)
+              PromptProfile.updateCache(
+                ctx.sessionID,
+                usage.tokens.cache.read,
+                usage.tokens.cache.write,
+                usage.tokens.input,
+              )
               yield* session.updatePart({
                 id: PartID.ascending(),
                 reason: value.finishReason,
