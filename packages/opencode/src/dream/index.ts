@@ -44,7 +44,8 @@ export namespace AutoDream {
     lastCompleted?: number
     lastError?: string
   }> {
-    const root = dir ?? Instance.directory
+    if (!dir) return { dreaming: false }
+    const root = dir
     const p = daemonPaths(root)
     const pid = Number(
       await Bun.file(p.pid)
@@ -121,7 +122,7 @@ export namespace AutoDream {
   }
 
   /** Manual trigger from /dream command */
-  export async function run(focus?: string, dir?: string): Promise<string> {
+  export async function run(focus?: string, dir?: string, serverURL?: string): Promise<string> {
     // Manual dream trigger uses the native daemon path only.
     _dreaming = true
     try {
@@ -129,7 +130,7 @@ export namespace AutoDream {
       const cfg = await Config.get()
       const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
       const root = dir ?? Instance.directory
-      const url = Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
+      const url = serverURL ?? Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
       if (url) process.env.LIGHTCODE_SERVER_URL = url
       const sock = await ensureDaemon(root)
       // @ts-ignore — Bun-native unix socket fetch option
@@ -149,7 +150,7 @@ export namespace AutoDream {
     }
   }
 
-  async function idle(sid: string): Promise<void> {
+  async function idle(sid: SessionID): Promise<void> {
     // AutoDream runs via the native daemon path and does not depend on Engram.
     const { Config } = await import("../config/config")
     const cfg = await Config.get()
@@ -161,7 +162,8 @@ export namespace AutoDream {
     if (url) process.env.LIGHTCODE_SERVER_URL = url
 
     try {
-      const sock = await ensureDaemon(Instance.directory)
+      const info = await Session.get(sid)
+      const sock = await ensureDaemon(info.directory)
       const obs = await summaries(sid)
       // @ts-ignore — Bun-native unix socket fetch option
       await fetch("http://localhost/trigger", {
