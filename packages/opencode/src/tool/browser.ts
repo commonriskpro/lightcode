@@ -54,6 +54,7 @@ export class NavigationError extends Error {
 }
 
 export function validateUrl(url: string): void {
+  if (url === "about:blank") return
   try {
     const parsed = new URL(url)
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("bad protocol")
