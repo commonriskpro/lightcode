@@ -129,9 +129,11 @@ export namespace AutoDream {
       const { Config } = await import("../config/config")
       const cfg = await Config.get()
       const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
-      const root = dir ?? Instance.directory
+      if (!dir) throw new Error("Dream requires an active project directory")
+      const root = dir
       const url = serverURL ?? Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
-      if (url) process.env.LIGHTCODE_SERVER_URL = url
+      if (!url) throw new Error("Dream requires a running LightCode server URL")
+      process.env.LIGHTCODE_SERVER_URL = url
       const sock = await ensureDaemon(root)
       // @ts-ignore — Bun-native unix socket fetch option
       const res = await fetch("http://localhost/trigger", {
@@ -141,10 +143,11 @@ export namespace AutoDream {
         body: JSON.stringify({ focus, model }),
       })
       const data = (await res.json()) as { ok: boolean; error?: string }
-      return data.ok ? "Dream started" : `Dream failed: ${data.error}`
+      if (!data.ok) throw new Error(data.error ?? "Dream trigger failed")
+      return "Dream started"
     } catch (err) {
       log.error("dream failed", { error: err instanceof Error ? err.message : String(err) })
-      return `Dream failed: ${err instanceof Error ? err.message : String(err)}`
+      throw err instanceof Error ? err : new Error(String(err))
     } finally {
       _dreaming = false
     }
