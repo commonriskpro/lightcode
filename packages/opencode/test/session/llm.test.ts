@@ -103,6 +103,26 @@ describe("session.llm.hasToolCalls", () => {
   })
 })
 
+describe("session.llm.profile", () => {
+  test("captures per-layer prompt hashes and tokens", () => {
+    const out = LLM.profile({
+      head: "HEAD",
+      rest: "REST",
+      workingMemory: "WM",
+      observationsStable: "OBS",
+      observationsLive: "LIVE",
+      recall: "RECALL",
+      messages: [{ role: "user", content: "Hello" }],
+    })
+
+    expect(out.head.tokens).toBeGreaterThan(0)
+    expect(out.working_memory.hash).toBeDefined()
+    expect(out.observations_stable.hash).toBeDefined()
+    expect(out.semantic_recall.hash).toBeDefined()
+    expect(out.tail.tokens).toBeGreaterThan(0)
+  })
+})
+
 type Capture = {
   url: URL
   headers: Headers
@@ -381,6 +401,96 @@ describe("session.llm.stream", () => {
 
         const reasoning = (body.reasoningEffort as string | undefined) ?? (body.reasoning_effort as string | undefined)
         expect(reasoning).toBe("high")
+      },
+    })
+  })
+
+  test("assembles stable prompt blocks in deterministic order", async () => {
+    const server = state.server
+    if (!server) throw new Error("Server not initialized")
+
+    const providerID = "alibaba"
+    const modelID = "qwen-plus"
+    const fixture = await loadFixture(providerID, modelID)
+    const model = fixture.model
+    const request = waitRequest(
+      "/chat/completions",
+      new Response(createChatStream("Hello"), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "lightcode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: [providerID],
+            provider: {
+              [providerID]: {
+                options: {
+                  apiKey: "test-key",
+                  baseURL: `${server.url.origin}/v1`,
+                },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await Provider.getModel(ProviderID.make(providerID), ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-cache-order")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const user = {
+          id: MessageID.make("user-cache-order"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(providerID), modelID: resolved.id },
+        } satisfies MessageV2.User
+
+        const stream = await LLM.stream({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["ENV", "SKILLS"],
+          abort: new AbortController().signal,
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+          workingMemory: "<working-memory>WM</working-memory>",
+          observationsStable: "<local-observations>OBS</local-observations>",
+          recall: "<memory-recall>RECALL</memory-recall>",
+          observationsLive: "<system-reminder>LIVE</system-reminder>",
+        })
+
+        for await (const _ of stream.fullStream) {
+        }
+
+        const capture = await request
+        const msgs = capture.body.messages as Array<{ role: string; content: string }>
+        const sys = msgs.filter((x) => x.role === "system").map((x) => x.content)
+
+        expect(sys[0]).toContain("ENV")
+        expect(sys[0]).toContain("SKILLS")
+        expect(sys.slice(1, 5)).toEqual([
+          "<working-memory>WM</working-memory>",
+          "<local-observations>OBS</local-observations>",
+          "<memory-recall>RECALL</memory-recall>",
+          "<system-reminder>LIVE</system-reminder>",
+        ])
       },
     })
   })

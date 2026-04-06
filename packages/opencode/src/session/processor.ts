@@ -288,6 +288,16 @@ export namespace SessionProcessor {
                   write: ctx.assistantMessage.tokens.cache.write + usage.tokens.cache.write,
                 },
               }
+              log.info("prompt cache usage", {
+                sessionID: ctx.sessionID,
+                messageID: ctx.assistantMessage.id,
+                cache: usage.tokens.cache,
+                tokens: {
+                  input: usage.tokens.input,
+                  output: usage.tokens.output,
+                  reasoning: usage.tokens.reasoning,
+                },
+              })
               yield* session.updatePart({
                 id: PartID.ascending(),
                 reason: value.finishReason,

@@ -24,6 +24,11 @@ import { Memory } from "../../src/memory/provider"
 import { SemanticRecall } from "../../src/memory/semantic-recall"
 import { WorkingMemory } from "../../src/memory/working-memory"
 import { Handoff } from "../../src/memory/handoff"
+import { OM } from "../../src/session/om"
+import { ProjectTable } from "../../src/project/project.sql"
+import { ProjectID } from "../../src/project/schema"
+import { SessionTable } from "../../src/session/session.sql"
+import { SessionID } from "../../src/session/schema"
 import { UpdateUserMemoryTool, UpdateWorkingMemoryTool } from "../../src/tool/memory"
 import { ToolRegistry } from "../../src/tool/registry"
 import { Instance } from "../../src/project/instance"
@@ -62,6 +67,55 @@ const agentScope: ScopeRef = { type: "agent", id: "build" }
 const projectScope: ScopeRef = { type: "project", id: "prod-project" }
 const userScope: ScopeRef = { type: "user", id: "default" }
 const globalScope: ScopeRef = { type: "global_pattern", id: "prod-global" }
+
+function seedSession(sid = threadScope.id, pid = projectScope.id) {
+  const now = Date.now()
+  Database.use((db) =>
+    db
+      .insert(ProjectTable)
+      .values({
+        id: ProjectID.make(pid),
+        worktree: "/tmp",
+        vcs: "git",
+        name: pid,
+        icon_url: null,
+        icon_color: null,
+        time_created: now,
+        time_updated: now,
+        time_initialized: null,
+        sandboxes: [],
+        commands: null,
+      })
+      .onConflictDoNothing()
+      .run(),
+  )
+  Database.use((db) =>
+    db
+      .insert(SessionTable)
+      .values({
+        id: SessionID.make(sid),
+        project_id: ProjectID.make(pid),
+        workspace_id: null,
+        parent_id: null,
+        slug: sid,
+        directory: "/tmp",
+        title: sid,
+        version: "test",
+        share_url: null,
+        summary_additions: null,
+        summary_deletions: null,
+        summary_files: null,
+        summary_diffs: null,
+        revert: null,
+        permission: null,
+        time_created: now,
+        time_updated: now,
+        time_compacting: null,
+        time_archived: null,
+      })
+      .run(),
+  )
+}
 
 // ─── P-1: Working Memory Precedence ──────────────────────────────────────────
 
@@ -499,6 +553,55 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
     expect(ctx.workingMemory).toBeDefined()
     expect(ctx.workingMemory).toContain("project default")
     expect(ctx.workingMemory).toContain("user default")
+  })
+
+  test("buildContext returns block metadata with stable ordering", async () => {
+    seedSession()
+    WorkingMemory.set(projectScope, "proj_pref", "project default")
+    SemanticRecall.index({
+      scope_type: "project",
+      scope_id: projectScope.id,
+      type: "decision",
+      title: "Cacheable recall",
+      content: "Recall is available for this project",
+      topic_key: null,
+      normalized_hash: null,
+      revision_count: 1,
+      duplicate_count: 1,
+      last_seen_at: null,
+      deleted_at: null,
+    })
+    OM.upsert({
+      id: SessionID.make("obs-prod-blocks"),
+      session_id: SessionID.make(threadScope.id),
+      observations: "Stable observations body",
+      reflections: null,
+      current_task: null,
+      suggested_continuation: "Continue the stable flow",
+      last_observed_at: null,
+      generation_count: 1,
+      observation_tokens: 100,
+      observed_message_ids: null,
+      time_created: Date.now(),
+      time_updated: Date.now(),
+    })
+
+    const ctx = await Memory.buildContext({
+      scope: threadScope,
+      ancestorScopes: [agentScope, projectScope, userScope],
+      semanticQuery: "recall stable",
+    })
+
+    expect(ctx.blocks.map((x) => x.key)).toEqual([
+      "working_memory",
+      "observations_stable",
+      "observations_live",
+      "semantic_recall",
+    ])
+    expect(ctx.blocks.every((x) => x.hash.length > 0)).toBe(true)
+    expect(ctx.blocks.every((x) => x.tokens > 0)).toBe(true)
+    expect(ctx.observationsStable).toContain("Stable observations body")
+    expect(ctx.observationsLive).toContain("Continue the stable flow")
   })
 
   test("runtime buildContext does not load global_pattern when hot path omits it", async () => {

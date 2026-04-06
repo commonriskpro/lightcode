@@ -54,6 +54,8 @@ import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { OM, Observer, OMBuf, Reflector } from "./om"
 import { Memory } from "@/memory"
+import { QueryReuse } from "@/memory/query-reuse"
+import { PROMPT_BLOCK, type PromptBlock } from "@/memory/contracts"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -79,6 +81,7 @@ export namespace SessionPrompt {
   }
   const forks = new Map<string, ForkContext>()
   const activeContexts = new Map<string, ForkContext>()
+  const recalls = new Map<string, { query: string; norm: string; recall: string; block?: PromptBlock }>()
 
   export function setForkContext(sessionID: string, ctx: ForkContext) {
     forks.set(sessionID, ctx)
@@ -162,7 +165,11 @@ export namespace SessionPrompt {
     recall: string | undefined
     workingMemory: string | undefined
     durableObservations: string | undefined
+    blocks: Awaited<ReturnType<typeof Memory.buildContext>>["blocks"]
   }> {
+    const text = lastUserText(msgs)
+    const prev = recalls.get(sessionID)
+    const keep = QueryReuse.reuse(prev, text)
     const memCtx = await Memory.buildContext({
       scope: { type: "thread", id: sessionID },
       ancestorScopes: [
@@ -170,13 +177,35 @@ export namespace SessionPrompt {
         { type: "project", id: Instance.project.id },
         Memory.userScope(),
       ],
-      semanticQuery: lastUserText(msgs),
+      semanticQuery: keep ? undefined : text,
     })
     const durable = durableChildHydration(sessionID)
+    const recall = keep ? prev?.recall : memCtx.semanticRecall
+    const block = keep ? prev?.block : memCtx.blocks.find((x) => x.key === PROMPT_BLOCK.SEMANTIC_RECALL)
+    const order = {
+      [PROMPT_BLOCK.WORKING_MEMORY]: 0,
+      [PROMPT_BLOCK.OBSERVATIONS_STABLE]: 1,
+      [PROMPT_BLOCK.OBSERVATIONS_LIVE]: 2,
+      [PROMPT_BLOCK.SEMANTIC_RECALL]: 3,
+    } as const
+    const blocks = (
+      block ? [...memCtx.blocks.filter((x) => x.key !== PROMPT_BLOCK.SEMANTIC_RECALL), block] : memCtx.blocks
+    ).sort((a, b) => order[a.key] - order[b.key])
+
+    if (recall && text) {
+      recalls.set(sessionID, {
+        query: text,
+        norm: QueryReuse.normalize(text),
+        recall,
+        block,
+      })
+    }
+
     return {
-      recall: memCtx.semanticRecall,
+      recall,
       workingMemory: appendBlock(memCtx.workingMemory, "durable-child-working-memory", durable.workingMemory),
       durableObservations: durable.observations,
+      blocks,
     }
   }
 
@@ -1587,8 +1616,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           let step = 0
           let recall: string | undefined
           let obs: string | undefined
+          let obsStable: string | undefined
+          let obsLive: string | undefined
           let workingMem: string | undefined
           let durableObs: string | undefined
+          let memBlocks: PromptBlock[] = []
           const session = yield* sessions.get(sessionID)
 
           while (true) {
@@ -1929,11 +1961,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   recall = mem.recall
                   workingMem = mem.workingMemory
                   durableObs = mem.durableObservations
+                  memBlocks = mem.blocks
                 }
 
                 // Load observations every turn — they update during the session
-                obs = yield* Effect.promise(() => SystemPrompt.observations(sessionID))
-                obs = appendBlock(obs, "durable-child-context", durableObs)
+                const nextObs = yield* Effect.promise(() => SystemPrompt.observationBlocks(sessionID))
+                obsStable = appendBlock(nextObs.stable, "durable-child-context", durableObs)
+                obsLive = nextObs.live
+                obs = SystemPrompt.mergeObservations(obsStable, obsLive)
 
                 // Gap F: apply lastObservedAt boundary — send only the unobserved tail to the LLM.
                 // Previously-observed messages are already compressed into the observations block
@@ -2008,7 +2043,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   maxSteps: format.type === "json_schema" ? 1 : 5,
                   recall,
                   observations: obs,
+                  observationsStable: obsStable,
+                  observationsLive: obsLive,
                   workingMemory: workingMem,
+                  memoryBlocks: memBlocks,
                 })
 
                 if (structured !== undefined) {

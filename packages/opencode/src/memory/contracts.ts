@@ -35,6 +35,23 @@ export interface ScopeRef {
   id: string
 }
 
+export const PROMPT_BLOCK = {
+  WORKING_MEMORY: "working_memory",
+  OBSERVATIONS_STABLE: "observations_stable",
+  OBSERVATIONS_LIVE: "observations_live",
+  SEMANTIC_RECALL: "semantic_recall",
+} as const
+
+export type PromptBlockKey = (typeof PROMPT_BLOCK)[keyof typeof PROMPT_BLOCK]
+
+export interface PromptBlock {
+  key: PromptBlockKey
+  body: string
+  hash: string
+  tokens: number
+  stable: boolean
+}
+
 // ─── Memory Layers ────────────────────────────────────────────────────────────
 
 export interface MemoryContext {
@@ -46,6 +63,12 @@ export interface MemoryContext {
   observations: string | undefined
   /** Similarity-based retrieval: relevant prior knowledge */
   semanticRecall: string | undefined
+  /** Stable observation layer, separated for prompt-cache aware assembly */
+  observationsStable: string | undefined
+  /** Volatile observation hints, separated from the stable observation layer */
+  observationsLive: string | undefined
+  /** Prompt blocks with identity and token accounting */
+  blocks: PromptBlock[]
   /** Continuation hint from OM record */
   continuationHint: string | undefined
   /** Total token estimate for all assembled memory layers */

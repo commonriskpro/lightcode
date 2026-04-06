@@ -17,6 +17,8 @@ import { Flag } from "@/flag/flag"
 import { Permission } from "@/permission"
 import { Auth } from "@/auth"
 import { Installation } from "@/installation"
+import { createHash } from "crypto"
+import type { PromptBlock } from "@/memory/contracts"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -38,7 +40,10 @@ export namespace LLM {
     maxSteps?: number
     recall?: string
     observations?: string
+    observationsStable?: string
+    observationsLive?: string
     workingMemory?: string
+    memoryBlocks?: PromptBlock[]
   }
 
   export type StreamRequest = StreamInput & {
@@ -49,6 +54,36 @@ export namespace LLM {
 
   export interface Interface {
     readonly stream: (input: StreamInput) => Stream.Stream<Event, unknown>
+  }
+
+  export function profile(input: {
+    head: string
+    rest?: string
+    workingMemory?: string
+    observationsStable?: string
+    observationsLive?: string
+    recall?: string
+    messages: ModelMessage[]
+  }) {
+    const item = (key: string, body?: string) => {
+      const text = body?.trim()
+      return {
+        key,
+        tokens: text ? Math.ceil(text.length / 4) : 0,
+        hash: text ? createHash("sha1").update(text).digest("hex") : undefined,
+      }
+    }
+    return {
+      head: item("head", input.head),
+      rest: item("rest", input.rest),
+      working_memory: item("working_memory", input.workingMemory),
+      observations_stable: item("observations_stable", input.observationsStable),
+      observations_live: item("observations_live", input.observationsLive),
+      semantic_recall: item("semantic_recall", input.recall),
+      tail: {
+        tokens: input.messages.reduce((sum, msg) => sum + Math.ceil(JSON.stringify(msg).length / 4), 0),
+      },
+    }
   }
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/LLM") {}
@@ -129,17 +164,30 @@ export namespace LLM {
       system.length = 0
       system.push(header, rest.join("\n"))
     }
-    // system[1] = observations (BP3 slot — stable between Observer cycles, cacheable)
-    // system[2] = recall (session-frozen, uncached, small ~2k tokens — acceptable)
-    // system[3] = workingMemory (project-scope stable facts, loaded once per session)
-    // system[last] = volatile (model ID + date — not cached by design)
-    // Sentinel "<!-- ctx -->" ensures BP3 always points at stable content even when
-    // no observations exist yet (new session before first Observer activation).
-    system.splice(1, 0, input.observations ?? "<!-- ctx -->")
-    if (input.recall) system.splice(2, 0, input.recall)
-    // V2: inject working memory after recall — stable project facts available every turn
-    if (input.workingMemory) system.splice(input.recall ? 3 : 2, 0, input.workingMemory)
-    system.push(SystemPrompt.volatile(input.model))
+    const head = system[0]
+    const rest = system.slice(1).filter(Boolean).join("\n")
+    const promptProfile = profile({
+      head,
+      rest,
+      workingMemory: input.workingMemory,
+      observationsStable: input.observationsStable ?? input.observations,
+      observationsLive: input.observationsLive,
+      recall: input.recall,
+      messages: input.messages,
+    })
+    const blocks = [
+      head,
+      rest || undefined,
+      input.workingMemory,
+      input.observationsStable ?? input.observations ?? "<!-- ctx -->",
+      input.recall,
+      input.observationsLive,
+      SystemPrompt.volatile(input.model),
+    ].filter((x): x is string => Boolean(x))
+    l.info("prompt profile", {
+      blocks: promptProfile,
+      memoryBlocks: input.memoryBlocks?.map((x) => ({ key: x.key, hash: x.hash, tokens: x.tokens, stable: x.stable })),
+    })
 
     const variant =
       !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
@@ -157,7 +205,7 @@ export namespace LLM {
       mergeDeep(variant),
     )
     if (isOpenaiOauth) {
-      options.instructions = system.join("\n")
+      options.instructions = blocks.join("\n")
     }
 
     const isWorkflow = language instanceof GitLabWorkflowLanguageModel
@@ -166,7 +214,7 @@ export namespace LLM {
       : isWorkflow
         ? input.messages
         : [
-            ...system.map(
+            ...blocks.map(
               (x): ModelMessage => ({
                 role: "system",
                 content: x,

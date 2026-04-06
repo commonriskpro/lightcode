@@ -12,10 +12,12 @@
  */
 
 import { Token } from "../util/token"
+import { createHash } from "crypto"
 import { WorkingMemory } from "./working-memory"
 import { SemanticRecall } from "./semantic-recall"
 import { Handoff } from "./handoff"
 import { OM } from "../session/om/record"
+import { SystemPrompt } from "../session/system"
 import type { SessionID } from "../session/schema"
 import type {
   ContextBuildOptions,
@@ -26,8 +28,9 @@ import type {
   AgentHandoff,
   ForkContext,
   ObservationRecord,
+  PromptBlock,
 } from "./contracts"
-import { DEFAULT_USER_SCOPE_ID } from "./contracts"
+import { DEFAULT_USER_SCOPE_ID, PROMPT_BLOCK } from "./contracts"
 
 // ─── System prompt wrappers ───────────────────────────────────────────────────
 
@@ -89,22 +92,33 @@ export namespace Memory {
     const workingMemory = rawWM ? wrapWorkingMemory(rawWM, opts.scope.type) : undefined
 
     const rawObs = omRec ? formatObservations(omRec, oBudget) : undefined
-    const observations = rawObs ?? undefined
+    const observationsStable = rawObs
+      ? SystemPrompt.observationsStable({ observations: rawObs, reflections: null })
+      : undefined
+    const observationsLive = omRec ? SystemPrompt.observationsLive(omRec) : undefined
+    const observations = SystemPrompt.mergeObservations(observationsStable, observationsLive)
 
     const rawRecall = artifacts.length ? SemanticRecall.format(artifacts, rBudget) : undefined
     const semanticRecall = rawRecall ? wrapSemanticRecall(rawRecall) : undefined
+    const blocks = [
+      block(PROMPT_BLOCK.WORKING_MEMORY, workingMemory, true),
+      block(PROMPT_BLOCK.OBSERVATIONS_STABLE, observationsStable, true),
+      block(PROMPT_BLOCK.OBSERVATIONS_LIVE, observationsLive, false),
+      block(PROMPT_BLOCK.SEMANTIC_RECALL, semanticRecall, false),
+    ].filter((x): x is PromptBlock => Boolean(x))
 
     const continuationHint = omRec?.suggested_continuation ?? undefined
 
-    const totalTokens = [workingMemory, observations, semanticRecall]
-      .filter(Boolean)
-      .reduce((sum, s) => sum + Token.estimate(s!), 0)
+    const totalTokens = blocks.reduce((sum, x) => sum + x.tokens, 0)
 
     return {
       recentHistory: undefined,
       workingMemory,
       observations,
       semanticRecall,
+      observationsStable,
+      observationsLive,
+      blocks,
       continuationHint,
       totalTokens,
     }
@@ -181,4 +195,15 @@ function formatObservations(rec: ObservationRecord, budget: number): string | un
   // Apply token budget cap
   const cap = Token.estimate(body) > budget ? body.slice(0, budget * 4) : body
   return cap || undefined
+}
+
+function block(key: PromptBlock["key"], body: string | undefined, stable: boolean): PromptBlock | undefined {
+  if (!body?.trim()) return undefined
+  return {
+    key,
+    body,
+    stable,
+    tokens: Token.estimate(body),
+    hash: createHash("sha1").update(body).digest("hex"),
+  }
 }

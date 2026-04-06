@@ -41,6 +41,8 @@ const REFLECT_FRAMES = [
   "◇ reflecting.  ",
 ]
 
+const STICKY_MS = 1500
+
 const id = "internal:sidebar-footer"
 
 function View(props: { api: TuiPluginApi }) {
@@ -58,18 +60,23 @@ function View(props: { api: TuiPluginApi }) {
   const [frame, setFrame] = createSignal(0)
   const [obsFrame, setObsFrame] = createSignal(0)
   const [refFrame, setRefFrame] = createSignal(0)
+  const [obsUntil, setObsUntil] = createSignal(0)
+  const [refUntil, setRefUntil] = createSignal(0)
 
   onMount(() => {
     const poll = setInterval(() => {
+      const now = Date.now()
       const dream = AutoDream.dreaming()
       const obs = OMBuf.observing()
       const ref = OMBuf.reflecting()
       setIsDreaming(dream)
-      setIsObserving(obs)
-      setIsReflecting(ref)
+      if (obs) setObsUntil(now + STICKY_MS)
+      if (ref) setRefUntil(now + STICKY_MS)
+      setIsObserving(obs || now < obsUntil())
+      setIsReflecting(ref || now < refUntil())
       if (dream) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
-      if (obs) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
-      if (ref) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
+      if (obs || now < obsUntil()) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
+      if (ref || now < refUntil()) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
     }, 400)
     onCleanup(() => clearInterval(poll))
   })

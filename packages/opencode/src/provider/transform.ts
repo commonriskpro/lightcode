@@ -234,15 +234,31 @@ export namespace ProviderTransform {
     msg.providerOptions = mergeDeep(msg.providerOptions ?? {}, opts)
   }
 
+  function volatileSystem(msg: ModelMessage) {
+    if (msg.role !== "system") return false
+    if (typeof msg.content !== "string") return false
+    return msg.content.includes("Today's date:") || msg.content.includes("You are powered by the model named")
+  }
+
+  function liveSystem(msg: ModelMessage) {
+    if (msg.role !== "system") return false
+    if (typeof msg.content !== "string") return false
+    return msg.content.includes("<system-reminder>") && !msg.content.includes("<local-observations>")
+  }
+
+  function stableSystem(msg: ModelMessage) {
+    if (msg.role !== "system") return false
+    if (volatileSystem(msg) || liveSystem(msg)) return false
+    return true
+  }
+
   function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-    // BP2: Agent prompt (system[0]) — 1hr TTL
-    // Most stable content: only changes on agent switch
     const system = msgs.filter((msg) => msg.role === "system")
     if (system[0]) applyBreakpoint(system[0], cacheOpts(model, true), model)
-
-    // BP3: Env + skills + instructions (system[1]) — 5min TTL
-    // Stable within a session (volatile data in system[2] is NOT cached)
-    if (system[1]) applyBreakpoint(system[1], cacheOpts(model, false), model)
+    for (const msg of system.slice(1)) {
+      if (!stableSystem(msg)) continue
+      applyBreakpoint(msg, cacheOpts(model, false), model)
+    }
 
     // BP4: Second-to-last conversation message — 5min TTL
     // Last message that WON'T change on the next turn — always a cache READ on turn N+1

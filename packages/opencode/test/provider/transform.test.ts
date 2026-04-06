@@ -2879,19 +2879,44 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
     expect(result[1].providerOptions?.anthropic?.cacheControl?.ttl).toBeUndefined()
   })
 
-  test("system[2] is NOT cached (volatile)", () => {
+  test("stable memory system blocks get cache metadata", () => {
     const model = makeModel()
     const msgs = [
       { role: "system", content: "Agent prompt" },
-      { role: "system", content: "Environment info" },
-      { role: "system", content: "Volatile: date, model" },
+      { role: "system", content: "Env + skills" },
+      { role: "system", content: "<working-memory>WM</working-memory>" },
+      { role: "system", content: "<local-observations>OBS</local-observations>" },
+      { role: "system", content: "<memory-recall>RECALL</memory-recall>" },
+      { role: "system", content: "<system-reminder>LIVE</system-reminder>" },
+      { role: "system", content: "Today's date: Sun" },
       { role: "user", content: "Hello" },
       { role: "assistant", content: "Hi" },
       { role: "user", content: "More" },
     ] as any[]
 
     const result = ProviderTransform.message(msgs, model, {}) as any[]
-    expect(result[2].providerOptions).toBeUndefined()
+
+    expect(result[2].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+    expect(result[3].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+    expect(result[4].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+    expect(result[5].providerOptions).toBeUndefined()
+    expect(result[6].providerOptions).toBeUndefined()
+  })
+
+  test("volatile system block is NOT cached", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Environment info" },
+      { role: "system", content: "<working-memory>WM</working-memory>" },
+      { role: "system", content: "Today's date: Sun Apr 05 2026\nYou are powered by the model named claude" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "More" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    expect(result[3].providerOptions).toBeUndefined()
   })
 
   test("BP4 on second-to-last conversation message", () => {

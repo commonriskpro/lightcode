@@ -9,7 +9,7 @@ import { Token } from "@/util/token"
 import { OM } from "./om"
 import { parseObservationGroups } from "./om/groups"
 import type { SessionID } from "./schema"
-import { Memory, SemanticRecall, WorkingMemory } from "@/memory"
+import type { ObservationRecord } from "@/memory/contracts"
 
 export namespace SystemPrompt {
   export function provider(_model: Provider.Model) {
@@ -125,14 +125,38 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     return out
   }
 
-  export async function observations(sid: SessionID): Promise<string | undefined> {
-    const rec = OM.get(sid)
-    if (!rec) return undefined
+  export function observationsStable(rec: Pick<ObservationRecord, "observations" | "reflections">): string | undefined {
     const body = rec.reflections ?? rec.observations
     if (!body) return undefined
-    let out = wrapObservations(body, rec.suggested_continuation ?? undefined)
+    let out = `<local-observations>\n${capRecallBody(body)}\n</local-observations>\n\n${OBSERVATION_CONTEXT_INSTRUCTIONS}`
     if (parseObservationGroups(body).length > 0) out += "\n\n" + OBSERVATION_RETRIEVAL_INSTRUCTIONS
     return out
+  }
+
+  export function observationsLive(rec: Pick<ObservationRecord, "suggested_continuation">): string | undefined {
+    if (!rec.suggested_continuation) return undefined
+    return `<system-reminder>\n${rec.suggested_continuation}\n</system-reminder>`
+  }
+
+  export function mergeObservations(stable?: string, live?: string): string | undefined {
+    if (stable && live) return `${stable}\n\n${live}`
+    return stable ?? live
+  }
+
+  export async function observationBlocks(sid: SessionID): Promise<{
+    stable: string | undefined
+    live: string | undefined
+    combined: string | undefined
+  }> {
+    const rec = OM.get(sid)
+    if (!rec) return { stable: undefined, live: undefined, combined: undefined }
+    const stable = observationsStable(rec)
+    const live = observationsLive(rec)
+    return { stable, live, combined: mergeObservations(stable, live) }
+  }
+
+  export async function observations(sid: SessionID): Promise<string | undefined> {
+    return (await observationBlocks(sid)).combined
   }
 
   // Production cleanup: the old Engram recall bridge was removed.
