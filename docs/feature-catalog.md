@@ -76,32 +76,97 @@ When a session goes idle, a sandboxed `dream` agent reads local observations + c
 - Manual trigger: `/dream [focus]`
 - Source: `src/dream/index.ts`, `src/dream/daemon.ts`
 
+### Memory Layer Scopes
+
+Working memory and semantic recall are loaded from a `thread > agent > project > user` scope chain. The `user` scope holds durable user-wide preferences and is writable only via `update_user_memory` with explicit approval. `global_pattern` scope remains dormant.
+
 ### Memory Pipeline Summary
 
+**Non-Anthropic providers:**
+
 ```
-system[0]  BP2 1h    Agent prompt + env + instructions
-system[1]  BP3 5min  Local observations or reflections (every turn)
-system[2]  uncached  Semantic recall (step 1 only, session-frozen)
-system[3]  uncached  Working memory (step 1 only, session-frozen)
+system[0]  BP2 1h    Agent prompt
+system[1]  BP3 5min  Env + skills + instructions
+system[2]  5min      Working memory (step 1 only)
+system[3]  5min      Stable observations (every turn)
+system[4]  5min      Semantic recall (step 1 only, reused if same-topic)
+system[5]  uncached  Observations live (continuation hints, every turn)
 system[last] uncached Volatile: date + model identity
 ```
 
+**Anthropic (4-slot planner — head and OM core merged):**
+
+```
+system[0]  BP2 1h    Stable head: agent prompt + env + skills merged
+system[1]  BP3 5min  OM core: working memory + stable observations merged
+system[2]  uncached  Semantic recall
+system[3]  uncached  Live observation hints
+system[last] uncached Volatile: date + model identity
+```
+
+Each memory block has a deterministic hash — identical content between turns produces the same hash, enabling cache hit verification via `/cache-debug`.
+
 ---
 
-## 2. Prompt Caching (BP1–BP4)
+## 2. Prompt Caching
 
-Four deterministic cache breakpoints applied before every Anthropic API call.
+LightCode uses a cache-aware prompt assembly strategy that separates stable from volatile content to maximize provider-side cache hit rate without reducing memory budgets.
 
-| BP  | Location                             | TTL  | Source                              |
-| --- | ------------------------------------ | ---- | ----------------------------------- |
-| BP1 | Last tool definition                 | 1h   | `src/session/llm.ts:286-296`        |
-| BP2 | `system[0]` (agent prompt + env)     | 1h   | `src/provider/transform.ts:237-252` |
-| BP3 | `system[1]` (recall or observations) | 5min | `src/provider/transform.ts:237-252` |
-| BP4 | Penultimate conversation message     | 5min | `src/provider/transform.ts:237-252` |
+### Anthropic — 4-Breakpoint Planner
 
-**Tool sort for cache stability:** tools are sorted alphabetically before every call so the tool list hash is deterministic across sessions, MCP reconnections, and deferred tool loading.
+Anthropic allows a maximum of **4 explicit cache breakpoints** per request. LightCode reserves the slots as:
 
-- Source: `src/session/llm.ts:277-284`
+| BP  | Location                                                         | TTL  | Source                      |
+| --- | ---------------------------------------------------------------- | ---- | --------------------------- |
+| BP1 | Last tool definition                                             | 1h   | `src/session/llm.ts`        |
+| BP2 | `system[0]` — stable head (agent prompt + env/skills combined)   | 1h   | `src/provider/transform.ts` |
+| BP3 | First stable memory block (OM core: working memory + obs stable) | 5min | `src/provider/transform.ts` |
+| BP4 | Penultimate conversation message                                 | 5min | `src/provider/transform.ts` |
+
+**Why Anthropic groups head + memory:** prior to 2026-04-06 every stable system block was individually tagged, which could exceed the 4-slot limit. Now the head is merged for Anthropic requests and memory blocks are grouped as one cacheable OM core boundary.
+
+**Tool sort for cache stability:** tools are sorted alphabetically before every call so the tool list hash is deterministic.
+
+- Source: `src/session/llm.ts`, `src/provider/transform.ts`
+
+### OpenAI / GPT
+
+Caching is **automatic** on all recent models (`gpt-4o`+, full GPT-5 family). LightCode adds:
+
+- `promptCacheKey = sessionID` — per-session affinity routing
+- `store = false` — disables server-side Responses state retention but does **not** disable prompt caching
+- `prompt_cache_retention` — not currently set; default is in-memory (5-10 min)
+
+### Other Providers
+
+- **OpenRouter, Venice, opencode gateway**: `promptCacheKey` or equivalent affinity key set where supported
+- **Bedrock**: 5-minute cache breakpoints via `cachePoint: { type: "default" }` (no 1h support)
+- **Other providers**: no-op — block assembly remains cache-friendly but no metadata is attached
+
+### Prompt Block Assembly
+
+Memory is assembled in deterministic layer order regardless of provider:
+
+```
+[head + rest]              ← stable: agent prompt, env, skills, instructions
+[OM core]                  ← stable: working memory + observations stable (merged for Anthropic)
+[recall]                   ← semi-stable: semantic recall (reused across same-topic follow-ups)
+[observations live]        ← volatile: continuation hints
+[volatile]                 ← volatile: date + model identity
+```
+
+Each layer has a `hash`, `tokens`, and `stable` flag emitted by `Memory.buildContext()`.
+
+### Cache Debug
+
+Use `/cache-debug` (alias: `/prompt-profile`, `/cachedbg`) in the TUI to inspect the current session's prompt profile:
+
+- per-layer token count and hash
+- `cache.read` / `cache.write` from the last completed step
+- `% hit` indicator
+- whether semantic recall was reused or refreshed
+
+The same data is available at `GET /experimental/prompt-profile?sessionID=...` for external tooling.
 
 ---
 
@@ -265,6 +330,12 @@ All accessible via the command palette (`/` prefix) or keybinds.
 | `/dream`      |         | Trigger AutoDream consolidation manually               |
 | `/dreammodel` |         | Configure the model used by AutoDream                  |
 
+### Debug
+
+| Command        | Aliases                        | Description                                                                            |
+| -------------- | ------------------------------ | -------------------------------------------------------------------------------------- |
+| `/cache-debug` | `/prompt-profile`, `/cachedbg` | Live prompt profile: per-layer tokens, hashes, cache read/write counters, recall reuse |
+
 ### System
 
 | Command     | Description                                      |
@@ -309,7 +380,7 @@ Configured via `/connect` or `lightcode.jsonc`. Supported provider types:
 | OpenRouter            | API key                   |
 | Any OpenAI-compatible | API key + base URL        |
 
-Prompt caching (BP1–BP4) applies to Anthropic and Bedrock. Other providers get cache headers where supported.
+Prompt caching applies to Anthropic (4-slot planner), Bedrock (5min only), OpenAI/GPT (automatic, with `promptCacheKey` affinity), OpenRouter, Venice, and gateway providers. See **Section 2** for the full per-provider breakdown.
 
 ---
 
@@ -408,11 +479,12 @@ Cost computation: `Session.getUsage()` called at `finish-step` via `processor.ts
 
 ## Related Docs
 
-| Document                                                           | What it covers                                        |
-| ------------------------------------------------------------------ | ----------------------------------------------------- |
-| [memory-architecture.md](memory-architecture.md)                   | Deep dive: OM state machine, DB schema, failure modes |
-| [system-prompt-architecture.md](system-prompt-architecture.md)     | system[0-3] layout, cache breakpoints, assembly order |
-| [autodream-engram-integration.md](autodream-engram-integration.md) | Engram vs AutoDream design rationale                  |
-| [commands-tui-architecture.md](commands-tui-architecture.md)       | Full slash command system internals                   |
-| [performance-features-spec.md](performance-features-spec.md)       | Tool concurrency, cache sorting, fork subagent        |
-| [openspec/specs/memory/spec.md](../openspec/specs/memory/spec.md)  | Living memory system specification                    |
+| Document                                                                                                                              | What it covers                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [memory-architecture.md](memory-architecture.md)                                                                                      | Historical: OM state machine, DB schema, failure modes (Engram-era)                             |
+| [system-prompt-architecture.md](system-prompt-architecture.md)                                                                        | system block layout, cache breakpoints, assembly order                                          |
+| [autodream-engram-integration.md](autodream-engram-integration.md)                                                                    | Engram vs AutoDream design rationale                                                            |
+| [commands-tui-architecture.md](commands-tui-architecture.md)                                                                          | Full slash command system internals                                                             |
+| [performance-features-spec.md](performance-features-spec.md)                                                                          | Tool concurrency, cache sorting, fork subagent                                                  |
+| [openspec/specs/memory/spec.md](../openspec/specs/memory/spec.md)                                                                     | Living memory system specification                                                              |
+| [openspec/changes/2026-04-05-high-context-prompt-cache/design.md](../openspec/changes/2026-04-05-high-context-prompt-cache/design.md) | High-context prompt caching: block identity, observation split, 4-slot Anthropic planner design |

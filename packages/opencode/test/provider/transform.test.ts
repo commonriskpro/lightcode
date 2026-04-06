@@ -2884,8 +2884,10 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
     const msgs = [
       { role: "system", content: "Agent prompt" },
       { role: "system", content: "Env + skills" },
-      { role: "system", content: "<working-memory>WM</working-memory>" },
-      { role: "system", content: "<local-observations>OBS</local-observations>" },
+      {
+        role: "system",
+        content: "<working-memory>WM</working-memory>\n\n<local-observations>OBS</local-observations>",
+      },
       { role: "system", content: "<memory-recall>RECALL</memory-recall>" },
       { role: "system", content: "<system-reminder>LIVE</system-reminder>" },
       { role: "system", content: "Today's date: Sun" },
@@ -2897,10 +2899,9 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
     const result = ProviderTransform.message(msgs, model, {}) as any[]
 
     expect(result[2].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
-    expect(result[3].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
-    expect(result[4].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+    expect(result[3].providerOptions).toBeUndefined()
+    expect(result[4].providerOptions).toBeUndefined()
     expect(result[5].providerOptions).toBeUndefined()
-    expect(result[6].providerOptions).toBeUndefined()
   })
 
   test("volatile system block is NOT cached", () => {
@@ -2919,7 +2920,7 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
     expect(result[3].providerOptions).toBeUndefined()
   })
 
-  test("BP4 on second-to-last conversation message", () => {
+  test("BP4 on second-to-last conversation message when slot remains", () => {
     const model = makeModel()
     const msgs = [
       { role: "system", content: "System" },
@@ -2931,6 +2932,30 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
     const result = ProviderTransform.message(msgs, model, {}) as any[]
     // conversation = [msg1, msg2, msg3]. second-to-last = msg2 (index 2 in full array)
     expect(result[2].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+  })
+
+  test("planner keeps explicit breakpoints to three message slots", () => {
+    const model = makeModel()
+    const msgs = [
+      { role: "system", content: "Agent prompt" },
+      { role: "system", content: "Env + skills" },
+      {
+        role: "system",
+        content: "<working-memory>WM</working-memory>\n\n<local-observations>OBS</local-observations>",
+      },
+      { role: "system", content: "<memory-recall>RECALL</memory-recall>" },
+      { role: "user", content: "msg1" },
+      { role: "assistant", content: "msg2" },
+      { role: "user", content: "msg3" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    const cached = result.filter((x) => x.providerOptions?.anthropic?.cacheControl)
+
+    expect(cached).toHaveLength(3)
+    expect(result[0].providerOptions?.anthropic?.cacheControl?.ttl).toBe("1h")
+    expect(result[2].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
+    expect(result[5].providerOptions?.anthropic?.cacheControl?.type).toBe("ephemeral")
   })
 
   test("no BP4 when conversation has < 3 messages", () => {

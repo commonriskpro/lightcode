@@ -34,6 +34,7 @@ import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogFeature } from "./component/dialog-feature"
 import { DialogDreamModel } from "./component/dialog-dream-model"
+import { DialogCacheDebug } from "./component/dialog-cache-debug"
 import { DialogMemory } from "./component/dialog-memory"
 import { AutoDream } from "@/dream"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
@@ -743,6 +744,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           })
       },
       category: "System",
+    },
+    {
+      title: "Cache Debug",
+      value: "debug.cache",
+      slash: {
+        name: "cache-debug",
+        aliases: ["prompt-profile", "cachedbg"],
+      },
+      category: "System",
+      onSelect: () => {
+        dialog.replace(() => <DialogCacheDebug />)
+      },
     },
     {
       title: "AutoDream Model",

@@ -198,7 +198,7 @@ export namespace ProviderTransform {
     copilot: { copilot_cache_control: { type: "ephemeral" } },
   }
 
-  function isAnthropicLike(model: Provider.Model) {
+  export function isAnthropicLike(model: Provider.Model) {
     return (
       model.providerID === "anthropic" ||
       model.providerID.includes("bedrock") ||
@@ -252,16 +252,26 @@ export namespace ProviderTransform {
     return true
   }
 
+  function memoryCore(msg: ModelMessage) {
+    if (msg.role !== "system") return false
+    if (typeof msg.content !== "string") return false
+    return ["<working-memory>", "<local-observations>", "<memory-recall>"].some((x) => msg.content.includes(x))
+  }
+
   function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
     const system = msgs.filter((msg) => msg.role === "system")
     if (system[0]) applyBreakpoint(system[0], cacheOpts(model, true), model)
-    for (const msg of system.slice(1)) {
-      if (!stableSystem(msg)) continue
-      applyBreakpoint(msg, cacheOpts(model, false), model)
-    }
+    const core = system.slice(1).find(memoryCore)
+    if (core) applyBreakpoint(core, cacheOpts(model, false), model)
+    const fallback = system.slice(1).find((msg) => stableSystem(msg) && msg !== core)
+    if (!core && fallback) applyBreakpoint(fallback, cacheOpts(model, false), model)
 
-    // BP4: Second-to-last conversation message — 5min TTL
-    // Last message that WON'T change on the next turn — always a cache READ on turn N+1
+    // Anthropic allows only four explicit breakpoints total. LightCode reserves
+    // one for the final tool definition in LLM.stream(), so keep message-level
+    // cache points to three: system[0], one stable memory/head boundary, and BP4.
+    const used = Number(Boolean(system[0])) + Number(Boolean(core || fallback))
+    if (used >= 3) return msgs
+
     const conversation = msgs.filter((msg) => msg.role !== "system")
     if (conversation.length >= 3) {
       applyBreakpoint(conversation[conversation.length - 2], cacheOpts(model, false), model)

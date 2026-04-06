@@ -19,6 +19,7 @@ import { Auth } from "@/auth"
 import { Installation } from "@/installation"
 import { createHash } from "crypto"
 import type { PromptBlock } from "@/memory/contracts"
+import { PromptProfile } from "./prompt-profile"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -39,6 +40,7 @@ export namespace LLM {
     toolChoice?: "auto" | "required" | "none"
     maxSteps?: number
     recall?: string
+    recallReused?: boolean
     observations?: string
     observationsStable?: string
     observationsLive?: string
@@ -175,18 +177,44 @@ export namespace LLM {
       recall: input.recall,
       messages: input.messages,
     })
-    const blocks = [
-      head,
-      rest || undefined,
-      input.workingMemory,
-      input.observationsStable ?? input.observations ?? "<!-- ctx -->",
-      input.recall,
-      input.observationsLive,
-      SystemPrompt.volatile(input.model),
-    ].filter((x): x is string => Boolean(x))
+    const stableObs = input.observationsStable ?? input.observations ?? "<!-- ctx -->"
+    const anthropic = ProviderTransform.isAnthropicLike(input.model) && input.model.api.npm !== "@ai-sdk/gateway"
+    const core = [input.workingMemory, stableObs].filter(Boolean).join("\n\n") || undefined
+    const blocks = anthropic
+      ? [
+          [head, rest].filter(Boolean).join("\n"),
+          core,
+          input.recall,
+          input.observationsLive,
+          SystemPrompt.volatile(input.model),
+        ].filter((x): x is string => Boolean(x))
+      : [
+          head,
+          rest || undefined,
+          input.workingMemory,
+          stableObs,
+          input.recall,
+          input.observationsLive,
+          SystemPrompt.volatile(input.model),
+        ].filter((x): x is string => Boolean(x))
     l.info("prompt profile", {
       blocks: promptProfile,
       memoryBlocks: input.memoryBlocks?.map((x) => ({ key: x.key, hash: x.hash, tokens: x.tokens, stable: x.stable })),
+    })
+    PromptProfile.set({
+      sessionID: input.sessionID,
+      requestAt: Date.now(),
+      recallReused: input.recallReused ?? false,
+      layers: [
+        promptProfile.head,
+        promptProfile.rest,
+        promptProfile.working_memory,
+        promptProfile.observations_stable,
+        promptProfile.observations_live,
+        promptProfile.semantic_recall,
+        { key: "tail", tokens: promptProfile.tail.tokens, hash: undefined },
+      ].filter((x) => x.tokens > 0),
+      cache: { read: 0, write: 0 },
     })
 
     const variant =

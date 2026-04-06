@@ -163,6 +163,7 @@ export namespace SessionPrompt {
     msgs: MessageV2.WithParts[],
   ): Promise<{
     recall: string | undefined
+    recallReused: boolean
     workingMemory: string | undefined
     durableObservations: string | undefined
     blocks: Awaited<ReturnType<typeof Memory.buildContext>>["blocks"]
@@ -180,7 +181,8 @@ export namespace SessionPrompt {
       semanticQuery: keep ? undefined : text,
     })
     const durable = durableChildHydration(sessionID)
-    const recall = keep ? prev?.recall : memCtx.semanticRecall
+    const recallReused = keep && Boolean(prev?.recall)
+    const recall = recallReused ? prev?.recall : memCtx.semanticRecall
     const block = keep ? prev?.block : memCtx.blocks.find((x) => x.key === PROMPT_BLOCK.SEMANTIC_RECALL)
     const order = {
       [PROMPT_BLOCK.WORKING_MEMORY]: 0,
@@ -203,6 +205,7 @@ export namespace SessionPrompt {
 
     return {
       recall,
+      recallReused,
       workingMemory: appendBlock(memCtx.workingMemory, "durable-child-working-memory", durable.workingMemory),
       durableObservations: durable.observations,
       blocks,
@@ -1615,6 +1618,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           let structured: unknown | undefined
           let step = 0
           let recall: string | undefined
+          let recallReused = false
           let obs: string | undefined
           let obsStable: string | undefined
           let obsLive: string | undefined
@@ -1959,6 +1963,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   // Observations are loaded separately every turn (see below).
                   const mem = yield* Effect.promise(() => loadRuntimeMemory(sessionID, agent.name, msgs))
                   recall = mem.recall
+                  recallReused = mem.recallReused
                   workingMem = mem.workingMemory
                   durableObs = mem.durableObservations
                   memBlocks = mem.blocks
@@ -2042,6 +2047,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   toolChoice: format.type === "json_schema" ? "required" : undefined,
                   maxSteps: format.type === "json_schema" ? 1 : 5,
                   recall,
+                  recallReused,
                   observations: obs,
                   observationsStable: obsStable,
                   observationsLive: obsLive,

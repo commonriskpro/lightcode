@@ -9,6 +9,7 @@ import { Snapshot } from "@/snapshot"
 import { Log } from "@/util/log"
 import { Session } from "."
 import { LLM } from "./llm"
+import { PromptProfile } from "./prompt-profile"
 import { MessageV2 } from "./message-v2"
 
 import { PartID } from "./schema"
@@ -298,6 +299,7 @@ export namespace SessionProcessor {
                   reasoning: usage.tokens.reasoning,
                 },
               })
+              PromptProfile.updateCache(ctx.sessionID, usage.tokens.cache.read, usage.tokens.cache.write)
               yield* session.updatePart({
                 id: PartID.ascending(),
                 reason: value.finishReason,

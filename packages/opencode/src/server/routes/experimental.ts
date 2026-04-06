@@ -12,6 +12,7 @@ import { zodToJsonSchema } from "zod-to-json-schema"
 import { errors } from "../error"
 import { lazy } from "../../util/lazy"
 import { WorkspaceRoutes } from "./workspace"
+import { PromptProfile } from "../../session/prompt-profile"
 
 export const ExperimentalRoutes = lazy(() =>
   new Hono()
@@ -266,6 +267,48 @@ export const ExperimentalRoutes = lazy(() =>
       }),
       async (c) => {
         return c.json(await MCP.resources())
+      },
+    )
+    .get(
+      "/prompt-profile",
+      describeRoute({
+        summary: "Get prompt profile for a session",
+        description:
+          "Returns the most recent prompt profile including per-layer token counts, hashes, and provider cache counters for a given session. Data is in-memory only and resets on server restart.",
+        operationId: "experimental.prompt_profile.get",
+        responses: {
+          200: {
+            description: "Prompt profile",
+            content: {
+              "application/json": {
+                schema: resolver(
+                  z
+                    .object({
+                      sessionID: z.string(),
+                      requestAt: z.number(),
+                      recallReused: z.boolean(),
+                      layers: z.array(
+                        z.object({
+                          key: z.string(),
+                          tokens: z.number(),
+                          hash: z.string().optional(),
+                        }),
+                      ),
+                      cache: z.object({ read: z.number(), write: z.number() }),
+                    })
+                    .optional()
+                    .meta({ ref: "PromptProfile" }),
+                ),
+              },
+            },
+          },
+          ...errors(400),
+        },
+      }),
+      validator("query", z.object({ sessionID: z.string() })),
+      async (c) => {
+        const { sessionID } = c.req.valid("query")
+        return c.json(PromptProfile.get(sessionID) ?? null)
       },
     ),
 )

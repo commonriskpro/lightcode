@@ -495,6 +495,100 @@ describe("session.llm.stream", () => {
     })
   })
 
+  test("anthropic groups stable head and OM core for cache planning", async () => {
+    const server = state.server
+    if (!server) throw new Error("Server not initialized")
+
+    const providerID = "anthropic"
+    const modelID = "claude-sonnet-4-0"
+    const request = waitRequest(
+      "/messages",
+      new Response(
+        createEventStream(
+          [
+            { type: "message_start", message: { id: "m", type: "message", role: "assistant" } },
+            { type: "message_delta", delta: { stop_reason: "end_turn" } },
+          ],
+          true,
+        ),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "lightcode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: [providerID],
+            provider: {
+              [providerID]: {
+                options: {
+                  apiKey: "test-key",
+                  baseURL: `${server.url.origin}/v1`,
+                },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await Provider.getModel(ProviderID.make(providerID), ModelID.make(modelID))
+        const sessionID = SessionID.make("session-test-anthropic-cache-order")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const user = {
+          id: MessageID.make("user-anthropic-cache-order"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(providerID), modelID: resolved.id },
+        } satisfies MessageV2.User
+
+        const stream = await LLM.stream({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["ENV", "SKILLS"],
+          abort: new AbortController().signal,
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+          workingMemory: "<working-memory>WM</working-memory>",
+          observationsStable: "<local-observations>OBS</local-observations>",
+          recall: "<memory-recall>RECALL</memory-recall>",
+          observationsLive: "<system-reminder>LIVE</system-reminder>",
+        })
+
+        for await (const _ of stream.fullStream) {
+        }
+
+        const capture = await request
+        const sys = (capture.body.system as Array<{ type: string; text: string }>).map((x) => x.text)
+
+        expect(sys[0]).toContain("ENV")
+        expect(sys[0]).toContain("SKILLS")
+        expect(sys[1]).toContain("<working-memory>WM</working-memory>")
+        expect(sys[1]).toContain("<local-observations>OBS</local-observations>")
+        expect(sys[2]).toBe("<memory-recall>RECALL</memory-recall>")
+        expect(sys[3]).toBe("<system-reminder>LIVE</system-reminder>")
+      },
+    })
+  })
+
   test("raw stream abort signal cancels provider response body promptly", async () => {
     const server = state.server
     if (!server) throw new Error("Server not initialized")
