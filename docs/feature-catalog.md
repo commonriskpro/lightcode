@@ -279,17 +279,18 @@ All accessible via the command palette (`/` prefix) or keybinds.
 
 ## 8. Experimental Features (`/features`)
 
-Accessible via `/features`. Space to toggle, Enter to configure model (where available).
+Accessible via `/features`. Space toggles runtime features. Enter opens model/config dialogs where available.
 
-| Feature            |   Toggle    | Model Picker | Default | Notes                                                                 |
-| ------------------ | :---------: | :----------: | ------- | --------------------------------------------------------------------- |
-| Deferred Tools     |     ✅      |      —       | off     | Also togglable via `OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS`             |
-| Batch Tool         |     ✅      |      —       | off     | Run multiple tools in parallel                                        |
-| Continue on Deny   |     ✅      |      —       | off     | Keep agent loop running when tool call denied                         |
-| Markdown Rendering | ❌ env only |      —       | on      | `OPENCODE_EXPERIMENTAL_MARKDOWN`                                      |
-| OpenTelemetry      |     ✅      |      —       | off     | AI SDK span tracing                                                   |
-| AutoDream          |     ✅      |      ✅      | off     | Native background consolidation into `memory_artifacts`               |
-| Observer Memory    |     ✅      |      ✅      | off     | Native observational memory; default model: `google/gemini-2.5-flash` |
+| Feature              |   Toggle    | Model Picker | Default | Notes                                                                          |
+| -------------------- | :---------: | :----------: | ------- | ------------------------------------------------------------------------------ |
+| Deferred Tools       |     ✅      |      —       | off     | Also togglable via `OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS`                      |
+| Batch Tool           |     ✅      |      —       | off     | Run multiple tools in parallel                                                 |
+| Continue on Deny     |     ✅      |      —       | off     | Keep agent loop running when tool call denied                                  |
+| Markdown Rendering   | ❌ env only |      —       | on      | `OPENCODE_EXPERIMENTAL_MARKDOWN`                                               |
+| OpenTelemetry        |     ✅      |      —       | off     | AI SDK span tracing                                                            |
+| AutoDream            |     ✅      |      ✅      | off     | Native background consolidation into `memory_artifacts`                        |
+| Observer + Reflector |     ✅      |      ✅      | off     | Shared background memory model; default: `google/gemini-2.5-flash`             |
+| Async Memory Agents  |      —      |      ✅      | n/a     | Opens a sub-dialog for Observer, Reflector, AutoDream, and Observer thresholds |
 
 Features that are **env only** (LSP Tool, Plan Mode, Workspaces) are not shown in `/features` — they must be set via environment variable and cannot be toggled at runtime.
 
@@ -322,9 +323,9 @@ Config file: `~/.config/lightcode/lightcode.jsonc` (or `OPENCODE_CONFIG_DIR`).
 {
   "experimental": {
     "autodream": true, // Enable AutoDream on session idle
-    "autodream_model": "google/gemini-2.5-flash", // Model for AutoDream
+    "autodream_model": "google/gemini-2.5-flash", // Model for the hidden AutoDream/dream agent
     "observer": true, // Enable intra-session Observer
-    "observer_model": "google/gemini-2.5-flash", // Model for Observer + Reflector
+    "observer_model": "google/gemini-2.5-flash", // Shared model for Observer + Reflector
   },
 }
 ```

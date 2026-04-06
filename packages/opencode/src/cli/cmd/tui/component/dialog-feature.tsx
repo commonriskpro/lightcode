@@ -9,6 +9,7 @@ import { TextAttributes } from "@opentui/core"
 import { Flag } from "@/flag/flag"
 import { useToast } from "../ui/toast"
 import { DialogDreamModel } from "./dialog-dream-model"
+import { DialogMemoryAgents } from "./dialog-memory-agents"
 import { DialogObserverModel } from "./dialog-observer-model"
 import { DialogObserverThresholds } from "./dialog-observer-thresholds"
 
@@ -119,12 +120,19 @@ export function DialogFeature() {
       },
       {
         id: "observer",
-        title: "Observer Memory",
-        description: "Compress message history every 30k tokens using native observational memory",
+        title: "Observer + Reflector",
+        description: "Background observational memory with a shared model for Observer and Reflector",
         config: "observer",
         modelConfig: "observer_model",
         enabled: () => isEnabled("observer", false),
         currentModel: () => currentModel("observer_model") ?? "google/gemini-2.5-flash",
+      },
+      {
+        id: "memory_agents",
+        title: "Async Memory Agents",
+        description: "Configure Observer, Reflector, AutoDream, and memory thresholds",
+        customDialog: true,
+        enabled: () => true,
       },
       {
         id: "observer_thresholds",
@@ -161,6 +169,8 @@ export function DialogFeature() {
   function openSubDialog(id: string) {
     if (id === "autodream") {
       dialog.push(() => <DialogDreamModel />)
+    } else if (id === "memory_agents") {
+      dialog.push(() => <DialogMemoryAgents />)
     } else if (id === "observer") {
       dialog.push(() => <DialogObserverModel />)
     } else if (id === "observer_thresholds") {
