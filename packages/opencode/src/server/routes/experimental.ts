@@ -13,9 +13,37 @@ import { errors } from "../error"
 import { lazy } from "../../util/lazy"
 import { WorkspaceRoutes } from "./workspace"
 import { PromptProfile } from "../../session/prompt-profile"
+import { AutoDream } from "../../dream"
 
 export const ExperimentalRoutes = lazy(() =>
   new Hono()
+    .get(
+      "/dream-status",
+      describeRoute({
+        summary: "Get dream daemon status",
+        description: "Returns the current autodream daemon status for the active project directory.",
+        operationId: "experimental.dream.status",
+        responses: {
+          200: {
+            description: "Dream status",
+            content: {
+              "application/json": {
+                schema: resolver(
+                  z.object({
+                    dreaming: z.boolean(),
+                    lastCompleted: z.number().optional(),
+                    lastError: z.string().optional(),
+                  }),
+                ),
+              },
+            },
+          },
+        },
+      }),
+      async (c) => {
+        return c.json(await AutoDream.status())
+      },
+    )
     .get(
       "/tool/ids",
       describeRoute({

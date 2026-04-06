@@ -12,7 +12,7 @@ import { Token } from "../util/token"
 import { OM } from "../session/om"
 import type { SessionID } from "../session/schema"
 import { Instance } from "../project/instance"
-import { ensureDaemon } from "./ensure"
+import { ensureDaemon, paths as daemonPaths } from "./ensure"
 import { Server } from "../server/server"
 import { Memory } from "../memory"
 import { Flag } from "../flag/flag"
@@ -37,6 +37,33 @@ export namespace AutoDream {
   let _dreaming = false
   export function dreaming() {
     return _dreaming
+  }
+
+  export async function status(dir = Instance.directory): Promise<{
+    dreaming: boolean
+    lastCompleted?: number
+    lastError?: string
+  }> {
+    const p = daemonPaths(dir)
+    const pid = Number(
+      await Bun.file(p.pid)
+        .text()
+        .catch(() => "0"),
+    )
+    if (!pid) return { dreaming: false }
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return { dreaming: false }
+    }
+    try {
+      // @ts-ignore Bun unix socket fetch
+      const res = await fetch("http://localhost/status", { unix: p.sock })
+      if (!res.ok) return { dreaming: false }
+      return (await res.json()) as { dreaming: boolean; lastCompleted?: number; lastError?: string }
+    } catch {
+      return { dreaming: false }
+    }
   }
 
   function isText(p: MessageV2.Part): p is MessageV2.TextPart {
@@ -95,6 +122,7 @@ export namespace AutoDream {
   /** Manual trigger from /dream command */
   export async function run(focus?: string): Promise<string> {
     // Manual dream trigger uses the native daemon path only.
+    _dreaming = true
     try {
       const { Config } = await import("../config/config")
       const cfg = await Config.get()
@@ -113,6 +141,8 @@ export namespace AutoDream {
     } catch (err) {
       log.error("dream failed", { error: err instanceof Error ? err.message : String(err) })
       return `Dream failed: ${err instanceof Error ? err.message : String(err)}`
+    } finally {
+      _dreaming = false
     }
   }
 

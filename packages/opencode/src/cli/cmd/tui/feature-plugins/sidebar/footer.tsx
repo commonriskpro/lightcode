@@ -2,7 +2,6 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plug
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Global } from "@/global"
 import { AutoDream } from "@/dream"
-import { OMBuf } from "@/session/om/buffer"
 
 const DREAM_FRAMES = [
   "☁     dreaming   ",
@@ -45,7 +44,7 @@ const STICKY_MS = 1500
 
 const id = "internal:sidebar-footer"
 
-function View(props: { api: TuiPluginApi }) {
+function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const has = createMemo(() =>
     props.api.state.provider.some(
@@ -60,23 +59,28 @@ function View(props: { api: TuiPluginApi }) {
   const [frame, setFrame] = createSignal(0)
   const [obsFrame, setObsFrame] = createSignal(0)
   const [refFrame, setRefFrame] = createSignal(0)
+  const [dreamUntil, setDreamUntil] = createSignal(0)
   const [obsUntil, setObsUntil] = createSignal(0)
   const [refUntil, setRefUntil] = createSignal(0)
 
   onMount(() => {
     const poll = setInterval(() => {
-      const now = Date.now()
-      const dream = AutoDream.dreaming()
-      const obs = OMBuf.observing()
-      const ref = OMBuf.reflecting()
-      setIsDreaming(dream)
-      if (obs) setObsUntil(now + STICKY_MS)
-      if (ref) setRefUntil(now + STICKY_MS)
-      setIsObserving(obs || now < obsUntil())
-      setIsReflecting(ref || now < refUntil())
-      if (dream) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
-      if (obs || now < obsUntil()) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
-      if (ref || now < refUntil()) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
+      void (async () => {
+        const now = Date.now()
+        const mem = await props.api.client.session.memory({ sessionID: props.session_id }).catch(() => undefined)
+        const obs = (mem?.data as { is_observing?: boolean } | undefined)?.is_observing === true
+        const ref = (mem?.data as { is_reflecting?: boolean } | undefined)?.is_reflecting === true
+        const dream = AutoDream.dreaming()
+        if (dream) setDreamUntil(now + STICKY_MS)
+        setIsDreaming(dream || now < dreamUntil())
+        if (obs) setObsUntil(now + STICKY_MS)
+        if (ref) setRefUntil(now + STICKY_MS)
+        setIsObserving(obs || now < obsUntil())
+        setIsReflecting(ref || now < refUntil())
+        if (dream || now < dreamUntil()) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
+        if (obs || now < obsUntil()) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
+        if (ref || now < refUntil()) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
+      })()
     }, 400)
     onCleanup(() => clearInterval(poll))
   })
@@ -154,8 +158,8 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 100,
     slots: {
-      sidebar_footer() {
-        return <View api={api} />
+      sidebar_footer(_ctx, props) {
+        return <View api={api} session_id={props.session_id} />
       },
     },
   })
