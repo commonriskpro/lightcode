@@ -5,6 +5,7 @@ import { SessionID, MessageID, PartID } from "@/session/schema"
 import z from "zod"
 import { OM } from "@/session/om"
 import { OMBuf } from "@/session/om/buffer"
+import { AutoDream } from "@/dream"
 import { Session } from "../../session"
 import { MessageV2 } from "../../session/message-v2"
 import { SessionPrompt } from "../../session/prompt"
@@ -989,6 +990,7 @@ export const SessionRoutes = lazy(() =>
                     observation_tokens: z.number(),
                     generation_count: z.number(),
                     last_observed_at: z.number().nullable(),
+                    is_dreaming: z.boolean(),
                     is_observing: z.boolean(),
                     is_reflecting: z.boolean(),
                   }),
@@ -1002,6 +1004,7 @@ export const SessionRoutes = lazy(() =>
       async (c) => {
         const { sessionID } = c.req.valid("param")
         const rec = OM.get(sessionID)
+        const dream = await AutoDream.status().catch(() => ({ dreaming: false }))
         return c.json({
           observations: rec?.observations ?? null,
           reflections: rec?.reflections ?? null,
@@ -1009,6 +1012,7 @@ export const SessionRoutes = lazy(() =>
           observation_tokens: rec?.observation_tokens ?? 0,
           generation_count: rec?.generation_count ?? 0,
           last_observed_at: rec?.last_observed_at ?? null,
+          is_dreaming: dream.dreaming,
           is_observing: OMBuf.observing(),
           is_reflecting: OMBuf.reflecting(),
         })

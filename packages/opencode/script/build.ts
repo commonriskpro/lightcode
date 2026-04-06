@@ -233,6 +233,21 @@ for (const item of targets) {
     },
   })
 
+  await Bun.build({
+    tsconfig: "./tsconfig.json",
+    compile: {
+      autoloadBunfig: false,
+      autoloadDotenv: false,
+      autoloadTsconfig: true,
+      autoloadPackageJson: true,
+      target: name.replace(pkg.name, "bun") as any,
+      outfile: `dist/${name}/bin/lightcode-dream-daemon`,
+      execArgv: ["--user-agent=lightcode-dream-daemon/" + Script.version, "--use-system-ca", "--"],
+      windows: {},
+    },
+    entrypoints: ["./src/dream/daemon.ts"],
+  })
+
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = `dist/${name}/bin/lightcode`
@@ -252,6 +267,10 @@ for (const item of targets) {
       {
         name,
         version: Script.version,
+        bin: {
+          lightcode: "./bin/lightcode",
+          "lightcode-dream-daemon": "./bin/lightcode-dream-daemon",
+        },
         os: [item.os],
         cpu: [item.arch],
       },

@@ -1,7 +1,6 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Global } from "@/global"
-import { AutoDream } from "@/dream"
 
 const DREAM_FRAMES = [
   "☁     dreaming   ",
@@ -70,7 +69,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         const mem = await props.api.client.session.memory({ sessionID: props.session_id }).catch(() => undefined)
         const obs = (mem?.data as { is_observing?: boolean } | undefined)?.is_observing === true
         const ref = (mem?.data as { is_reflecting?: boolean } | undefined)?.is_reflecting === true
-        const dream = AutoDream.dreaming()
+        const dream = (mem?.data as { is_dreaming?: boolean } | undefined)?.is_dreaming === true
         if (dream) setDreamUntil(now + STICKY_MS)
         setIsDreaming(dream || now < dreamUntil())
         if (obs) setObsUntil(now + STICKY_MS)

@@ -17,7 +17,14 @@ export function paths(dir: string) {
 }
 
 function daemonEntry() {
-  return path.join(import.meta.dir, "daemon.ts")
+  const dir = path.dirname(process.execPath)
+  const names =
+    process.platform === "win32" ? ["lightcode-dream-daemon.exe", "lightcode-dream-daemon"] : ["lightcode-dream-daemon"]
+  const hit = names.map((name) => path.join(dir, name)).find((file) => fs.existsSync(file))
+  if (!hit) {
+    throw new Error(`dream daemon binary not found next to host binary: ${dir}`)
+  }
+  return hit
 }
 
 async function isAlive(pid: number, sock: string): Promise<boolean> {
@@ -40,7 +47,7 @@ async function isAlive(pid: number, sock: string): Promise<boolean> {
 
 async function spawnDaemon(dir: string, p: ReturnType<typeof paths>) {
   const logFd = fs.openSync(p.log, "a")
-  const proc = spawn(process.execPath, [daemonEntry()], {
+  const proc = spawn(daemonEntry(), [], {
     detached: process.platform !== "win32",
     stdio: ["ignore", logFd, logFd],
     env: {

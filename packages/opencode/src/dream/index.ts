@@ -39,12 +39,13 @@ export namespace AutoDream {
     return _dreaming
   }
 
-  export async function status(dir = Instance.directory): Promise<{
+  export async function status(dir?: string): Promise<{
     dreaming: boolean
     lastCompleted?: number
     lastError?: string
   }> {
-    const p = daemonPaths(dir)
+    const root = dir ?? Instance.directory
+    const p = daemonPaths(root)
     const pid = Number(
       await Bun.file(p.pid)
         .text()
@@ -120,15 +121,17 @@ export namespace AutoDream {
   }
 
   /** Manual trigger from /dream command */
-  export async function run(focus?: string): Promise<string> {
+  export async function run(focus?: string, dir?: string): Promise<string> {
     // Manual dream trigger uses the native daemon path only.
     _dreaming = true
     try {
       const { Config } = await import("../config/config")
       const cfg = await Config.get()
       const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
-      const dir = Instance.directory
-      const sock = await ensureDaemon(dir)
+      const root = dir ?? Instance.directory
+      const url = Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
+      if (url) process.env.LIGHTCODE_SERVER_URL = url
+      const sock = await ensureDaemon(root)
       // @ts-ignore — Bun-native unix socket fetch option
       const res = await fetch("http://localhost/trigger", {
         unix: sock,
