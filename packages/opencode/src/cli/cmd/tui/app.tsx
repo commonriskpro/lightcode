@@ -730,7 +730,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           variant: "info",
           duration: 3000,
         })
-        void AutoDream.run(undefined, sync.data.path.directory || sdk.directory, sdk.url)
+        void AutoDream.run(
+          undefined,
+          sync.data.path.directory || sdk.directory,
+          process.env.LIGHTCODE_SERVER_URL || sdk.url,
+        )
           .then((result) => {
             toast.show({ title: "AutoDream", message: result, variant: "success", duration: 5000 })
           })

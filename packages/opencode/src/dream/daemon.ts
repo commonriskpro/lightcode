@@ -56,6 +56,13 @@ async function retry<T>(fn: () => Promise<T>, maxMs: number): Promise<T> {
 async function doDream(focus?: string, model?: string, obs?: string) {
   try {
     if (!serverURL) throw new Error("LIGHTCODE_SERVER_URL not set")
+    console.log("dream daemon trigger", {
+      serverURL,
+      projectDir,
+      focus: focus ?? null,
+      model: model ?? null,
+      obsChars: obs?.length ?? 0,
+    })
 
     // Import helpers from index.ts (pure functions + writeState)
     const [{ AutoDream }, { default: PROMPT }] = await Promise.all([import("./index"), import("./prompt.txt")])
@@ -73,8 +80,11 @@ async function doDream(focus?: string, model?: string, obs?: string) {
           body: JSON.stringify({
             title: focus ? `Dream: ${focus}` : "AutoDream consolidation",
           }),
-        }).then((r) => {
-          if (!r.ok) throw new Error(`session create ${r.status}`)
+        }).then(async (r) => {
+          if (!r.ok) {
+            const body = await r.text().catch(() => "")
+            throw new Error(`session create ${r.status}${body ? `: ${body}` : ""}`)
+          }
           return r
         }),
       30_000,

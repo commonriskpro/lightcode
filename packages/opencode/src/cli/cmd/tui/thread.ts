@@ -184,9 +184,15 @@ export const TuiThreadCommand = cmd({
         network.port !== 0 ||
         network.hostname !== "127.0.0.1"
 
+      const serverUrl = external
+        ? (await client.call("server", network)).url
+        : (await client.call("server", { port: 0, hostname: "127.0.0.1" })).url
+
+      process.env.LIGHTCODE_SERVER_URL = serverUrl
+
       const transport = external
         ? {
-            url: (await client.call("server", network)).url,
+            url: serverUrl,
             fetch: undefined,
             events: undefined,
           }
