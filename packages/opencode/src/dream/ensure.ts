@@ -45,6 +45,19 @@ async function isAlive(pid: number, sock: string): Promise<boolean> {
   }
 }
 
+async function status(
+  sock: string,
+): Promise<{ dreaming: boolean; lastCompleted?: number; lastError?: string } | undefined> {
+  try {
+    // @ts-ignore — Bun-native unix socket fetch option
+    const res = await fetch("http://localhost/status", { unix: sock })
+    if (!res.ok) return
+    return (await res.json()) as { dreaming: boolean; lastCompleted?: number; lastError?: string }
+  } catch {
+    return
+  }
+}
+
 async function spawnDaemon(dir: string, p: ReturnType<typeof paths>) {
   const logFd = fs.openSync(p.log, "a")
   const proc = spawn(daemonEntry(), [], {
@@ -70,7 +83,14 @@ export async function ensureDaemon(dir: string): Promise<string> {
     .text()
     .catch(() => "0")
   const pid = Number(raw.trim())
-  if (pid > 0 && (await isAlive(pid, p.sock))) return p.sock
+  if (pid > 0 && (await isAlive(pid, p.sock))) {
+    const info = await status(p.sock)
+    const badUrl = info?.lastError === "LIGHTCODE_SERVER_URL not set" && !!process.env.LIGHTCODE_SERVER_URL
+    if (!badUrl) return p.sock
+    try {
+      process.kill(pid, "SIGTERM")
+    } catch {}
+  }
 
   // Stale — clean up
   try {

@@ -127,9 +127,12 @@ export namespace AutoDream {
     _dreaming = true
     try {
       const { Config } = await import("../config/config")
-      const cfg = await Config.get()
-      const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
       if (!dir) throw new Error("Dream requires an active project directory")
+      const cfg = await Instance.provide({
+        directory: dir,
+        fn: () => Config.get(),
+      })
+      const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
       const root = dir
       const url = serverURL ?? Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
       if (!url) throw new Error("Dream requires a running LightCode server URL")
@@ -156,7 +159,11 @@ export namespace AutoDream {
   async function idle(sid: SessionID): Promise<void> {
     // AutoDream runs via the native daemon path and does not depend on Engram.
     const { Config } = await import("../config/config")
-    const cfg = await Config.get()
+    const info = await Session.get(sid)
+    const cfg = await Instance.provide({
+      directory: info.directory,
+      fn: () => Config.get(),
+    })
     if (cfg.experimental?.autodream === false) return
     const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
 
@@ -165,7 +172,6 @@ export namespace AutoDream {
     if (url) process.env.LIGHTCODE_SERVER_URL = url
 
     try {
-      const info = await Session.get(sid)
       const sock = await ensureDaemon(info.directory)
       const obs = await summaries(sid)
       // @ts-ignore — Bun-native unix socket fetch option
