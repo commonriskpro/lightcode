@@ -4,6 +4,14 @@ import { ModelID, ProviderID } from "../../src/provider/schema"
 
 const OUTPUT_TOKEN_MAX = 32000
 
+// Pad a string with enough filler to reliably exceed the MIN_CACHE_TOKENS (1024)
+// threshold used by applyCaching. tokenx estimates ~1 token per 6 ASCII chars,
+// so 7200 chars of filler ≈ 1200 tokens > 1024. The original text is preserved
+// at the start so semantic detectors (memoryCore, volatileSystem, etc.) still fire.
+function pad(text: string): string {
+  return text + " " + "word ".repeat(1440)
+}
+
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
 
@@ -1642,7 +1650,7 @@ describe("ProviderTransform.message - claude w/bedrock custom inference profile"
     const msgs = [
       {
         role: "system",
-        content: "You are a helpful assistant",
+        content: pad("You are a helpful assistant"),
       },
       {
         role: "user",
@@ -1682,7 +1690,7 @@ describe("ProviderTransform.message - bedrock caching with non-bedrock providerI
     const msgs = [
       {
         role: "system",
-        content: [{ type: "text", text: "You are a helpful assistant" }],
+        content: [{ type: "text", text: pad("You are a helpful assistant") }],
       },
       {
         role: "user",
@@ -1759,7 +1767,7 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     const msgs = [
       {
         role: "system",
-        content: "You are a helpful assistant",
+        content: pad("You are a helpful assistant"),
       },
       {
         role: "user",
@@ -1798,7 +1806,7 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     const msgs = [
       {
         role: "system",
-        content: "You are a helpful assistant",
+        content: pad("You are a helpful assistant"),
       },
       {
         role: "user",
@@ -2852,8 +2860,8 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
   test("system[0] gets 1hr TTL for Anthropic (BP2)", () => {
     const model = makeModel()
     const msgs = [
-      { role: "system", content: "Agent prompt" },
-      { role: "system", content: "Environment info" },
+      { role: "system", content: pad("Agent prompt") },
+      { role: "system", content: pad("Environment info") },
       { role: "user", content: "Hello" },
       { role: "assistant", content: "Hi" },
       { role: "user", content: "More" },
@@ -2866,8 +2874,8 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
   test("system[1] gets 5min TTL (BP3)", () => {
     const model = makeModel()
     const msgs = [
-      { role: "system", content: "Agent prompt" },
-      { role: "system", content: "Environment info" },
+      { role: "system", content: pad("Agent prompt") },
+      { role: "system", content: pad("Environment info") },
       { role: "user", content: "Hello" },
       { role: "assistant", content: "Hi" },
       { role: "user", content: "More" },
@@ -2882,11 +2890,11 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
   test("stable memory system blocks get cache metadata", () => {
     const model = makeModel()
     const msgs = [
-      { role: "system", content: "Agent prompt" },
-      { role: "system", content: "Env + skills" },
+      { role: "system", content: pad("Agent prompt") },
+      { role: "system", content: pad("Env + skills") },
       {
         role: "system",
-        content: "<working-memory>WM</working-memory>\n\n<local-observations>OBS</local-observations>",
+        content: pad("<working-memory>WM</working-memory>\n\n<local-observations>OBS</local-observations>"),
       },
       { role: "system", content: "<memory-recall>RECALL</memory-recall>" },
       { role: "system", content: "<system-reminder>LIVE</system-reminder>" },
@@ -2923,7 +2931,7 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
   test("BP4 on second-to-last conversation message when slot remains", () => {
     const model = makeModel()
     const msgs = [
-      { role: "system", content: "System" },
+      { role: "system", content: pad("System") },
       { role: "user", content: "msg1" },
       { role: "assistant", content: "msg2" },
       { role: "user", content: "msg3" },
@@ -2937,11 +2945,11 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
   test("planner keeps explicit breakpoints to three message slots", () => {
     const model = makeModel()
     const msgs = [
-      { role: "system", content: "Agent prompt" },
-      { role: "system", content: "Env + skills" },
+      { role: "system", content: pad("Agent prompt") },
+      { role: "system", content: pad("Env + skills") },
       {
         role: "system",
-        content: "<working-memory>WM</working-memory>\n\n<local-observations>OBS</local-observations>",
+        content: pad("<working-memory>WM</working-memory>\n\n<local-observations>OBS</local-observations>"),
       },
       { role: "system", content: "<memory-recall>RECALL</memory-recall>" },
       { role: "user", content: "msg1" },
@@ -2961,7 +2969,7 @@ describe("ProviderTransform.message - 4-breakpoint cache optimization", () => {
   test("no BP4 when conversation has < 3 messages", () => {
     const model = makeModel()
     const msgs = [
-      { role: "system", content: "System" },
+      { role: "system", content: pad("System") },
       { role: "user", content: "msg1" },
       { role: "assistant", content: "reply" },
     ] as any[]

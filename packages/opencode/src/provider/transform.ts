@@ -6,6 +6,7 @@ import type { Provider } from "./provider"
 import type { ModelsDev } from "./models"
 import { iife } from "@/util/iife"
 import { Flag } from "@/flag/flag"
+import { Token } from "@/util/token"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
 
@@ -260,12 +261,19 @@ export namespace ProviderTransform {
     return ["<working-memory>", "<local-observations>"].some((x) => msg.content.includes(x))
   }
 
-  // Anthropic won't cache blocks shorter than 1024 tokens — placing a breakpoint
-  // on them wastes one of the 4 available slots with no benefit.
+  // Anthropic requires at least 1024 tokens for cache to be effective.
+  // Placing a breakpoint on a smaller block wastes one of the 4 available slots.
+  // tokenLen uses tokenx (96% accuracy) so the estimate matches what Anthropic counts.
   const MIN_CACHE_TOKENS = 1024
 
   function tokenLen(msg: ModelMessage): number {
-    if (typeof msg.content === "string") return Math.ceil(msg.content.length / 4)
+    if (typeof msg.content === "string") return Token.estimate(msg.content)
+    if (Array.isArray(msg.content))
+      return msg.content.reduce((sum, part) => {
+        if (typeof part === "object" && part !== null && "text" in part && typeof (part as any).text === "string")
+          return sum + Token.estimate((part as any).text)
+        return sum
+      }, 0)
     return 0
   }
 
