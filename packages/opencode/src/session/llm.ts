@@ -20,6 +20,7 @@ import { Installation } from "@/installation"
 import { createHash } from "crypto"
 import type { PromptBlock } from "@/memory/contracts"
 import { PromptProfile } from "./prompt-profile"
+import { Token } from "@/util/token"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -71,7 +72,7 @@ export namespace LLM {
       const text = body?.trim()
       return {
         key,
-        tokens: text ? Math.ceil(text.length / 4) : 0,
+        tokens: text ? Token.estimate(text) : 0,
         hash: text ? createHash("sha1").update(text).digest("hex") : undefined,
       }
     }
@@ -83,7 +84,7 @@ export namespace LLM {
       observations_live: item("observations_live", input.observationsLive),
       semantic_recall: item("semantic_recall", input.recall),
       tail: {
-        tokens: input.messages.reduce((sum, msg) => sum + Math.ceil(JSON.stringify(msg).length / 4), 0),
+        tokens: input.messages.reduce((sum, msg) => sum + Token.estimate(JSON.stringify(msg)), 0),
       },
     }
   }
@@ -507,7 +508,7 @@ export namespace LLM {
 
               if (args.params.tools) {
                 const names = args.params.tools.filter((t) => t.type === "function").map((t) => t.name)
-                const tokens = Math.ceil(JSON.stringify(args.params.tools).length / 4)
+                const tokens = Token.estimate(JSON.stringify(args.params.tools))
                 PromptProfile.updateTools(input.sessionID, { count: names.length, names, tokens })
               }
 

@@ -1,12 +1,6 @@
 import path from "path"
 import { Global } from "../global"
 import { Log } from "@/util/log"
-// Engram is not part of the dream runtime path. Native dream execution uses ensureDaemon()
-// and persists through Memory.indexArtifact(). Any remaining Engram code lives only in the
-// deprecated compatibility module (dream/engram.ts).
-import { Bus } from "../bus"
-import { SessionStatus } from "../session/status"
-import { Session } from "../session"
 import { Token } from "../util/token"
 import { OM } from "../session/om"
 import type { SessionID } from "../session/schema"
@@ -121,43 +115,16 @@ export namespace AutoDream {
     }
   }
 
-  async function idle(sid: SessionID): Promise<void> {
-    // AutoDream runs via the native daemon path and does not depend on Engram.
-    const { Config } = await import("../config/config")
-    const info = await Session.get(sid)
-    const cfg = await Instance.provide({
-      directory: info.directory,
-      fn: () => Config.get(),
-    })
-    if (cfg.experimental?.autodream === false) return
-    const model = cfg.experimental?.autodream_model ?? "google/gemini-2.5-flash"
-
-    // LIGHTCODE_SERVER_URL must be set by the server process before idle fires
-    const url = Server.url?.toString() ?? process.env.LIGHTCODE_SERVER_URL
-    if (url) process.env.LIGHTCODE_SERVER_URL = url
-
-    try {
-      const sock = await ensureDaemon(info.directory)
-      const obs = await summaries(sid)
-      // @ts-ignore — Bun-native unix socket fetch option
-      await fetch("http://localhost/trigger", {
-        unix: sock,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, obs }),
-      })
-      log.info("dream triggered via daemon", { sock })
-    } catch (err) {
-      log.warn("autodream daemon unavailable", { error: err instanceof Error ? err.message : String(err) })
-    }
-  }
-
-  /** Subscribe to session idle events. Call at app startup. */
-  export function init(): () => void {
-    return Bus.subscribe(SessionStatus.Event.Idle, (event) => {
-      void idle(event.properties.sessionID).catch((err) => {
-        log.error("autodream failed", { error: err instanceof Error ? err.message : String(err) })
-      })
+  /**
+   * Start the dream daemon for the current project directory.
+   * The daemon runs 24/7 with its own internal scheduler (~1h interval).
+   * Call at app startup — replaces the old Session.Idle subscriber approach.
+   */
+  export function startDaemon(): void {
+    const dir = Instance.directory
+    if (!dir) return
+    ensureDaemon(dir).catch((err) => {
+      log.warn("failed to start dream daemon at boot", { error: err instanceof Error ? err.message : String(err) })
     })
   }
 

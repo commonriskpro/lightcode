@@ -53,6 +53,7 @@ import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { OM, Observer, OMBuf, Reflector } from "./om"
+import { Token } from "@/util/token"
 import { Memory } from "@/memory"
 import { QueryReuse } from "@/memory/query-reuse"
 import { PROMPT_BLOCK, type PromptBlock } from "@/memory/contracts"
@@ -1753,7 +1754,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                           session_id: sessionID,
                           observations: result.observations,
                           message_tokens: tok,
-                          observation_tokens: result.observations.length >> 2,
+                          observation_tokens: Token.estimate(result.observations),
                           starts_at: boundary,
                           // Use last observed message timestamp so the boundary is precise.
                           ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),

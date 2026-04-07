@@ -13,18 +13,17 @@ describe("dream.autodream", () => {
   })
 
   describe("run() error handling", () => {
-    test("returns string on any failure", async () => {
-      const result = await AutoDream.run()
-      expect(typeof result).toBe("string")
+    test("run() throws or rejects when no dir provided", async () => {
+      // run() always throws when dir is missing — dreaming flag is always cleaned up
+      await expect(AutoDream.run()).rejects.toThrow()
     })
 
-    test("returns string with focus parameter", async () => {
-      const result = await AutoDream.run("auth system")
-      expect(typeof result).toBe("string")
+    test("run() throws or rejects when focus provided but no dir", async () => {
+      await expect(AutoDream.run("auth system")).rejects.toThrow()
     })
 
     test("dreaming() is false after failed run", async () => {
-      await AutoDream.run()
+      await AutoDream.run().catch(() => {})
       expect(AutoDream.dreaming()).toBe(false)
     })
   })

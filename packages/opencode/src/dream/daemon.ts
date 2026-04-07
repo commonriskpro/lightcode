@@ -1,9 +1,13 @@
 import fs from "fs"
+import { Database, eq } from "../storage/db"
+import { ObservationTable } from "../session/session.sql"
+import { SessionTable } from "../session/session.sql"
 
 const sockPath = process.env.LIGHTCODE_SOCK_PATH ?? ""
 const pidPath = process.env.LIGHTCODE_PID_PATH ?? ""
 const projectDir = process.env.LIGHTCODE_PROJECT_DIR ?? ""
-const serverURL = process.env.LIGHTCODE_SERVER_URL ?? ""
+// serverURL is read dynamically so /trigger can update it at runtime
+let serverURL = process.env.LIGHTCODE_SERVER_URL ?? ""
 
 if (!sockPath) {
   console.error("Dream daemon: missing LIGHTCODE_SOCK_PATH")
@@ -15,20 +19,14 @@ let dreaming = false
 let lastCompleted: number | undefined
 let lastError: string | undefined
 
-// Idle self-termination: 10 minutes
-const IDLE_MS = 10 * 60 * 1000
-let timer: ReturnType<typeof setTimeout>
+// Periodic dream interval — 1 hour by default, configurable via env
+const DREAM_INTERVAL_MS = Number(process.env.LIGHTCODE_DREAM_INTERVAL_MS ?? 60 * 60 * 1000)
 
 function shutdown() {
   try {
     fs.unlinkSync(sockPath)
   } catch {}
   process.exit(0)
-}
-
-function resetTimer() {
-  clearTimeout(timer)
-  timer = setTimeout(shutdown, IDLE_MS)
 }
 
 // SIGTERM handler — clean up socket, exit
@@ -174,7 +172,6 @@ async function doDream(focus?: string, model?: string, obs?: string) {
 Bun.serve({
   unix: sockPath,
   async fetch(req) {
-    resetTimer()
     const url = new URL(req.url)
 
     if (url.pathname === "/ping") {
@@ -182,7 +179,14 @@ Bun.serve({
     }
 
     if (url.pathname === "/trigger" && req.method === "POST") {
-      const body = (await req.json().catch(() => ({}))) as { focus?: string; model?: string; obs?: string }
+      const body = (await req.json().catch(() => ({}))) as {
+        focus?: string
+        model?: string
+        obs?: string
+        serverURL?: string
+      }
+      // Allow callers to refresh the server URL (e.g. after a server restart)
+      if (body.serverURL) serverURL = body.serverURL
       if (dreaming) return Response.json({ ok: true, queued: true })
       dreaming = true
       void doDream(body.focus, body.model, body.obs)
@@ -197,5 +201,82 @@ Bun.serve({
   },
 })
 
-console.log(`Dream daemon started (pid=${process.pid}, sock=${sockPath})`)
-resetTimer()
+// Probe whether the LightCode server is reachable right now.
+// Used to decide if the dreaming animation should be visible in the TUI.
+// Best-effort: any error means the server is considered down.
+async function serverAlive(): Promise<boolean> {
+  if (!serverURL) return false
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 1_000)
+    const r = await fetch(`${serverURL}/health`, { signal: ctrl.signal })
+    clearTimeout(t)
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
+// Collect OM observations for the current project directly from SQLite.
+// No HTTP round-trip — the daemon has the DB path available and opens it once.
+// Falls back to empty string on any error (best-effort, dream is non-critical).
+function collectProjectObsFromDB(): string {
+  try {
+    // JOIN session_observation ← session WHERE session.directory = projectDir
+    // Only include sessions with meaningful observation content (>= 1000 tokens)
+    const rows = Database.use((db) =>
+      db
+        .select({
+          observations: ObservationTable.observations,
+          reflections: ObservationTable.reflections,
+          current_task: ObservationTable.current_task,
+          observation_tokens: ObservationTable.observation_tokens,
+        })
+        .from(ObservationTable)
+        .innerJoin(SessionTable, eq(ObservationTable.session_id, SessionTable.id))
+        .where(eq(SessionTable.directory, projectDir))
+        .all(),
+    )
+
+    const parts: string[] = []
+    for (const row of rows) {
+      if (!row.observation_tokens || row.observation_tokens < 1000) continue
+      const acc: string[] = []
+      if (row.current_task) acc.push(`<current-task>\n${row.current_task}\n</current-task>`)
+      if (row.reflections) acc.push(`<reflections>\n${row.reflections}\n</reflections>`)
+      else if (row.observations) acc.push(`<observations>\n${row.observations}\n</observations>`)
+      if (acc.length) parts.push(acc.join("\n\n"))
+    }
+
+    return parts.join("\n\n---\n\n")
+  } catch (err) {
+    console.warn("daemon: collectProjectObsFromDB failed", { error: err instanceof Error ? err.message : String(err) })
+    return ""
+  }
+}
+
+// Periodic scheduler: fire dream every DREAM_INTERVAL_MS.
+// Reads observations directly from SQLite — no dependency on the server being up.
+// If the server IS reachable, the dreaming flag propagates via the unix socket so
+// the TUI shows the dream animation while the daemon is working.
+async function scheduledDream() {
+  if (dreaming) return
+  try {
+    const obs = collectProjectObsFromDB()
+    if (!obs) return // no sessions with OM content — nothing to dream about
+
+    // If the server is alive but we don't have its URL yet, skip the dream —
+    // the server will call /trigger manually when it's ready.
+    const alive = await serverAlive()
+    if (!alive && !serverURL) return
+
+    dreaming = true
+    void doDream(undefined, undefined, obs)
+  } catch (err) {
+    console.warn("scheduled dream skipped", { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+setInterval(scheduledDream, DREAM_INTERVAL_MS)
+
+console.log(`Dream daemon started (pid=${process.pid}, sock=${sockPath}, interval=${DREAM_INTERVAL_MS}ms)`)

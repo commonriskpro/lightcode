@@ -24,9 +24,13 @@ export function calculateDynamicThreshold(threshold: number | ThresholdRange, ob
 
 const DEFAULT_RANGE: ThresholdRange = { min: 80_000, max: 140_000 }
 
+// Multiplier for computing the default blockAfter ceiling from the trigger.
+// Matches Mastra's blockAfter=1.2x — when no explicit blockAfter is configured,
+// backpressure kicks in at 1.2× the effective trigger threshold.
+export const BLOCK_AFTER_MULTIPLIER = 1.2
+
 export namespace OMBuf {
   const INTERVAL = 6_000
-  const BLOCK_AFTER = 180_000
 
   function ensure(sid: SessionID): State {
     const s = state.get(sid)
@@ -50,7 +54,9 @@ export namespace OMBuf {
     const base = configThreshold ?? DEFAULT_RANGE
     const trigger =
       obsTokens !== undefined ? calculateDynamicThreshold(base, obsTokens) : typeof base === "number" ? base : base.max
-    const limit = blockAfter ?? BLOCK_AFTER
+    // blockAfter: use explicit config if provided, otherwise 1.2× the effective trigger
+    // (matches Mastra's blockAfter=1.2x ratio — backpressure just above the activation point).
+    const limit = blockAfter ?? Math.ceil(trigger * BLOCK_AFTER_MULTIPLIER)
     if (s.tok >= limit) return "block"
     if (s.tok >= trigger) return "activate"
     // Fire "buffer" only when crossing a new INTERVAL boundary, not every turn

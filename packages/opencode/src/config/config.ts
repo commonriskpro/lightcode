@@ -1071,14 +1071,16 @@ export namespace Config {
             .positive()
             .optional()
             .describe(
-              "Backpressure ceiling for Observer buffer (tokens). When accumulated message tokens exceed this value the main loop waits for OM to catch up. Default 180_000.",
+              "Backpressure ceiling for Observer buffer (tokens). When accumulated message tokens exceed this value the main loop waits for OM to catch up. Defaults to 1.2× the effective trigger threshold (matching Mastra). Set explicitly to override.",
             ),
           observer_reflection_tokens: z
             .number()
             .int()
             .positive()
             .optional()
-            .describe("Observation-token threshold at which the Reflector runs compression. Default 120_000."),
+            .describe(
+              "Observation-token threshold at which the Reflector runs compression. Default 40_000 (aligned with Mastra). Increase if observations are dense code and you want less frequent compression.",
+            ),
           last_messages: z
             .number()
             .int()

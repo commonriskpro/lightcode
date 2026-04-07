@@ -2,6 +2,7 @@ import { Config } from "../../config/config"
 import { Provider } from "../../provider/provider"
 import { MessageV2 } from "../message-v2"
 import { Log } from "@/util/log"
+import { Token } from "@/util/token"
 import { generateText } from "ai"
 import type { SessionID } from "../schema"
 import { wrapInObservationGroup, stripObservationGroups } from "./groups"
@@ -127,13 +128,13 @@ Hint for the agent's next message to continue naturally (1 sentence).
 
 export function truncateObsToBudget(obs: string, budget: number): string {
   if (budget === 0) return ""
-  const total = obs.length >> 2
+  const total = Token.estimate(obs)
   if (total <= budget) return obs
 
   const lines = obs.split("\n")
   const n = lines.length
 
-  const tok = lines.map((l) => l.length >> 2)
+  const tok = lines.map((l) => Token.estimate(l))
 
   const suffix = new Array<number>(n + 1)
   suffix[n] = 0

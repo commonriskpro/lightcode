@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { OMBuf } from "../../src/session/om/buffer"
+import { OMBuf, BLOCK_AFTER_MULTIPLIER } from "../../src/session/om/buffer"
 import type { SessionID } from "../../src/session/schema"
 
 function sid(suffix: string): SessionID {
@@ -15,15 +15,27 @@ describe("OMBuf.check blockAfter param", () => {
     expect(OMBuf.check(s, 1, undefined, undefined, 20_000)).toBe("block")
   })
 
-  test("T-5.2: returns block at exactly 1.2x trigger when blockAfter omitted", () => {
+  test("T-5.2: returns block at 1.2x the effective trigger when blockAfter omitted", () => {
+    // No obsTokens, no configThreshold → trigger = DEFAULT_RANGE.max = 140_000
+    // blockAfter = ceil(140_000 * 1.2) = 168_000
     const s = sid("default-block")
-    expect(OMBuf.check(s, 180_000)).toBe("block")
+    const expectedBlock = Math.ceil(140_000 * BLOCK_AFTER_MULTIPLIER) // 168_000
+    expect(OMBuf.check(s, expectedBlock)).toBe("block")
   })
 
-  test("T-5.2b: does not block below default 180_000 when blockAfter omitted", () => {
+  test("T-5.2b: does not block just below the 1.2x ceiling when blockAfter omitted", () => {
     const s = sid("no-block-below")
-    const sig = OMBuf.check(s, 179_999)
+    const expectedBlock = Math.ceil(140_000 * BLOCK_AFTER_MULTIPLIER) // 168_000
+    const sig = OMBuf.check(s, expectedBlock - 1)
     expect(sig).not.toBe("block")
+  })
+
+  test("T-5.2c: block scales with explicit plain-number configThreshold (e.g. 30k → block at 36k)", () => {
+    const s = sid("block-30k-trigger")
+    // trigger = 30_000 (plain number), blockAfter = ceil(30_000 * 1.2) = 36_000
+    const expectedBlock = Math.ceil(30_000 * BLOCK_AFTER_MULTIPLIER)
+    expect(OMBuf.check(s, expectedBlock - 1, 0, 30_000)).toBe("activate") // just below block
+    expect(OMBuf.check(s, 1, 0, 30_000)).toBe("block") // crosses 36k
   })
 })
 

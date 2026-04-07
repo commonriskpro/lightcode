@@ -1,7 +1,10 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test"
+import { describe, expect, test, mock, beforeEach, afterEach, beforeAll, afterAll } from "bun:test"
 import path from "path"
+import os from "os"
+import { rm } from "fs/promises"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
+import { Database } from "../../src/storage/db"
 import { OM } from "../../src/session/om/record"
 import { Reflector } from "../../src/session/om/reflector"
 import type { SessionID } from "../../src/session/schema"
@@ -11,27 +14,70 @@ Log.init({ print: false })
 
 const root = path.join(__dirname, "../..")
 
+// ─── Isolated DB fixture ──────────────────────────────────────────────────────
+
+let testDbPath: string
+
+beforeAll(async () => {
+  testDbPath = path.join(os.tmpdir(), `reflector-test-${Math.random().toString(36).slice(2)}.db`)
+  try {
+    Database.close()
+  } catch {}
+  Database.Client.reset()
+  process.env["OPENCODE_DB"] = testDbPath
+  Database.Client()
+  await Instance.reload({ directory: root }).catch(() => {})
+})
+
+afterAll(async () => {
+  try {
+    Database.close()
+  } catch {}
+  Database.Client.reset()
+  await rm(testDbPath, { force: true }).catch(() => undefined)
+  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
+  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
+  delete process.env["OPENCODE_DB"]
+})
+
 // ─── validateCompression ────────────────────────────────────────────────────
 // validateCompression is internal to reflector.ts but its behavior is observable
-// via Reflector.run — we test it indirectly. Direct tests live here as pure logic probes.
+// via Reflector.run — we test it indirectly via Token.estimate (tokenx) logic probes.
 
-describe("session.om.reflector.validateCompression (via text.length >> 2)", () => {
-  const target = 120_000
+import { Token } from "../../src/util/token"
+
+describe("session.om.reflector.validateCompression (via Token.estimate)", () => {
+  const target = 40_000
 
   test("text with tokens < target passes compression", () => {
-    // text.length >> 2 = tokenCount
-    // tokenCount < target → pass
-    const text = "x".repeat((target - 1) * 4) // 39999 tokens
-    expect(text.length >> 2 < target).toBe(true)
+    // Build a text whose tokenx estimate is clearly below 40k
+    // tokenx default: ~6 chars/token for ASCII. 100k chars ≈ ~16k tokens < 40k.
+    const text = "word ".repeat(20_000) // 100k chars, ~16k tokens
+    expect(Token.estimate(text) < target).toBe(true)
   })
 
   test("text with tokens >= target fails compression", () => {
-    const text = "x".repeat(target * 4)
-    expect(text.length >> 2 < target).toBe(false)
+    // 300k chars of ASCII ≈ ~50k tokens > 40k
+    const text = "x".repeat(300_000)
+    expect(Token.estimate(text) < target).toBe(false)
   })
 
   test("empty text passes compression", () => {
-    expect("".length >> 2 < target).toBe(true)
+    expect(Token.estimate("") < target).toBe(true)
+  })
+
+  test("Token.estimate returns 0 for empty string", () => {
+    expect(Token.estimate("")).toBe(0)
+  })
+
+  test("Token.estimate handles CJK correctly (chars/4 would massively undercount)", () => {
+    // CJK characters tokenize at ~1 char/token (not 1/4).
+    // tokenx knows this; chars/4 does not.
+    const cjk = "用户正在构建认证系统，使用JWT令牌进行身份验证。"
+    const tokenxEst = Token.estimate(cjk)
+    const naiveEst = Math.round(cjk.length / 4)
+    // tokenx should give a much higher count (closer to reality)
+    expect(tokenxEst).toBeGreaterThan(naiveEst * 2)
   })
 })
 
@@ -120,11 +166,11 @@ describe("session.om.reflector retry loop", () => {
     })
   })
 
-  test("Reflector.threshold is exported and equals 120_000", () => {
-    expect(Reflector.threshold).toBe(120_000)
+  test("Reflector.threshold is exported and equals 40_000", () => {
+    expect(Reflector.threshold).toBe(40_000)
   })
 
-  test("T-5.6: Reflector.run skips when observation_tokens < default 120_000", async () => {
+  test("T-5.6: Reflector.run skips when observation_tokens < default 40_000", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
@@ -139,7 +185,7 @@ describe("session.om.reflector retry loop", () => {
             suggested_continuation: null,
             last_observed_at: Date.now(),
             generation_count: 1,
-            observation_tokens: 119_999,
+            observation_tokens: 39_999,
             observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),
@@ -155,7 +201,7 @@ describe("session.om.reflector retry loop", () => {
     })
   })
 
-  // T-5.7: Reflector fires when observation_tokens >= custom threshold set via config
+  // T-5.7: Reflector fires when observation_tokens >= 40_000 (new default, aligned with Mastra)
   // Integration-level note: config is read from disk; in test env no provider is configured
   // so the model fetch fails gracefully — we verify run() resolves without throw.
   test("T-5.7: Reflector.run fires (attempts) above threshold, exits gracefully with no model", async () => {
@@ -173,7 +219,7 @@ describe("session.om.reflector retry loop", () => {
             suggested_continuation: null,
             last_observed_at: Date.now(),
             generation_count: 1,
-            observation_tokens: 121_000,
+            observation_tokens: 41_000,
             observed_message_ids: null,
             time_created: Date.now(),
             time_updated: Date.now(),

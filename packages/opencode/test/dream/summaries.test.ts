@@ -1,90 +1,84 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test, beforeAll, afterAll } from "bun:test"
 import path from "path"
+import os from "os"
+import { rm } from "fs/promises"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
+import { Database } from "../../src/storage/db"
 import { AutoDream } from "../../src/dream"
-import { MessageID, PartID } from "../../src/session/schema"
-import { ModelID, ProviderID } from "../../src/provider/schema"
+import { OM } from "../../src/session/om/record"
+import type { SessionID } from "../../src/session/schema"
 import { Log } from "../../src/util/log"
+import { Token } from "../../src/util/token"
 
 const root = path.join(__dirname, "../..")
 Log.init({ print: false })
 
-const ref = {
-  providerID: ProviderID.make("test"),
-  modelID: ModelID.make("test-model"),
+// ─── Isolated DB fixture ──────────────────────────────────────────────────────
+
+let testDbPath: string
+
+beforeAll(async () => {
+  testDbPath = path.join(os.tmpdir(), `summaries-test-${Math.random().toString(36).slice(2)}.db`)
+  try {
+    Database.close()
+  } catch {}
+  Database.Client.reset()
+  process.env["OPENCODE_DB"] = testDbPath
+  Database.Client()
+  await Instance.reload({ directory: root }).catch(() => {})
+})
+
+afterAll(async () => {
+  try {
+    Database.close()
+  } catch {}
+  Database.Client.reset()
+  await rm(testDbPath, { force: true }).catch(() => undefined)
+  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
+  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
+  delete process.env["OPENCODE_DB"]
+})
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function seedOM(
+  sid: SessionID,
+  opts: {
+    observations?: string | null
+    reflections?: string | null
+    current_task?: string | null
+    observation_tokens?: number
+  },
+) {
+  OM.upsert({
+    id: sid,
+    session_id: sid,
+    observations: opts.observations ?? null,
+    reflections: opts.reflections ?? null,
+    current_task: opts.current_task ?? null,
+    suggested_continuation: null,
+    last_observed_at: Date.now(),
+    generation_count: 1,
+    observation_tokens: opts.observation_tokens ?? Token.estimate(opts.observations ?? opts.reflections ?? ""),
+    observed_message_ids: null,
+    time_created: Date.now(),
+    time_updated: Date.now(),
+  })
 }
 
-async function addUser(sid: string) {
-  const id = MessageID.ascending()
-  await Session.updateMessage({
-    id,
-    sessionID: sid,
-    role: "user",
-    time: { created: Date.now() },
-    agent: "test",
-    model: ref,
-    tools: {},
-    mode: "",
-  } as any)
-  return id
-}
-
-async function addAssistant(sid: string, pid: MessageID, opts?: { summary?: boolean; text?: string }) {
-  const id = MessageID.ascending()
-  await Session.updateMessage({
-    id,
-    sessionID: sid,
-    role: "assistant",
-    time: { created: Date.now() },
-    parentID: pid,
-    modelID: ref.modelID,
-    providerID: ref.providerID,
-    mode: "",
-    agent: "default",
-    path: { cwd: "/", root: "/" },
-    cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    summary: opts?.summary,
-  } as any)
-  if (opts?.text) {
-    await Session.updatePart({
-      id: PartID.ascending(),
-      sessionID: sid,
-      messageID: id,
-      type: "text",
-      text: opts.text,
-    } as any)
-  }
-  return id
-}
-
-async function addUserWithText(sid: string, text: string) {
-  const id = await addUser(sid)
-  await Session.updatePart({
-    id: PartID.ascending(),
-    sessionID: sid,
-    messageID: id,
-    type: "text",
-    text,
-  } as any)
-  return id
-}
+// ─── summaries() reads from OM record ────────────────────────────────────────
 
 describe("dream.summaries", () => {
-  test("extracts only summary===true assistant text parts", async () => {
+  test("returns observations from OM record", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
         const s = await Session.create({})
         try {
-          const uid = await addUser(s.id as any)
-          await addAssistant(s.id as any, uid, { summary: false, text: "not a summary" })
-          await addAssistant(s.id as any, uid, { summary: true, text: "this is the summary" })
-
+          seedOM(s.id as SessionID, { observations: "🔴 user builds auth system", observation_tokens: 200 })
           const result = await AutoDream.summaries(s.id as any)
-          expect(result).toContain("this is the summary")
-          expect(result).not.toContain("not a summary")
+          expect(result).toContain("auth system")
         } finally {
           await Session.remove(s.id)
         }
@@ -92,21 +86,20 @@ describe("dream.summaries", () => {
     })
   })
 
-  test("falls back to last 10 user+assistant text msgs when no summaries", async () => {
+  test("uses reflections when present", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
         const s = await Session.create({})
         try {
-          const uid = await addUserWithText(s.id as any, "user message one")
-          await addAssistant(s.id as any, uid, { summary: false, text: "assistant reply one" })
-
+          seedOM(s.id as SessionID, {
+            observations: "raw obs",
+            reflections: "condensed reflection",
+            observation_tokens: 300,
+          })
           const result = await AutoDream.summaries(s.id as any)
-          // No summary msgs → fallback path, should include text from messages
-          expect(typeof result).toBe("string")
-          // Fallback uses all user+assistant text within 2000 token cap
-          expect(result).toContain("user message one")
-          expect(result).toContain("assistant reply one")
+          expect(result).toContain("condensed reflection")
+          expect(result).toContain("raw obs") // both are included in summaries (unlike collectForDir)
         } finally {
           await Session.remove(s.id)
         }
@@ -114,24 +107,20 @@ describe("dream.summaries", () => {
     })
   })
 
-  test("summaries path caps at 4000 tokens", async () => {
+  test("includes current_task when present", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
         const s = await Session.create({})
         try {
-          const uid = await addUser(s.id as any)
-          // First summary fits within 4000-token cap (1000 tokens = 4000 chars)
-          const fits = "y".repeat(4_000)
-          // Second summary causes cap to be exceeded
-          const overflow = "z".repeat(20_000)
-          await addAssistant(s.id as any, uid, { summary: true, text: fits })
-          await addAssistant(s.id as any, uid, { summary: true, text: overflow })
-
+          seedOM(s.id as SessionID, {
+            observations: "obs",
+            current_task: "migrating auth to JWT",
+            observation_tokens: 150,
+          })
           const result = await AutoDream.summaries(s.id as any)
-          // fits (~1000 tokens) added, then overflow (~5000 tokens) → cap+est > 4000 → break
-          expect(result).toContain(fits)
-          expect(result).not.toContain(overflow)
+          expect(result).toContain("migrating auth to JWT")
+          expect(result).toContain("<current-task>")
         } finally {
           await Session.remove(s.id)
         }
@@ -139,30 +128,7 @@ describe("dream.summaries", () => {
     })
   })
 
-  test("fallback path caps at 2000 tokens", async () => {
-    await Instance.provide({
-      directory: root,
-      fn: async () => {
-        const s = await Session.create({})
-        try {
-          const uid = await addUserWithText(s.id as any, "first")
-          // Add a large message that alone exceeds 2000 tokens (8001 chars)
-          const uid2 = await addUserWithText(s.id as any, "a".repeat(8_001))
-          await addUserWithText(s.id as any, "after cap")
-
-          const result = await AutoDream.summaries(s.id as any)
-          // No summary msgs → fallback
-          // "first" < 2000 tokens, added. "a".repeat(8001) = ~2000 tokens, gets checked
-          // Total estimate test: 8001/4 ≈ 2000 tokens — cap triggers at or after this point
-          expect(typeof result).toBe("string")
-        } finally {
-          await Session.remove(s.id)
-        }
-      },
-    })
-  })
-
-  test("returns empty string when session has no messages", async () => {
+  test("returns empty string when session has no OM record", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
@@ -176,64 +142,95 @@ describe("dream.summaries", () => {
       },
     })
   })
+
+  test("caps output at 4000 tokens (16000 chars)", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          // 30k chars of "x" → tokenx estimates ~5000 tokens (at 6 chars/token)
+          // which exceeds the 4000-token cap, triggering the slice to 4000*4=16000 chars
+          const big = "x".repeat(30_000)
+          seedOM(s.id as SessionID, { observations: big, observation_tokens: 5000 })
+          const result = await AutoDream.summaries(s.id as any)
+          // Cap is 4000 * 4 = 16000 chars
+          expect(result.length).toBeLessThanOrEqual(16_000)
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
+
+  test("returns full text when within 4000 tokens", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const s = await Session.create({})
+        try {
+          const small = "🔴 user works at Acme"
+          seedOM(s.id as SessionID, { observations: small, observation_tokens: 5 })
+          const result = await AutoDream.summaries(s.id as any)
+          expect(result).toContain(small)
+        } finally {
+          await Session.remove(s.id)
+        }
+      },
+    })
+  })
 })
+
+// ─── buildSpawnPrompt ────────────────────────────────────────────────────────
 
 describe("dream.buildSpawnPrompt", () => {
   test("includes Session Observations section when obs is non-empty", () => {
-    const base = "base prompt"
-    const obs = "some session insight"
-    const result = AutoDream.buildSpawnPrompt(base, undefined, obs)
+    const result = AutoDream.buildSpawnPrompt("base prompt", undefined, "some session insight")
     expect(result).toContain("## Session Observations")
-    expect(result).toContain(obs)
+    expect(result).toContain("some session insight")
   })
 
   test("excludes Session Observations section when obs is empty string", () => {
-    const base = "base prompt"
-    const result = AutoDream.buildSpawnPrompt(base, undefined, "")
+    const result = AutoDream.buildSpawnPrompt("base prompt", undefined, "")
     expect(result).not.toContain("## Session Observations")
-    expect(result).toBe(base)
+    expect(result).toBe("base prompt")
   })
 
   test("excludes Session Observations section when obs is undefined", () => {
-    const base = "base prompt"
-    const result = AutoDream.buildSpawnPrompt(base, undefined, undefined)
+    const result = AutoDream.buildSpawnPrompt("base prompt", undefined, undefined)
     expect(result).not.toContain("## Session Observations")
-    expect(result).toBe(base)
+    expect(result).toBe("base prompt")
   })
 
   test("includes Focus section when focus is provided", () => {
-    const base = "base prompt"
-    const result = AutoDream.buildSpawnPrompt(base, "auth system", undefined)
+    const result = AutoDream.buildSpawnPrompt("base prompt", "auth system", undefined)
     expect(result).toContain("## Focus")
     expect(result).toContain("auth system")
   })
 
   test("includes both Focus and Session Observations when both provided", () => {
-    const base = "base prompt"
-    const result = AutoDream.buildSpawnPrompt(base, "auth", "some obs")
+    const result = AutoDream.buildSpawnPrompt("base prompt", "auth", "some obs")
     expect(result).toContain("## Focus")
     expect(result).toContain("## Session Observations")
     expect(result).toContain("some obs")
   })
 
   test("base prompt unchanged when focus and obs are absent", () => {
-    const base = "base prompt"
-    expect(AutoDream.buildSpawnPrompt(base)).toBe(base)
+    expect(AutoDream.buildSpawnPrompt("base prompt")).toBe("base prompt")
   })
 })
 
+// ─── dream.idle.graceful ──────────────────────────────────────────────────────
+
 describe("dream.idle.graceful", () => {
-  test("summaries returns empty string for session with no messages", async () => {
+  test("summaries returns empty string for session with no OM record", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
         const s = await Session.create({})
         try {
-          // idle() calls summaries(sid) before spawn — if session is empty it returns ""
-          // an empty obs means spawn receives "" → no Session Observations injected
           const obs = await AutoDream.summaries(s.id as any)
           expect(obs).toBe("")
-          // Verify buildSpawnPrompt with empty obs yields no observations section
           const prompt = AutoDream.buildSpawnPrompt("base", undefined, obs)
           expect(prompt).not.toContain("## Session Observations")
         } finally {
@@ -243,11 +240,9 @@ describe("dream.idle.graceful", () => {
     })
   })
 
-  test("manual dream path gracefully returns a string on failure", async () => {
-    // AutoDream.run() catches daemon/startup failures and returns a message string (no throw)
-    const result = await AutoDream.run()
-    expect(typeof result).toBe("string")
-    // dreaming flag is cleaned up
+  test("manual dream path always throws when dir is missing", async () => {
+    await expect(AutoDream.run()).rejects.toThrow()
+    // Flag must always reset after any code path
     expect(AutoDream.dreaming()).toBe(false)
   })
 })

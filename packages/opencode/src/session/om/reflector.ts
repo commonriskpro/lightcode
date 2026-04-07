@@ -1,6 +1,7 @@
 import { Config } from "../../config/config"
 import { Provider } from "../../provider/provider"
 import { Log } from "@/util/log"
+import { Token } from "@/util/token"
 import { generateText } from "ai"
 import type { SessionID } from "../schema"
 import { OM } from "./record"
@@ -17,9 +18,8 @@ export function startLevel(id: string): CompressionLevel {
 }
 
 // Validate that reflection actually compressed the observations.
-// Uses the same char/4 heuristic as the rest of the codebase.
 function validateCompression(text: string, target: number): boolean {
-  return text.length >> 2 < target
+  return Token.estimate(text) < target
 }
 
 // Escalating compression guidance. Level 0 = no guidance (first attempt).
@@ -100,14 +100,14 @@ Rules:
 - Preserve ✅ completion markers — they signal resolved tasks and prevent repeated work`
 
 export namespace Reflector {
-  export const threshold = 120_000
+  export const threshold = 40_000
 
   export async function run(sid: SessionID): Promise<void> {
     const rec = OM.get(sid)
     if (!rec?.observations) return
 
     const cfg = await Config.get()
-    const t = cfg.experimental?.observer_reflection_tokens ?? 120_000
+    const t = cfg.experimental?.observer_reflection_tokens ?? 40_000
     if ((rec.observation_tokens ?? 0) <= t) return
 
     if (cfg.experimental?.observer === false) return
@@ -153,7 +153,7 @@ export namespace Reflector {
         continue
       }
 
-      const tok = result.text.length >> 2
+      const tok = Token.estimate(result.text)
       if (!best || tok < best.tok) best = { text: result.text, tok }
 
       if (validateCompression(result.text, t)) {

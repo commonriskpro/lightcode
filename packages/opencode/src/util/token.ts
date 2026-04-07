@@ -1,7 +1,13 @@
-export namespace Token {
-  const CHARS_PER_TOKEN = 4
+import { estimateTokenCount } from "tokenx"
 
-  export function estimate(input: string) {
-    return Math.max(0, Math.round((input || "").length / CHARS_PER_TOKEN))
+export namespace Token {
+  /**
+   * Estimate the token count of a string using tokenx (~96% accuracy vs full
+   * tokenizers, 2kB bundle, zero deps). Handles CJK, accented characters, and
+   * TypeScript/code content correctly — significantly more accurate than chars/4.
+   */
+  export function estimate(input: string): number {
+    if (!input) return 0
+    return estimateTokenCount(input)
   }
 }

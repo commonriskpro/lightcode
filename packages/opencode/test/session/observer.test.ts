@@ -1,7 +1,10 @@
-import { describe, expect, test, beforeEach } from "bun:test"
+import { describe, expect, test, beforeEach, beforeAll, afterAll } from "bun:test"
 import path from "path"
+import os from "os"
+import { rm } from "fs/promises"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
+import { Database } from "../../src/storage/db"
 import { OMBuf, calculateDynamicThreshold } from "../../src/session/om/buffer"
 import type { ThresholdRange } from "../../src/session/om/buffer"
 import { OM } from "../../src/session/om/record"
@@ -27,6 +30,36 @@ import { Log } from "../../src/util/log"
 Log.init({ print: false })
 
 const root = path.join(__dirname, "../..")
+
+// ─── Isolated DB fixture ──────────────────────────────────────────────────────
+// Tests that use Instance.provide + Session.create need an isolated DB so that
+// parallel test file execution (Bun runs files concurrently) doesn't produce
+// FOREIGN KEY failures when another file resets Database.Client mid-run.
+
+let testDbPath: string
+
+beforeAll(async () => {
+  testDbPath = path.join(os.tmpdir(), `observer-test-${Math.random().toString(36).slice(2)}.db`)
+  try {
+    Database.close()
+  } catch {}
+  Database.Client.reset()
+  process.env["OPENCODE_DB"] = testDbPath
+  Database.Client()
+  // Force Instance to re-boot in the fresh DB for this directory
+  await Instance.reload({ directory: root }).catch(() => {})
+})
+
+afterAll(async () => {
+  try {
+    Database.close()
+  } catch {}
+  Database.Client.reset()
+  await rm(testDbPath, { force: true }).catch(() => undefined)
+  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
+  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
+  delete process.env["OPENCODE_DB"]
+})
 
 // ─── Buffer state machine ───────────────────────────────────────────────────
 
@@ -165,10 +198,11 @@ describe("session.system.wrapObservations", () => {
   })
 
   test("caps body content at 2000 tokens via capRecallBody", () => {
-    // 10000 chars / 4 = 2500 tokens → exceeds 2000 cap → sliced to 8000 chars
-    const large = "x".repeat(10_000)
+    // 13000 chars of "x" → tokenx estimates ~2167 tokens (at 6 chars/token)
+    // exceeds the 2000 cap → sliced to 2000 * 4 = 8000 chars
+    const large = "x".repeat(13_000)
     const result = SystemPrompt.wrapObservations(large)
-    // The inner body should be capped
+    // The inner body should be capped at 8000 chars
     expect(result).toContain("x".repeat(8_000))
     expect(result).not.toContain("x".repeat(8_001))
   })
@@ -466,8 +500,8 @@ describe("session.llm.system-layout", () => {
 // ─── Reflector ────────────────────────────────────────────────────────────────
 
 describe("session.om.reflector", () => {
-  test("threshold constant is 120_000", () => {
-    expect(Reflector.threshold).toBe(120_000)
+  test("threshold constant is 40_000 (aligned with Mastra)", () => {
+    expect(Reflector.threshold).toBe(40_000)
   })
 
   test("OM.reflect updates reflections without touching observations", async () => {

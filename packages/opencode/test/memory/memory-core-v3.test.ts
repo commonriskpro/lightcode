@@ -280,7 +280,7 @@ describe("V3-8: Working memory guidance in wrapWorkingMemory output", () => {
 describe("V3-9: Dream.run() no longer calls Engram.ensure()", () => {
   test("AutoDream runtime surface stays native and callable", () => {
     expect(typeof AutoDream.run).toBe("function")
-    expect(typeof AutoDream.init).toBe("function")
+    expect(typeof AutoDream.startDaemon).toBe("function")
     expect(typeof AutoDream.persistConsolidation).toBe("function")
   })
 })
