@@ -45,7 +45,7 @@ const args = (() => {
   }
   return {
     url: get("--url", process.env.OPENCODE_URL ?? "http://localhost:4096"),
-    model: get("--model", process.env.BENCH_MODEL ?? "anthropic/claude-sonnet-4-5"),
+    model: get("--model", process.env.BENCH_MODEL ?? "opencode/big-pickle"),
     turns: Number(get("--turns", "6")),
     dir: get("--dir", process.cwd()),
     label: get("--label", "unknown"),
