@@ -218,7 +218,7 @@ export namespace Observer {
 
     const cfg = await Config.get()
     if (cfg.experimental?.observer === false) return joined
-    const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
+    const modelStr = cfg.experimental?.observer_model ?? "opencode/qwen3.6-plus-free"
 
     const parsed = Provider.parseModel(modelStr)
     const model = await Provider.getModel(parsed.providerID, parsed.modelID).catch(() => undefined)
@@ -253,8 +253,8 @@ export namespace Observer {
     const cfg = await Config.get()
     // Respect explicit opt-out — observer: false disables even the default model
     if (cfg.experimental?.observer === false) return undefined
-    // Default to gemini-2.5-flash — cheap, fast, 1M context. Ideal for background observation.
-    const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
+    // Default to qwen3.6-plus-free — free on OpenCode Zen, fast, ideal for background observation.
+    const modelStr = cfg.experimental?.observer_model ?? "opencode/qwen3.6-plus-free"
 
     const parsed = Provider.parseModel(modelStr)
 

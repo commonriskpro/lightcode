@@ -1040,7 +1040,7 @@ export namespace Config {
             .string()
             .optional()
             .describe(
-              "Model to use for background observational memory (format: provider/model). Defaults to google/gemini-2.5-flash.",
+              "Model to use for background observational memory (format: provider/model). Defaults to opencode/qwen3.6-plus-free (free on OpenCode Zen).",
             ),
           observer_message_tokens: z
             .union([

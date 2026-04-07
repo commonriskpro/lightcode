@@ -14,6 +14,7 @@ export type CompressionLevel = 0 | 1 | 2 | 3 | 4
 
 export function startLevel(id: string): CompressionLevel {
   if (id.includes("gemini-2.5-flash")) return 2
+  if (id.includes("qwen3.6-plus-free")) return 2
   return 1
 }
 
@@ -111,7 +112,7 @@ export namespace Reflector {
     if ((rec.observation_tokens ?? 0) <= t) return
 
     if (cfg.experimental?.observer === false) return
-    const modelStr = cfg.experimental?.observer_model ?? "google/gemini-2.5-flash"
+    const modelStr = cfg.experimental?.observer_model ?? "opencode/qwen3.6-plus-free"
 
     const parsed = Provider.parseModel(modelStr)
     const model = await Provider.getModel(parsed.providerID, parsed.modelID).catch((err) => {
