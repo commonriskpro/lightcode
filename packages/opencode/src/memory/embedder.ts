@@ -9,8 +9,8 @@
  * - Singleton per process: the resolved backend is memoized until `reset()`.
  * - `EmbeddingCache` is applied transparently around the resolved backend.
  *
- * The active embedder dimension MUST stay aligned with the sqlite-vec migration,
- * which currently creates `FLOAT[384]` vector columns.
+ * The active embedder dimension MUST stay aligned with the native libSQL vector
+ * schema, which currently uses `F32_BLOB(384)` columns.
  */
 
 import path from "path"

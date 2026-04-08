@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/libsql"
  *
  * libSQL is a fork of SQLite with native vector search (`F32_BLOB`,
  * `vector_top_k`, `vector_distance_cos`) and embedded-replica sync,
- * replacing the previous `bun:sqlite` + `sqlite-vec` combination.
+ * replacing the previous Bun SQLite + extension-based vector stack.
  *
  * Supports both file-backed (`file:/path/to/db.sqlite`) and in-memory
  * (`:memory:`) databases. `intMode: "number"` is required to match the

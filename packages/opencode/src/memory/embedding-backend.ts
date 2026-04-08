@@ -1,14 +1,11 @@
 /**
- * Async `RecallBackend` implementation backed by sqlite-vec.
+ * Async `RecallBackend` implementation backed by libSQL native vectors.
  *
- * - Stores vectors in `memory_artifacts_vec`, a sqlite-vec virtual table with a
- *   fixed 384-dimension shape.
+ * - Stores vectors inline on `memory_artifacts.embedding` as `F32_BLOB(384)`.
  * - Delegates metadata persistence to `FTS5Backend` so lexical and vector stores
  *   stay in sync.
- * - Probes vec-table availability during construction and degrades to no-op /
- *   empty-result behavior when sqlite-vec is unavailable.
- *
- * The vector dimension MUST match the migration's `FLOAT[384]` declaration.
+ * - Probes the native vector column during construction and degrades to no-op /
+ *   empty-result behavior when vector migrations are unavailable.
  */
 
 import { and, eq, isNull, or, sql } from "drizzle-orm"
@@ -30,7 +27,7 @@ export class EmbeddingBackend implements RecallBackend {
 
   private async _probe(): Promise<boolean> {
     try {
-      await Database.use((db) => db.run(sql`SELECT 1 FROM memory_artifacts_vec LIMIT 0`))
+      await Database.use((db) => db.run(sql`SELECT embedding FROM memory_artifacts LIMIT 0`))
       return true
     } catch {
       return false
@@ -47,7 +44,7 @@ export class EmbeddingBackend implements RecallBackend {
    * Index an artifact:
    * 1. Delegate metadata persistence to FTS5Backend (returns artifact id)
    * 2. Embed the content
-   * 3. Upsert the vector into memory_artifacts_vec
+   * 3. Persist the vector on `memory_artifacts.embedding`
    */
   async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string> {
     const id = await this.fts5.index(artifact)
@@ -58,13 +55,9 @@ export class EmbeddingBackend implements RecallBackend {
     const vec = vecs[0]
     if (!vec) return id
 
-    const buf = new Float32Array(vec).buffer
+    const emb = new Float32Array(vec)
     await Database.use((db) =>
-      db.run(sql`
-        INSERT INTO memory_artifacts_vec (artifact_id, embedding)
-        VALUES (${id}, ${buf})
-        ON CONFLICT (artifact_id) DO UPDATE SET embedding = excluded.embedding
-      `),
+      db.update(MemoryArtifactTable).set({ embedding: emb }).where(eq(MemoryArtifactTable.id, id)).run(),
     )
 
     return id
@@ -73,9 +66,8 @@ export class EmbeddingBackend implements RecallBackend {
   /**
    * Search by embedding similarity:
    * 1. Embed the query
-   * 2. Run vec_distance_cosine KNN query against memory_artifacts_vec
-   * 3. Fetch metadata for each result from memory_artifacts (scope-filtered)
-   * 4. Preserve vector ordering, return top `limit`
+   * 2. Run a single native vector query against `memory_artifacts`
+   * 3. Return top `limit` rows already filtered by scope
    */
   async search(query: string, scopes: ScopeRef[], limit: number): Promise<MemoryArtifact[]> {
     if (!(await this.isAvailable()) || !scopes.length || !query.trim()) return []
@@ -84,71 +76,64 @@ export class EmbeddingBackend implements RecallBackend {
     const vec = vecs[0]
     if (!vec) return []
 
-    const buf = new Float32Array(vec).buffer
-    const overfetch = limit * 3
+    const txt = JSON.stringify(Array.from(vec))
+    const scope = sql.join(
+      scopes.map((item) => sql`(scope_type = ${item.type} AND scope_id = ${item.id})`),
+      sql` OR `,
+    )
 
-    // sqlite-vec KNN query using MATCH + k
-    type VecRow = { artifact_id: string; distance: number }
-    let vecRows: VecRow[]
+    type Row = MemoryArtifact & { dist: number }
+    let vecRows: Row[]
     try {
       vecRows = (await Database.use((db) =>
         db.all(sql`
-          SELECT artifact_id, distance
-          FROM memory_artifacts_vec
-          WHERE embedding MATCH ${buf} AND k = ${overfetch}
-          ORDER BY distance
+          SELECT
+            id,
+            scope_type,
+            scope_id,
+            type,
+            title,
+            content,
+            topic_key,
+            normalized_hash,
+            revision_count,
+            duplicate_count,
+            last_seen_at,
+            deleted_at,
+            time_created,
+            time_updated,
+            vector_distance_cos(embedding, vector32(${txt})) AS dist
+          FROM memory_artifacts
+          WHERE embedding IS NOT NULL
+            AND deleted_at IS NULL
+            AND (${scope})
+          ORDER BY dist ASC
+          LIMIT ${limit}
         `),
-      )) as VecRow[]
+      )) as unknown as Row[]
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      if (!msg.includes("no such table")) {
+      if (!msg.includes("no such column")) {
         console.warn("[memory] embedding search error:", msg)
       }
       return []
     }
 
-    if (!vecRows.length) return []
-
-    // Build scope filter using Drizzle columns (safe for use in .where())
-    const scopeWhere = or(
-      ...scopes.map((s) => and(eq(MemoryArtifactTable.scope_type, s.type), eq(MemoryArtifactTable.scope_id, s.id))),
-    )
-
-    // Fetch metadata filtered by scope and not deleted
-    const rows = (await Database.use((db) =>
-      db
-        .select()
-        .from(MemoryArtifactTable)
-        .where(and(isNull(MemoryArtifactTable.deleted_at), scopeWhere))
-        .all(),
-    )) as MemoryArtifact[]
-
-    // Build lookup map
-    const byId = new Map<string, MemoryArtifact>()
-    for (const r of rows) {
-      byId.set(r.id, r)
-    }
-
-    // Preserve vector ordering, filter to matching scope + not deleted
-    const result: MemoryArtifact[] = []
-    for (const row of vecRows) {
-      const art = byId.get(row.artifact_id)
-      if (art && result.length < limit) result.push(art)
-    }
-
-    return result
+    return vecRows
   }
 
   /**
    * Remove an artifact:
    * 1. Soft-delete metadata via FTS5Backend
-   * 2. Hard-delete vector from memory_artifacts_vec
+   * 2. Clear the inline embedding
    */
   async remove(id: string): Promise<void> {
     await this.fts5.remove(id)
 
     if (!(await this.isAvailable())) return
 
-    await Database.use((db) => db.run(sql`DELETE FROM memory_artifacts_vec WHERE artifact_id = ${id}`))
+    await Database.use((db) =>
+      db.update(MemoryArtifactTable).set({ embedding: null }).where(eq(MemoryArtifactTable.id, id)).run(),
+    )
   }
 }

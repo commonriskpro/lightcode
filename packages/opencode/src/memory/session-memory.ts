@@ -1,7 +1,7 @@
 /**
- * Per-session vector index for intra-session semantic recall.
+ * Per-session native vector index for intra-session semantic recall.
  *
- * - Indexes message text into `memory_session_vectors` as messages arrive via
+ * - Indexes message text into `memory_session_chunks` as messages arrive via
  *   fire-and-forget calls from `projectors.ts`.
  * - Cleans up vectors when sessions are removed via fire-and-forget calls from
  *   `session/index.ts`.
@@ -11,18 +11,22 @@
  * - Silently skips all vector work when no embedder is available.
  */
 
-import { sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { Database } from "../storage/db"
 import { Token } from "../util/token"
 import { Embedder } from "./embedder"
 import type { SessionID } from "../session/schema"
 import type { SessionRecallResult } from "./contracts"
+import { MemorySessionChunkTable } from "./schema.sql"
 
 const MIN_TOKENS = 50
 const CHUNK_SIZE = 4096 // chars per chunk
 const DEFAULT_RECALL_LIMIT = 5
-// sqlite-vec uses cosine distance (0=identical, 2=opposite); threshold < 0.25 is very similar
 const DISTANCE_THRESHOLD = 0.25
+
+function id(msg: string, idx: number): string {
+  return `${msg}:${idx}`
+}
 
 function chunks(text: string): string[] {
   if (text.length <= CHUNK_SIZE) return [text]
@@ -38,7 +42,7 @@ let _probe: Promise<boolean> | undefined
 
 async function available(): Promise<boolean> {
   if (typeof _available === "boolean") return _available
-  _probe ??= Database.use((db) => db.run(sql`SELECT 1 FROM memory_session_vectors LIMIT 0`))
+  _probe ??= Database.use((db) => db.run(sql`SELECT embedding FROM memory_session_chunks LIMIT 0`))
     .then(() => true)
     .catch(() => false)
   _available = await _probe
@@ -66,12 +70,29 @@ export namespace SessionMemory {
     const now = Date.now()
 
     for (let i = 0; i < parts.length; i++) {
-      const buf = new Float32Array(vecs[i]).buffer
+      const vec = vecs[i]
+      if (!vec) continue
       await Database.use((db) =>
-        db.run(sql`
-          INSERT INTO memory_session_vectors (msg_id, session_id, chunk_idx, embedding, text, created_at)
-          VALUES (${msgId}, ${sid}, ${i}, ${buf}, ${parts[i]}, ${now})
-        `),
+        db
+          .insert(MemorySessionChunkTable)
+          .values({
+            id: id(msgId, i),
+            msg_id: msgId,
+            session_id: sid,
+            chunk_idx: i,
+            embedding: new Float32Array(vec),
+            text: parts[i]!,
+            created_at: now,
+          })
+          .onConflictDoUpdate({
+            target: MemorySessionChunkTable.id,
+            set: {
+              embedding: new Float32Array(vec),
+              text: parts[i]!,
+              created_at: now,
+            },
+          })
+          .run(),
       )
     }
   }
@@ -80,7 +101,7 @@ export namespace SessionMemory {
    * Recall the top-k most relevant past messages from this session.
    *
    * - Embeds the query
-   * - Queries memory_session_vectors with cosine distance
+   * - Queries memory_session_chunks with cosine distance
    * - Filters out results with distance >= DISTANCE_THRESHOLD (not similar enough)
    * - Deduplicates by msg_id (keeps closest chunk per message)
    * - Returns top `limit` results
@@ -100,20 +121,20 @@ export namespace SessionMemory {
     const vec = vecs[0]
     if (!vec) return []
 
-    const buf = new Float32Array(vec).buffer
-    const overfetch = limit * 5
+    const txt = JSON.stringify(Array.from(vec))
+    const over = limit * 5
 
     type VecRow = { msg_id: string; distance: number; text: string }
     let rows: VecRow[]
     try {
       rows = (await Database.use((db) =>
         db.all(sql`
-          SELECT msg_id, distance, text
-          FROM memory_session_vectors
-          WHERE embedding MATCH ${buf}
-            AND k = ${overfetch}
-            AND session_id = ${sid}
-          ORDER BY distance
+          SELECT msg_id, vector_distance_cos(embedding, vector32(${txt})) AS distance, text
+          FROM memory_session_chunks
+          WHERE session_id = ${sid}
+            AND embedding IS NOT NULL
+          ORDER BY distance ASC
+          LIMIT ${over}
         `),
       )) as VecRow[]
     } catch (err) {
@@ -150,6 +171,8 @@ export namespace SessionMemory {
   export async function clear(sid: SessionID): Promise<void> {
     if (!(await available())) return
 
-    await Database.use((db) => db.run(sql`DELETE FROM memory_session_vectors WHERE session_id = ${sid}`))
+    await Database.use((db) =>
+      db.delete(MemorySessionChunkTable).where(eq(MemorySessionChunkTable.session_id, sid)).run(),
+    )
   }
 }
