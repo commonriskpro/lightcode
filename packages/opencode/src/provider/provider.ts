@@ -894,7 +894,13 @@ export namespace Provider {
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Provider") {}
 
+  // Providers that expose a single gateway endpoint with a fixed protocol.
+  // Per-model npm overrides must be ignored for these — the gateway always
+  // speaks the same protocol regardless of the underlying model vendor.
+  const SINGLE_GATEWAY_PROVIDERS = new Set(["opencode", "opencode-go"])
+
   function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+    const isSingleGateway = SINGLE_GATEWAY_PROVIDERS.has(provider.id)
     const m: Model = {
       id: ModelID.make(model.id),
       providerID: ProviderID.make(provider.id),
@@ -903,7 +909,12 @@ export namespace Provider {
       api: {
         id: model.id,
         url: model.provider?.api ?? provider.api!,
-        npm: model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible",
+        // For single-gateway providers, always use the provider's npm — the
+        // gateway speaks one protocol. Per-model npm overrides only apply to
+        // multi-endpoint providers (e.g. Anthropic, Google, etc.).
+        npm: isSingleGateway
+          ? (provider.npm ?? "@ai-sdk/openai-compatible")
+          : (model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible"),
       },
       status: model.status ?? "active",
       headers: model.headers ?? {},
