@@ -223,7 +223,7 @@ function assistantMsg(content: string, withTool = false): ModelMessage {
 }
 
 function toolResultMsg(): ModelMessage {
-  return { role: "tool", content: [{ type: "tool-result", toolCallId: "t1", toolName: "bash", result: "ok" }] }
+  return { role: "tool", content: [{ type: "tool-result", toolCallId: "t1", toolName: "bash" } as any] }
 }
 
 function hasBP(msg: ModelMessage): boolean {
