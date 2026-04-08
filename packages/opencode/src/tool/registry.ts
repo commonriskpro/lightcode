@@ -27,7 +27,7 @@ import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
 import { Truncate } from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
-import { ToolSearchTool } from "./search"
+
 import { Glob } from "../util/glob"
 import { pathToFileURL } from "url"
 import { Effect, Layer, ServiceMap } from "effect"
@@ -148,8 +148,6 @@ export namespace ToolRegistry {
         const updateWorkingMemory = yield* build(UpdateWorkingMemoryTool)
         const updateUserMemory = yield* build(UpdateUserMemoryTool)
 
-        const toolSearch = yield* build(ToolSearchTool)
-
         function defer(tool: Tool.Info, hint: string): Tool.Info {
           return { ...tool, shouldDefer: true, searchHint: hint }
         }
@@ -192,9 +190,6 @@ export namespace ToolRegistry {
             noSchema(defer(annotate, "Open URL and return visual annotations via Puppeteer")),
             ...(cfg.experimental?.batch_tool === true ? [defer(batch, "Run multiple tools in parallel")] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [plan] : []),
-            ...(Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS || cfg.experimental?.deferred_tools === true
-              ? [safe(toolSearch)]
-              : []),
             ...custom,
           ]
         })

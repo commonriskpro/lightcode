@@ -1024,8 +1024,10 @@ export namespace ProviderTransform {
     if (npm === "@ai-sdk/google-vertex/anthropic") {
       if (["sonnet-4", "opus-4"].some((v) => id.includes(v))) return "anthropic"
     }
+    // OpenAI native tool_search requires Responses API + gpt-5.4 or later.
+    // gpt-5, o3, o4 do NOT support tool_search — only gpt-5.4+.
     if (npm === "@ai-sdk/openai") {
-      if (["gpt-5", "o3", "o4"].some((v) => id.includes(v))) return "openai"
+      if (id.includes("gpt-5.4") || id.includes("gpt-5.5") || id.includes("gpt-5.6")) return "openai"
     }
     return false
   }

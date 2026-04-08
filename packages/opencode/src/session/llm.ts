@@ -4,6 +4,7 @@ import { Cause, Effect, Layer, ServiceMap } from "effect"
 import * as Queue from "effect/Queue"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, stepCountIs, type ModelMessage, type Tool, tool, jsonSchema } from "ai"
+import { openai } from "@ai-sdk/openai"
 import { mergeDeep, pipe } from "remeda"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
 import { ProviderTransform } from "@/provider/transform"
@@ -401,21 +402,6 @@ export namespace LLM {
             toolName: lower,
           }
         }
-        // Same-step deferred tool: if tool_search ran in the same step and loaded
-        // this tool, _toolSearchReady will resolve once tool_search.execute() finishes.
-        // Race with a short timeout — if tool_search didn't run in this step the
-        // promise never resolves and we fall through to the invalid path normally.
-        const ready = (tools as any)["_toolSearchReady"]
-        if (ready instanceof Promise) {
-          const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 5_000))
-          const result = await Promise.race([ready.then(() => "ready" as const), timeout])
-          if (result === "ready" && tools[failed.toolCall.toolName]) {
-            l.info("deferred tool available after tool_search", {
-              tool: failed.toolCall.toolName,
-            })
-            return failed.toolCall
-          }
-        }
         return {
           ...failed.toolCall,
           input: JSON.stringify({
@@ -511,8 +497,11 @@ export namespace LLM {
               }
 
               // Native deferred: inject providerOptions.{provider}.deferLoading
+              // For OpenAI (Responses API, gpt-5.4+): also inject the native tool_search
+              // provider tool so the model can load deferred tools server-side.
               const native = ProviderTransform.supportsNativeDeferred(input.model)
               if (native && args.params.tools) {
+                let hasDeferred = false
                 for (const t of args.params.tools) {
                   if (t.type !== "function") continue
                   const src = input.tools[t.name]
@@ -522,7 +511,14 @@ export namespace LLM {
                       ...t.providerOptions,
                       [native]: { ...(t.providerOptions as any)?.[native], deferLoading: true },
                     }
+                    hasDeferred = true
                   }
+                }
+                // OpenAI: inject native tool_search so the model can discover
+                // deferred tools server-side. Must be last in the tools array
+                // to avoid breaking Anthropic cache_control placement.
+                if (native === "openai" && hasDeferred) {
+                  args.params.tools.push(openai.tools.toolSearch() as any)
                 }
               }
 

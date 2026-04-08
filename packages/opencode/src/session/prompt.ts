@@ -752,93 +752,29 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           tools[key] = item
         }
 
-        // Deferred tools: partition core vs deferred
-        // When explicitly enabled via config, always activate (user opted in)
-        // When enabled via env var only, require threshold to auto-activate
+        // Native deferred: only for providers that support defer_loading natively
+        // (Anthropic via Vertex AI gateway). Hybrid mode (client-side tool_search)
+        // is disabled — models are not reliable enough to use it correctly.
         const cfg = yield* Effect.promise(() => Config.get())
         const explicit = cfg.experimental?.deferred_tools === true
         const auto = Flag.OPENCODE_EXPERIMENTAL_DEFERRED_TOOLS && !explicit
         const deferEnabled = explicit || (auto && Object.keys(tools).length >= Flag.OPENCODE_DEFERRED_TOOLS_THRESHOLD)
+        const native = ProviderTransform.supportsNativeDeferred(input.model)
 
-        if (deferEnabled) {
-          const native = ProviderTransform.supportsNativeDeferred(input.model)
-
-          if (native) {
-            // NATIVE MODE: keep all tools in dict, provider handles defer_loading
-            // Middleware in llm.ts injects providerOptions.{provider}.deferLoading
-            delete tools["tool_search"]
-            const index: ToolSearch.Entry[] = []
-            for (const [key, t] of Object.entries(tools)) {
-              if ((t as any)._shouldDefer === true || (t as any)._deferred === true) {
-                index.push({
-                  id: key,
-                  hint: (t as any)._hint || (t.description ? t.description.slice(0, 80) : key),
-                  description: t.description || "",
-                })
-              }
-            }
-            return { tools, deferredIndex: index }
-          }
-
-          // HYBRID MODE: partition tools, client-side tool_search
-          const deferred: Record<string, AITool> = {}
+        if (deferEnabled && native) {
+          // NATIVE MODE: keep all tools in dict, provider handles defer_loading.
+          // Middleware in llm.ts injects providerOptions.{provider}.deferLoading.
+          delete tools["tool_search"]
           const index: ToolSearch.Entry[] = []
-
           for (const [key, t] of Object.entries(tools)) {
-            if (key === "tool_search") continue
-            const isMcp = (t as any)._deferred === true
-            const isDef = (t as any)._shouldDefer === true || isMcp
-            if (!isDef) continue
-
-            deferred[key] = t
-            index.push({
-              id: key,
-              hint: (t as any)._hint || (t.description ? t.description.slice(0, 80) : key),
-              description: t.description || "",
-            })
-            delete tools[key]
+            if ((t as any)._shouldDefer === true || (t as any)._deferred === true) {
+              index.push({
+                id: key,
+                hint: (t as any)._hint || (t.description ? t.description.slice(0, 80) : key),
+                description: t.description || "",
+              })
+            }
           }
-
-          if (tools["tool_search"] && index.length > 0) {
-            const original = tools["tool_search"]
-
-            // Per-step deferred gate: resolves after tool_search.execute() completes.
-            // experimental_repairToolCall in llm.ts awaits this before re-routing a
-            // same-step tool call whose tool was just loaded by tool_search.
-            let resolveReady!: () => void
-            const ready = new Promise<void>((r) => {
-              resolveReady = r
-            })
-            // Store under _toolSearchReady (underscore prefix → ignored by prepareStep filter)
-            ;(tools as any)["_toolSearchReady"] = ready
-
-            tools["tool_search"] = tool({
-              id: "tool_search" as any,
-              description: original.description!,
-              inputSchema: original.inputSchema!,
-              execute(args: any, options) {
-                const { query, max_results } = args as { query: string; max_results?: number }
-                const matches = ToolSearch.search(index, query, max_results ?? 5)
-
-                for (const match of matches) {
-                  if (!deferred[match.id]) continue
-                  tools[match.id] = deferred[match.id]
-                }
-
-                resolveReady()
-
-                return Promise.resolve({
-                  title: `Loaded ${matches.length} tools`,
-                  metadata: { matches: matches.map((m) => m.id) },
-                  output:
-                    matches.length === 0
-                      ? "No matching tools found. Check <deferred-tools> in system prompt."
-                      : matches.map((m) => `- ${m.id}: ${m.hint}`).join("\n"),
-                })
-              },
-            })
-          }
-
           return { tools, deferredIndex: index }
         }
 
