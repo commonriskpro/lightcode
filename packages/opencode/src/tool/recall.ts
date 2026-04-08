@@ -6,8 +6,7 @@ import type { MessageID } from "../session/schema"
 
 export const RecallTool = Tool.define("recall", {
   description:
-    "Retrieve source conversation messages for an observation group by message range. " +
-    "Use the range from <observation-group range='startId:endId'> markers in your observations.",
+    "Retrieve messages for an observation group. Use the range from <observation-group range='startId:endId'>.",
   parameters: z.object({
     range: z.string().describe("Message range in format 'startId:endId' from an observation group"),
   }),

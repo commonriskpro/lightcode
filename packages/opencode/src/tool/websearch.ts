@@ -44,23 +44,16 @@ export const WebSearchTool = Tool.define("websearch", async () => {
     },
     parameters: z.object({
       query: z.string().describe("Websearch query"),
-      numResults: z.number().optional().describe("Number of search results to return (default: 8)"),
+      numResults: z.number().optional().describe("Number of results (default: 8)"),
       livecrawl: z
         .enum(["fallback", "preferred"])
         .optional()
-        .describe(
-          "Live crawl mode - 'fallback': use live crawling as backup if cached content unavailable, 'preferred': prioritize live crawling (default: 'fallback')",
-        ),
+        .describe("fallback: use live crawl as backup, preferred: prioritize live crawl"),
       type: z
         .enum(["auto", "fast", "deep"])
         .optional()
-        .describe(
-          "Search type - 'auto': balanced search (default), 'fast': quick results, 'deep': comprehensive search",
-        ),
-      contextMaxCharacters: z
-        .number()
-        .optional()
-        .describe("Maximum characters for context string optimized for LLMs (default: 10000)"),
+        .describe("auto: balanced (default), fast: quick, deep: comprehensive"),
+      contextMaxCharacters: z.number().optional().describe("Max chars for context (default: 10000)"),
     }),
     async execute(params, ctx) {
       await ctx.ask({
