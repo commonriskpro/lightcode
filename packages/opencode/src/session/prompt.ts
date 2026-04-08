@@ -669,9 +669,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             ;(wrapped as any)._shouldDefer = true
             ;(wrapped as any)._hint = item.searchHint || item.description.slice(0, 80)
           }
-          if (item.omitSchema) {
-            ;(wrapped as any)._noSchema = true
-          }
+
           tools[item.id] = wrapped
         }
 

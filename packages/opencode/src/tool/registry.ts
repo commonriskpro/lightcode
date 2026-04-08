@@ -56,7 +56,7 @@ export namespace ToolRegistry {
     readonly tools: (
       model: { providerID: ProviderID; modelID: ModelID },
       agent?: Agent.Info,
-    ) => Effect.Effect<(Tool.Def & { id: string; concurrent?: boolean; omitSchema?: boolean })[]>
+    ) => Effect.Effect<(Tool.Def & { id: string; concurrent?: boolean })[]>
   }
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/ToolRegistry") {}
@@ -156,10 +156,6 @@ export namespace ToolRegistry {
           return { ...tool, concurrent: true }
         }
 
-        function noSchema(tool: Tool.Info): Tool.Info {
-          return { ...tool, omitSchema: true }
-        }
-
         const all = Effect.fn("ToolRegistry.all")(function* (custom: Tool.Info[]) {
           const cfg = yield* config.get()
           const question =
@@ -168,26 +164,24 @@ export namespace ToolRegistry {
           return [
             safe(invalid),
             ...(question ? [ask] : []),
-            noSchema(defer(bash, "Execute shell commands when file tools are insufficient")),
-            noSchema(safe(read)),
-            noSchema(safe(glob)),
-            noSchema(safe(grep)),
-            noSchema(edit),
-            noSchema(defer(write, "Create or overwrite entire files")),
-            noSchema(defer(task, "Delegate focused subtasks to subagents for parallel work")),
-            noSchema(defer(safe(skill), "Load specialized workflow instructions for specific tasks")),
-            noSchema(defer(safe(fetch), "Fetch URL content as markdown or text")),
-            noSchema(defer(todo, "Create and manage todo lists")),
-            noSchema(defer(safe(search), "Web search via Exa")),
-            noSchema(defer(safe(code), "Search code via Context7")),
-            noSchema(defer(safe(recall), "Retrieve source messages for an observation group by range")),
-            noSchema(defer(safe(updateWorkingMemory), "Persist stable facts, goals, or decisions to working memory")),
-            noSchema(defer(safe(updateUserMemory), "Persist user-wide preferences or defaults with explicit approval")),
-            noSchema(defer(patch, "Apply unified diff patches")),
-            ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL
-              ? [noSchema(defer(safe(lsp), "Language server diagnostics and hover"))]
-              : []),
-            noSchema(defer(annotate, "Open URL and return visual annotations via Puppeteer")),
+            defer(bash, "Execute shell commands when file tools are insufficient"),
+            safe(read),
+            safe(glob),
+            safe(grep),
+            edit,
+            defer(write, "Create or overwrite entire files"),
+            defer(task, "Delegate focused subtasks to subagents for parallel work"),
+            defer(safe(skill), "Load specialized workflow instructions for specific tasks"),
+            defer(safe(fetch), "Fetch URL content as markdown or text"),
+            defer(todo, "Create and manage todo lists"),
+            defer(safe(search), "Web search via Exa"),
+            defer(safe(code), "Search code via Context7"),
+            defer(safe(recall), "Retrieve source messages for an observation group by range"),
+            defer(safe(updateWorkingMemory), "Persist stable facts, goals, or decisions to working memory"),
+            defer(safe(updateUserMemory), "Persist user-wide preferences or defaults with explicit approval"),
+            defer(patch, "Apply unified diff patches"),
+            ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(safe(lsp), "Language server diagnostics and hover")] : []),
+            defer(annotate, "Open URL and return visual annotations via Puppeteer"),
             ...(cfg.experimental?.batch_tool === true ? [defer(batch, "Run multiple tools in parallel")] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [plan] : []),
             ...custom,
@@ -234,7 +228,6 @@ export namespace ToolRegistry {
                 shouldDefer: tool.shouldDefer,
                 searchHint: tool.searchHint,
                 concurrent: tool.concurrent,
-                omitSchema: tool.omitSchema,
               }
             }),
             { concurrency: "unbounded" },

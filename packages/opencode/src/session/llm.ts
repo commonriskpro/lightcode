@@ -483,19 +483,6 @@ export namespace LLM {
                 PromptProfile.updateAlignment(input.sessionID, alignment)
               }
 
-              // Strip inputSchema for built-in tools marked with _noSchema.
-              // The model knows these tools from training — sending the full schema
-              // wastes tokens and busts cache. Internal SDK validation still runs
-              // because the schema lives in `tools[name].inputSchema`, not here.
-              if (args.params.tools) {
-                for (const t of args.params.tools) {
-                  if (t.type !== "function") continue
-                  if ((input.tools[t.name] as any)?._noSchema) {
-                    t.inputSchema = { type: "object", properties: {} }
-                  }
-                }
-              }
-
               // Native deferred: inject providerOptions.{provider}.deferLoading
               // For OpenAI (Responses API, gpt-5.4+): also inject the native tool_search
               // provider tool so the model can load deferred tools server-side.

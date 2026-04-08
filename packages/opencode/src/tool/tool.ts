@@ -48,7 +48,7 @@ export namespace Tool {
     shouldDefer?: boolean
     searchHint?: string
     concurrent?: boolean
-    omitSchema?: boolean
+
     init: (ctx?: InitContext) => Promise<Def<Parameters, M>>
   }
 
