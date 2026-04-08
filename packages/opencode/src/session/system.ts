@@ -149,7 +149,7 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     live: string | undefined
     combined: string | undefined
   }> {
-    const rec = OM.get(sid)
+    const rec = await OM.get(sid)
     if (!rec) return { stable: undefined, live: undefined, combined: undefined }
     const stable = observationsStable(rec)
     const live = observationsLive(rec)

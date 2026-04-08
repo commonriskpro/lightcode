@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite"
+import type { Database } from "bun:sqlite"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { Global } from "../global"
 import { Log } from "../util/log"
@@ -23,7 +23,13 @@ export namespace JsonMigration {
     progress?: (event: Progress) => void
   }
 
-  export async function run(sqlite: Database, options?: Options) {
+  // TODO(libsql): full runtime migration to @libsql/client is tracked in
+  // Phase 3E of the migrate-storage-to-libsql-async change. For now we widen
+  // the parameter type so both the legacy BunDatabase CLI command and the new
+  // libSQL client call site in src/index.ts typecheck. The implementation
+  // still assumes the sync bun:sqlite API and will be rewritten in the
+  // dedicated json-migration phase.
+  export async function run(sqlite: Database | any, options?: Options) {
     const storageDir = path.join(Global.Path.data, "storage")
 
     if (!existsSync(storageDir)) {

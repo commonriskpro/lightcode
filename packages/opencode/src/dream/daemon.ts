@@ -220,31 +220,36 @@ async function serverAlive(): Promise<boolean> {
 // Collect OM observations for the current project directly from SQLite.
 // No HTTP round-trip — the daemon has the DB path available and opens it once.
 // Falls back to empty string on any error (best-effort, dream is non-critical).
-function collectProjectObsFromDB(): string {
+async function collectProjectObsFromDB(): Promise<string> {
   try {
     // JOIN session_observation ← session WHERE session.directory = projectDir
     // Only include sessions with meaningful observation content (>= 1000 tokens)
-    const rows = Database.use((db) =>
+    const rows = (await Database.use((db) =>
       db
-        .select({
-          observations: ObservationTable.observations,
-          reflections: ObservationTable.reflections,
-          current_task: ObservationTable.current_task,
-          observation_tokens: ObservationTable.observation_tokens,
-        })
+        .select()
         .from(ObservationTable)
         .innerJoin(SessionTable, eq(ObservationTable.session_id, SessionTable.id))
         .where(eq(SessionTable.directory, projectDir))
         .all(),
-    )
+    )) as Array<{
+      session_observation: {
+        observations: string | null
+        reflections: string | null
+        current_task: string | null
+        observation_tokens: number
+      }
+    }>
 
     const parts: string[] = []
     for (const row of rows) {
-      if (!row.observation_tokens || row.observation_tokens < 1000) continue
+      if (!row.session_observation.observation_tokens || row.session_observation.observation_tokens < 1000) continue
       const acc: string[] = []
-      if (row.current_task) acc.push(`<current-task>\n${row.current_task}\n</current-task>`)
-      if (row.reflections) acc.push(`<reflections>\n${row.reflections}\n</reflections>`)
-      else if (row.observations) acc.push(`<observations>\n${row.observations}\n</observations>`)
+      if (row.session_observation.current_task)
+        acc.push(`<current-task>\n${row.session_observation.current_task}\n</current-task>`)
+      if (row.session_observation.reflections)
+        acc.push(`<reflections>\n${row.session_observation.reflections}\n</reflections>`)
+      else if (row.session_observation.observations)
+        acc.push(`<observations>\n${row.session_observation.observations}\n</observations>`)
       if (acc.length) parts.push(acc.join("\n\n"))
     }
 
@@ -262,7 +267,7 @@ function collectProjectObsFromDB(): string {
 async function scheduledDream() {
   if (dreaming) return
   try {
-    const obs = collectProjectObsFromDB()
+    const obs = await collectProjectObsFromDB()
     if (!obs) return // no sessions with OM content — nothing to dream about
 
     // If the server is alive but we don't have its URL yet, skip the dream —

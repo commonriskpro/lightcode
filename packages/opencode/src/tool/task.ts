@@ -124,12 +124,14 @@ export const TaskTool = Tool.define("task", async (ctx) => {
           // Final: enriched snapshot includes OM continuation metadata and project WM keys
           // so a restarted process can reconstruct useful child context without fresh LLM calls.
           try {
-            const parentOm = OM.get(ctx.sessionID as SessionID)
-            const wmSnapshot = Memory.getWorkingMemory({ type: "project", id: Instance.project.id }).map((r) => ({
-              key: r.key,
-              value: r.value,
-            }))
-            Memory.writeForkContext({
+            const parentOm = await OM.get(ctx.sessionID as SessionID)
+            const wmSnapshot = (await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })).map(
+              (r) => ({
+                key: r.key,
+                value: r.value,
+              }),
+            )
+            await Memory.writeForkContext({
               session_id: session.id,
               parent_session_id: ctx.sessionID,
               context: JSON.stringify({
@@ -160,9 +162,9 @@ export const TaskTool = Tool.define("task", async (ctx) => {
       // and project WM snapshot — providing a durable handoff record that survives restart.
       if (!isFork) {
         try {
-          const parentOm = OM.get(ctx.sessionID as SessionID)
-          const wmRecords = Memory.getWorkingMemory({ type: "project", id: Instance.project.id })
-          Memory.writeHandoff({
+          const parentOm = await OM.get(ctx.sessionID as SessionID)
+          const wmRecords = await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })
+          await Memory.writeHandoff({
             parent_session_id: ctx.sessionID,
             child_session_id: session.id,
             context: params.description,

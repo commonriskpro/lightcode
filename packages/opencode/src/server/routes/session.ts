@@ -1003,7 +1003,7 @@ export const SessionRoutes = lazy(() =>
       validator("param", z.object({ sessionID: SessionID.zod })),
       async (c) => {
         const { sessionID } = c.req.valid("param")
-        const rec = OM.get(sessionID)
+        const rec = await OM.get(sessionID)
         const info = await Session.get(sessionID).catch(() => undefined)
         const dream = await AutoDream.status(info?.directory).catch(() => ({ dreaming: false }))
         return c.json({

@@ -108,12 +108,8 @@ export namespace Memory {
         : Promise.resolve([] as SessionRecallResult[])
 
     const [wRecords, omRec, ftsArtifacts, sessionResults] = await Promise.all([
-      Promise.resolve(WorkingMemory.getForScopes(opts.scope, opts.ancestorScopes ?? [])),
-      Promise.resolve(
-        opts.scope.type === "thread"
-          ? (OM.get(opts.scope.id as SessionID) as ObservationRecord | undefined)
-          : undefined,
-      ),
+      WorkingMemory.getForScopes(opts.scope, opts.ancestorScopes ?? []),
+      opts.scope.type === "thread" ? OM.get(opts.scope.id as SessionID) : Promise.resolve(undefined),
       search,
       session,
     ])
@@ -189,8 +185,8 @@ export namespace Memory {
 
   // ─── Observational Memory ───────────────────────────────────────────────────
 
-  export function getObservations(sessionId: string): ObservationRecord | undefined {
-    return OM.get(sessionId as SessionID) as ObservationRecord | undefined
+  export async function getObservations(sessionId: string): Promise<ObservationRecord | undefined> {
+    return OM.get(sessionId as SessionID) as Promise<ObservationRecord | undefined>
   }
 
   // ─── Semantic Recall ────────────────────────────────────────────────────────

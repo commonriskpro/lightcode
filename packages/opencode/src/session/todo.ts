@@ -61,7 +61,7 @@ export namespace Todo {
       })
 
       const get = Effect.fn("Todo.get")(function* (sessionID: SessionID) {
-        const rows = yield* Effect.sync(() =>
+        const rows = yield* Effect.promise(() =>
           Database.use((db) =>
             db
               .select()

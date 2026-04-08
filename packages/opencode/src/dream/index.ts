@@ -62,7 +62,7 @@ export namespace AutoDream {
   }
 
   export async function summaries(sid: string): Promise<string> {
-    const rec = OM.get(sid as SessionID)
+    const rec = await OM.get(sid as SessionID)
     const acc: string[] = []
     if (rec?.current_task) acc.push(`<current-task>\n${rec.current_task}\n</current-task>`)
     if (rec?.reflections) acc.push(`<reflections>\n${rec.reflections}\n</reflections>`)

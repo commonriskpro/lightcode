@@ -107,7 +107,7 @@ export namespace Reflector {
   export const threshold = 40_000
 
   export async function run(sid: SessionID): Promise<void> {
-    const rec = OM.get(sid)
+    const rec = await OM.get(sid)
     if (!rec?.observations) return
 
     const cfg = await Config.get()
