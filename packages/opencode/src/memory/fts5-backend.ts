@@ -90,12 +90,12 @@ export class FTS5Backend implements RecallBackend {
 
     let id = ""
 
-    Database.transaction(() => {
+    await Database.transaction(async () => {
       // 1. Topic-key upsert
       if (topicKey) {
-        const existing = Database.use((db) =>
+        const existing = await Database.use((db) =>
           db
-            .select({ id: MemoryArtifactTable.id, revision_count: MemoryArtifactTable.revision_count })
+            .select()
             .from(MemoryArtifactTable)
             .where(
               and(
@@ -111,7 +111,7 @@ export class FTS5Backend implements RecallBackend {
         )
 
         if (existing) {
-          Database.use((db) =>
+          await Database.use((db) =>
             db
               .update(MemoryArtifactTable)
               .set({
@@ -133,9 +133,9 @@ export class FTS5Backend implements RecallBackend {
 
       // 2. Hash dedupe within window
       const windowStart = now - DEDUPE_WINDOW_MS
-      const dup = Database.use((db) =>
+      const dup = await Database.use((db) =>
         db
-          .select({ id: MemoryArtifactTable.id, duplicate_count: MemoryArtifactTable.duplicate_count })
+          .select()
           .from(MemoryArtifactTable)
           .where(
             and(
@@ -153,7 +153,7 @@ export class FTS5Backend implements RecallBackend {
       )
 
       if (dup) {
-        Database.use((db) =>
+        await Database.use((db) =>
           db
             .update(MemoryArtifactTable)
             .set({ duplicate_count: dup.duplicate_count + 1, last_seen_at: now, time_updated: now })
@@ -166,7 +166,7 @@ export class FTS5Backend implements RecallBackend {
 
       // 3. Insert new artifact
       const newId = nowId()
-      Database.use((db) =>
+      await Database.use((db) =>
         db
           .insert(MemoryArtifactTable)
           .values({
@@ -213,7 +213,7 @@ export class FTS5Backend implements RecallBackend {
 
     // Direct topic_key match
     if (query.includes("/")) {
-      const topicResults = Database.use((db) =>
+      const topicResults = (await Database.use((db) =>
         db
           .select()
           .from(MemoryArtifactTable)
@@ -223,7 +223,7 @@ export class FTS5Backend implements RecallBackend {
           .orderBy(sql`${MemoryArtifactTable.time_updated} DESC`)
           .limit(limit)
           .all(),
-      )
+      )) as MemoryArtifact[]
       for (const r of topicResults) {
         if (!seen.has(r.id)) {
           results.push({ ...r, rank: -1000 })
@@ -235,7 +235,7 @@ export class FTS5Backend implements RecallBackend {
     const ftsQueryAnd = sanitizeFTS(query)
     const ftsQueryOr = sanitizeFTSPrefix(query)
 
-    const runFTSQuery = (ftsQuery: string): (MemoryArtifact & { rank: number })[] =>
+    const runFTSQuery = (ftsQuery: string): Promise<(MemoryArtifact & { rank: number })[]> =>
       Database.use((db) =>
         db.all(sql`
           SELECT a.id, a.scope_type, a.scope_id, a.type, a.title, a.content,
@@ -250,12 +250,12 @@ export class FTS5Backend implements RecallBackend {
           ORDER BY f.rank
           LIMIT ${limit}
         `),
-      ) as (MemoryArtifact & { rank: number })[]
+      ) as Promise<(MemoryArtifact & { rank: number })[]>
 
     if (ftsQueryAnd) {
       // Pass 1: AND mode
       try {
-        const andResults = runFTSQuery(ftsQueryAnd)
+        const andResults = await runFTSQuery(ftsQueryAnd)
         for (const r of andResults) {
           if (!seen.has(r.id)) {
             results.push(r)
@@ -272,7 +272,7 @@ export class FTS5Backend implements RecallBackend {
       // Pass 2: prefix-OR fallback — only if AND returned 0 new results
       if (results.length === 0 && ftsQueryOr) {
         try {
-          const orResults = runFTSQuery(ftsQueryOr)
+          const orResults = await runFTSQuery(ftsQueryOr)
           for (const r of orResults) {
             if (!seen.has(r.id)) {
               results.push(r)
@@ -295,11 +295,11 @@ export class FTS5Backend implements RecallBackend {
   /**
    * Get recent artifacts for a scope, ordered by most recently updated.
    */
-  recent(scopes: ScopeRef[], limit = 10): MemoryArtifact[] {
+  async recent(scopes: ScopeRef[], limit = 10): Promise<MemoryArtifact[]> {
     if (!scopes.length) return []
     const results: MemoryArtifact[] = []
     for (const scope of scopes) {
-      const rows = Database.use((db) =>
+      const rows = (await Database.use((db) =>
         db
           .select()
           .from(MemoryArtifactTable)
@@ -313,7 +313,7 @@ export class FTS5Backend implements RecallBackend {
           .orderBy(sql`${MemoryArtifactTable.time_updated} DESC`)
           .limit(limit)
           .all(),
-      ) as MemoryArtifact[]
+      )) as MemoryArtifact[]
       results.push(...rows)
       if (results.length >= limit) break
     }
@@ -323,21 +323,21 @@ export class FTS5Backend implements RecallBackend {
   /**
    * Get a specific artifact by ID.
    */
-  get(id: string): MemoryArtifact | undefined {
-    return Database.use((db) =>
+  async get(id: string): Promise<MemoryArtifact | undefined> {
+    return (await Database.use((db) =>
       db
         .select()
         .from(MemoryArtifactTable)
         .where(and(eq(MemoryArtifactTable.id, id), isNull(MemoryArtifactTable.deleted_at)))
         .get(),
-    ) as MemoryArtifact | undefined
+    )) as MemoryArtifact | undefined
   }
 
   /**
    * Soft-delete an artifact. Excluded from all subsequent search results.
    */
   async remove(id: string): Promise<void> {
-    Database.use((db) =>
+    await Database.use((db) =>
       db
         .update(MemoryArtifactTable)
         .set({ deleted_at: Date.now(), time_updated: Date.now() })

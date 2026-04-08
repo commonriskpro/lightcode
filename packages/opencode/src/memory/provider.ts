@@ -121,7 +121,7 @@ export namespace Memory {
     // Fallback: if FTS5 returned no results AND a query was provided,
     // fall back to recency-ordered artifacts for these scopes.
     // This ensures semanticRecall is never silently empty when artifacts exist.
-    const artifacts = ftsArtifacts.length === 0 && opts.semanticQuery ? fts.recent(allScopes, 5) : ftsArtifacts
+    const artifacts = ftsArtifacts.length === 0 && opts.semanticQuery ? await fts.recent(allScopes, 5) : ftsArtifacts
 
     // Format each layer with token budgets
     const rawWM = WorkingMemory.format(wRecords, wBudget)
@@ -165,26 +165,26 @@ export namespace Memory {
 
   // ─── Working Memory ─────────────────────────────────────────────────────────
 
-  export function getWorkingMemory(scope: ScopeRef, key?: string): WorkingMemoryRecord[] {
+  export async function getWorkingMemory(scope: ScopeRef, key?: string): Promise<WorkingMemoryRecord[]> {
     return WorkingMemory.get(scope, key)
   }
 
-  export function setWorkingMemory(
+  export async function setWorkingMemory(
     scope: ScopeRef,
     key: string,
     value: string,
     format: "markdown" | "json" = "markdown",
-  ): void {
-    WorkingMemory.set(scope, key, value, format)
+  ): Promise<void> {
+    await WorkingMemory.set(scope, key, value, format)
   }
 
-  export function setUserMemory(
+  export async function setUserMemory(
     key: string,
     value: string,
     format: "markdown" | "json" = "markdown",
     id = DEFAULT_USER_SCOPE_ID,
-  ): void {
-    WorkingMemory.set(userScope(id), key, value, format)
+  ): Promise<void> {
+    await WorkingMemory.set(userScope(id), key, value, format)
   }
 
   // ─── Observational Memory ───────────────────────────────────────────────────
@@ -209,20 +209,20 @@ export namespace Memory {
 
   // ─── Handoff and Fork ───────────────────────────────────────────────────────
 
-  export function getHandoff(childSessionId: string): AgentHandoff | undefined {
+  export async function getHandoff(childSessionId: string): Promise<AgentHandoff | undefined> {
     return Handoff.getHandoff(childSessionId)
   }
 
-  export function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): string {
+  export async function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): Promise<string> {
     return Handoff.writeHandoff(h)
   }
 
-  export function getForkContext(sessionId: string): ForkContext | undefined {
+  export async function getForkContext(sessionId: string): Promise<ForkContext | undefined> {
     return Handoff.getFork(sessionId)
   }
 
-  export function writeForkContext(ctx: Omit<ForkContext, "id" | "time_created">): void {
-    Handoff.writeFork({
+  export async function writeForkContext(ctx: Omit<ForkContext, "id" | "time_created">): Promise<void> {
+    await Handoff.writeFork({
       sessionId: ctx.session_id,
       parentSessionId: ctx.parent_session_id,
       context: ctx.context,

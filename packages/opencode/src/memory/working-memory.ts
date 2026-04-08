@@ -39,9 +39,9 @@ export namespace WorkingMemory {
    * Get working memory records for a single scope.
    * If key is provided, returns only that key's record (or empty array).
    */
-  export function get(scope: ScopeRef, key?: string): WorkingMemoryRecord[] {
-    return Database.use((db) => {
-      const base = db
+  export async function get(scope: ScopeRef, key?: string): Promise<WorkingMemoryRecord[]> {
+    return (await Database.use(async (db) => {
+      const base = await db
         .select()
         .from(WorkingMemoryTable)
         .where(
@@ -54,7 +54,7 @@ export namespace WorkingMemory {
         .orderBy(WorkingMemoryTable.time_updated)
         .all()
       return base as WorkingMemoryRecord[]
-    })
+    })) as WorkingMemoryRecord[]
   }
 
   /**
@@ -72,8 +72,11 @@ export namespace WorkingMemory {
    * pass through — defeating the "most specific wins" contract. The key is now
    * just `r.key` so thread's "goals" overrides project's "goals" correctly.
    */
-  export function getForScopes(primary: ScopeRef, ancestors: ScopeRef[]): WorkingMemoryRecord[] {
-    const all = [primary, ...ancestors].sort((a, b) => ORDER[a.type] - ORDER[b.type]).flatMap((s) => get(s))
+  export async function getForScopes(primary: ScopeRef, ancestors: ScopeRef[]): Promise<WorkingMemoryRecord[]> {
+    const rows = await Promise.all(
+      [primary, ...ancestors].sort((a, b) => ORDER[a.type] - ORDER[b.type]).map((s) => get(s)),
+    )
+    const all = rows.flat()
     // Deduplicate by logical key name across scopes.
     // Since records are ordered most-specific-first (primary first, then ancestors),
     // the first occurrence of each key name is the highest-precedence value.
@@ -92,14 +95,19 @@ export namespace WorkingMemory {
    *
    * Global pattern writes: strips <private> tags before persisting.
    */
-  export function set(scope: ScopeRef, key: string, value: string, format: "markdown" | "json" = "markdown"): void {
+  export async function set(
+    scope: ScopeRef,
+    key: string,
+    value: string,
+    format: "markdown" | "json" = "markdown",
+  ): Promise<void> {
     const safe = scope.type === "global_pattern" ? stripPrivate(value) : value
     const now = nowMs()
 
-    Database.transaction(() => {
-      const existing = Database.use((db) =>
+    await Database.transaction(async () => {
+      const existing = await Database.use((db) =>
         db
-          .select({ id: WorkingMemoryTable.id, version: WorkingMemoryTable.version })
+          .select()
           .from(WorkingMemoryTable)
           .where(
             and(
@@ -112,7 +120,7 @@ export namespace WorkingMemory {
       )
 
       if (existing) {
-        Database.use((db) =>
+        await Database.use((db) =>
           db
             .update(WorkingMemoryTable)
             .set({ value: safe, format, version: existing.version + 1, time_updated: now })
@@ -120,7 +128,7 @@ export namespace WorkingMemory {
             .run(),
         )
       } else {
-        Database.use((db) =>
+        await Database.use((db) =>
           db
             .insert(WorkingMemoryTable)
             .values({
@@ -143,8 +151,8 @@ export namespace WorkingMemory {
   /**
    * Remove a working memory key from a scope.
    */
-  export function remove(scope: ScopeRef, key: string): void {
-    Database.use((db) =>
+  export async function remove(scope: ScopeRef, key: string): Promise<void> {
+    await Database.use((db) =>
       db
         .delete(WorkingMemoryTable)
         .where(
@@ -161,8 +169,8 @@ export namespace WorkingMemory {
   /**
    * Delete all working memory records for a scope (e.g. when a thread is deleted).
    */
-  export function clearScope(scope: ScopeRef): void {
-    Database.use((db) =>
+  export async function clearScope(scope: ScopeRef): Promise<void> {
+    await Database.use((db) =>
       db
         .delete(WorkingMemoryTable)
         .where(and(eq(WorkingMemoryTable.scope_type, scope.type), eq(WorkingMemoryTable.scope_id, scope.id)))

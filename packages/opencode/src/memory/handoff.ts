@@ -30,12 +30,12 @@ export namespace Handoff {
    * Transactional — the fork is only live after this write succeeds.
    * Upsert on session_id: safe to call multiple times.
    */
-  export function writeFork(ctx: { sessionId: string; parentSessionId: string; context: string }): void {
+  export async function writeFork(ctx: { sessionId: string; parentSessionId: string; context: string }): Promise<void> {
     const id = newId("fork")
     const now = Date.now()
 
-    Database.transaction(() => {
-      Database.use((db) =>
+    await Database.transaction(async () => {
+      await Database.use((db) =>
         db
           .insert(ForkContextTable)
           .values({
@@ -61,10 +61,10 @@ export namespace Handoff {
   /**
    * Read fork context for a session. Returns undefined if not found.
    */
-  export function getFork(sessionId: string): ForkContext | undefined {
-    return Database.use((db) =>
+  export async function getFork(sessionId: string): Promise<ForkContext | undefined> {
+    return (await Database.use((db) =>
       db.select().from(ForkContextTable).where(eq(ForkContextTable.session_id, sessionId)).get(),
-    ) as ForkContext | undefined
+    )) as ForkContext | undefined
   }
 
   /**
@@ -72,12 +72,12 @@ export namespace Handoff {
    * Transactional — the handoff is only live after this write succeeds.
    * Returns the handoff ID.
    */
-  export function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): string {
+  export async function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): Promise<string> {
     const id = newId("handoff")
     const now = Date.now()
 
-    Database.transaction(() => {
-      Database.use((db) =>
+    await Database.transaction(async () => {
+      await Database.use((db) =>
         db
           .insert(AgentHandoffTable)
           .values({
@@ -111,9 +111,9 @@ export namespace Handoff {
   /**
    * Get an agent handoff for a child session. Returns undefined if not found.
    */
-  export function getHandoff(childSessionId: string): AgentHandoff | undefined {
-    return Database.use((db) =>
+  export async function getHandoff(childSessionId: string): Promise<AgentHandoff | undefined> {
+    return (await Database.use((db) =>
       db.select().from(AgentHandoffTable).where(eq(AgentHandoffTable.child_session_id, childSessionId)).get(),
-    ) as AgentHandoff | undefined
+    )) as AgentHandoff | undefined
   }
 }

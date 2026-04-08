@@ -33,20 +33,15 @@ function chunks(text: string): string[] {
   return parts
 }
 
-function probeVecTable(): boolean {
-  try {
-    Database.use((db) => db.run(sql`SELECT 1 FROM memory_session_vectors LIMIT 0`))
-    return true
-  } catch {
-    return false
-  }
-}
+let _available: boolean | undefined
+let _probe: Promise<boolean> | undefined
 
-let _available: boolean | undefined = undefined
-
-function available(): boolean {
-  if (_available !== undefined) return _available
-  _available = probeVecTable()
+async function available(): Promise<boolean> {
+  if (typeof _available === "boolean") return _available
+  _probe ??= Database.use((db) => db.run(sql`SELECT 1 FROM memory_session_vectors LIMIT 0`))
+    .then(() => true)
+    .catch(() => false)
+  _available = await _probe
   return _available
 }
 
@@ -61,7 +56,7 @@ export namespace SessionMemory {
    */
   export async function append(sid: SessionID, msgId: string, text: string): Promise<void> {
     if (Token.estimate(text) < MIN_TOKENS) return
-    if (!available()) return
+    if (!(await available())) return
 
     const embedder = await Embedder.get()
     if (!embedder) return
@@ -72,7 +67,7 @@ export namespace SessionMemory {
 
     for (let i = 0; i < parts.length; i++) {
       const buf = new Float32Array(vecs[i]).buffer
-      Database.use((db) =>
+      await Database.use((db) =>
         db.run(sql`
           INSERT INTO memory_session_vectors (msg_id, session_id, chunk_idx, embedding, text, created_at)
           VALUES (${msgId}, ${sid}, ${i}, ${buf}, ${parts[i]}, ${now})
@@ -96,7 +91,7 @@ export namespace SessionMemory {
     limit = DEFAULT_RECALL_LIMIT,
     excludeMsgIds: string[] = [],
   ): Promise<SessionRecallResult[]> {
-    if (!available()) return []
+    if (!(await available())) return []
 
     const embedder = await Embedder.get()
     if (!embedder) return []
@@ -111,7 +106,7 @@ export namespace SessionMemory {
     type VecRow = { msg_id: string; distance: number; text: string }
     let rows: VecRow[]
     try {
-      rows = Database.use((db) =>
+      rows = (await Database.use((db) =>
         db.all(sql`
           SELECT msg_id, distance, text
           FROM memory_session_vectors
@@ -120,7 +115,7 @@ export namespace SessionMemory {
             AND session_id = ${sid}
           ORDER BY distance
         `),
-      ) as VecRow[]
+      )) as VecRow[]
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!msg.includes("no such table")) {
@@ -153,8 +148,8 @@ export namespace SessionMemory {
    * Called when the session closes.
    */
   export async function clear(sid: SessionID): Promise<void> {
-    if (!available()) return
+    if (!(await available())) return
 
-    Database.use((db) => db.run(sql`DELETE FROM memory_session_vectors WHERE session_id = ${sid}`))
+    await Database.use((db) => db.run(sql`DELETE FROM memory_session_vectors WHERE session_id = ${sid}`))
   }
 }

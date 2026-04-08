@@ -18,23 +18,29 @@ import type { MemoryArtifact, ScopeRef, RecallBackend, EmbedderBackend } from ".
 import type { FTS5Backend } from "./fts5-backend"
 
 export class EmbeddingBackend implements RecallBackend {
-  private available: boolean
+  private available: boolean | undefined
   private embedder: EmbedderBackend
   private fts5: FTS5Backend
 
   constructor(embedder: EmbedderBackend, fts5: FTS5Backend) {
     this.embedder = embedder
     this.fts5 = fts5
-    this.available = this._probe()
+    this.available = undefined
   }
 
-  private _probe(): boolean {
+  private async _probe(): Promise<boolean> {
     try {
-      Database.use((db) => db.run(sql`SELECT 1 FROM memory_artifacts_vec LIMIT 0`))
+      await Database.use((db) => db.run(sql`SELECT 1 FROM memory_artifacts_vec LIMIT 0`))
       return true
     } catch {
       return false
     }
+  }
+
+  private async isAvailable(): Promise<boolean> {
+    if (typeof this.available === "boolean") return this.available
+    this.available = await this._probe()
+    return this.available
   }
 
   /**
@@ -46,14 +52,14 @@ export class EmbeddingBackend implements RecallBackend {
   async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string> {
     const id = await this.fts5.index(artifact)
 
-    if (!this.available) return id
+    if (!(await this.isAvailable())) return id
 
     const vecs = await this.embedder.embed([artifact.content])
     const vec = vecs[0]
     if (!vec) return id
 
     const buf = new Float32Array(vec).buffer
-    Database.use((db) =>
+    await Database.use((db) =>
       db.run(sql`
         INSERT INTO memory_artifacts_vec (artifact_id, embedding)
         VALUES (${id}, ${buf})
@@ -72,7 +78,7 @@ export class EmbeddingBackend implements RecallBackend {
    * 4. Preserve vector ordering, return top `limit`
    */
   async search(query: string, scopes: ScopeRef[], limit: number): Promise<MemoryArtifact[]> {
-    if (!this.available || !scopes.length || !query.trim()) return []
+    if (!(await this.isAvailable()) || !scopes.length || !query.trim()) return []
 
     const vecs = await this.embedder.embed([query])
     const vec = vecs[0]
@@ -85,14 +91,14 @@ export class EmbeddingBackend implements RecallBackend {
     type VecRow = { artifact_id: string; distance: number }
     let vecRows: VecRow[]
     try {
-      vecRows = Database.use((db) =>
+      vecRows = (await Database.use((db) =>
         db.all(sql`
           SELECT artifact_id, distance
           FROM memory_artifacts_vec
           WHERE embedding MATCH ${buf} AND k = ${overfetch}
           ORDER BY distance
         `),
-      ) as VecRow[]
+      )) as VecRow[]
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!msg.includes("no such table")) {
@@ -109,13 +115,13 @@ export class EmbeddingBackend implements RecallBackend {
     )
 
     // Fetch metadata filtered by scope and not deleted
-    const rows = Database.use((db) =>
+    const rows = (await Database.use((db) =>
       db
         .select()
         .from(MemoryArtifactTable)
         .where(and(isNull(MemoryArtifactTable.deleted_at), scopeWhere))
         .all(),
-    ) as MemoryArtifact[]
+    )) as MemoryArtifact[]
 
     // Build lookup map
     const byId = new Map<string, MemoryArtifact>()
@@ -141,8 +147,8 @@ export class EmbeddingBackend implements RecallBackend {
   async remove(id: string): Promise<void> {
     await this.fts5.remove(id)
 
-    if (!this.available) return
+    if (!(await this.isAvailable())) return
 
-    Database.use((db) => db.run(sql`DELETE FROM memory_artifacts_vec WHERE artifact_id = ${id}`))
+    await Database.use((db) => db.run(sql`DELETE FROM memory_artifacts_vec WHERE artifact_id = ${id}`))
   }
 }
