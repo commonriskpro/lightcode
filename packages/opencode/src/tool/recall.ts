@@ -16,7 +16,7 @@ export const RecallTool = Tool.define("recall", {
       return { title: "recall", output: "Invalid range format. Expected 'startId:endId'.", metadata: {} }
     const [start, end] = parts as [string, string]
 
-    const rows = Database.use((db) =>
+    const rows = (await Database.use((db) =>
       db
         .select()
         .from(MessageTable)
@@ -28,7 +28,7 @@ export const RecallTool = Tool.define("recall", {
           ),
         )
         .all(),
-    )
+    )) as (typeof MessageTable.$inferSelect)[]
 
     if (!rows.length) return { title: "recall", output: "No messages found for this range.", metadata: {} }
 
@@ -36,7 +36,9 @@ export const RecallTool = Tool.define("recall", {
     let out = ""
     for (const row of rows) {
       const role = row.data.role === "user" ? "User" : "Assistant"
-      const msgParts = Database.use((db) => db.select().from(PartTable).where(eq(PartTable.message_id, row.id)).all())
+      const msgParts = (await Database.use((db) =>
+        db.select().from(PartTable).where(eq(PartTable.message_id, row.id)).all(),
+      )) as (typeof PartTable.$inferSelect)[]
       const text = msgParts
         .filter((p) => (p.data as unknown as { type: string }).type === "text")
         .map((p) => (p.data as unknown as { text: string }).text)

@@ -76,8 +76,9 @@ export namespace ShareNext {
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/ShareNext") {}
 
-  const db = <T>(fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => T) =>
-    Effect.sync(() => Database.use(fn))
+  const db = <T>(
+    fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
+  ) => Effect.promise(() => Database.use(fn))
 
   function api(resource: string): Api {
     return {
@@ -252,7 +253,7 @@ export namespace ShareNext {
         log.info("full sync", { sessionID })
         const info = yield* session.get(sessionID)
         const diffs = yield* session.diff(sessionID)
-        const messages = yield* Effect.sync(() => Array.from(MessageV2.stream(sessionID)))
+        const messages = yield* Effect.promise(() => Array.fromAsync(MessageV2.stream(sessionID)))
         const models = yield* Effect.forEach(
           Array.from(
             new Map(

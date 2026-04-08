@@ -191,7 +191,7 @@ export namespace SessionProcessor {
                 metadata: value.providerMetadata,
               } satisfies MessageV2.ToolPart)
 
-              const parts = MessageV2.parts(ctx.assistantMessage.id)
+              const parts = yield* Effect.promise(() => MessageV2.parts(ctx.assistantMessage.id))
               const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
 
               if (
@@ -369,7 +369,7 @@ export namespace SessionProcessor {
               // Only handles "buffer"; "activate" and "block" remain end-of-turn only.
               const stepTok = usage.tokens.input + usage.tokens.output
               const cfg = yield* Effect.promise(() => Config.get())
-              const obsRec = OM.get(ctx.sessionID)
+              const obsRec = yield* Effect.promise(() => OM.get(ctx.sessionID))
               const sig = OMBuf.check(
                 ctx.sessionID,
                 stepTok,
@@ -389,7 +389,7 @@ export namespace SessionProcessor {
                   // Without this, s.tok grows unbounded and the system stays permanently
                   // in "activate"/"block" after the first condensation.
                   OMBuf.resetCycle(ctx.sessionID)
-                  const fresh = OM.get(ctx.sessionID)
+                  const fresh = await OM.get(ctx.sessionID)
                   if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
                     OMBuf.setReflecting(ctx.sessionID, true)
                     try {
@@ -415,7 +415,9 @@ export namespace SessionProcessor {
                   obsRec?.observed_message_ids ? (JSON.parse(obsRec.observed_message_ids) as string[]) : [],
                 )
                 const sealed = OMBuf.sealedAt(ctx.sessionID)
-                const unobserved = [...MessageV2.stream(ctx.sessionID)].filter(
+                const unobserved = (yield* Effect.promise(() =>
+                  Array.fromAsync(MessageV2.stream(ctx.sessionID)),
+                )).filter(
                   (m) =>
                     (m.info.time?.created ?? 0) > boundary &&
                     !obsIds.has(m.info.id) &&
@@ -434,7 +436,7 @@ export namespace SessionProcessor {
                         priorCurrentTask: obsRec?.current_task ?? undefined,
                       })
                       if (result) {
-                        OM.addBufferSafe(
+                        await OM.addBufferSafe(
                           {
                             id: ulid(),
                             session_id: ctx.sessionID,
@@ -563,7 +565,7 @@ export namespace SessionProcessor {
           }
           ctx.reasoningMap = {}
 
-          const parts = MessageV2.parts(ctx.assistantMessage.id)
+          const parts = yield* Effect.promise(() => MessageV2.parts(ctx.assistantMessage.id))
           for (const part of parts) {
             if (part.type !== "tool" || part.state.status === "completed" || part.state.status === "error") continue
             yield* session.updatePart({
