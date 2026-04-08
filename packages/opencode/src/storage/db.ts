@@ -1,5 +1,4 @@
-import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
-import { migrate } from "drizzle-orm/bun-sqlite/migrator"
+import { type LibSQLDatabase } from "drizzle-orm/libsql"
 import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
 export * from "drizzle-orm"
 import { Context } from "../util/context"
@@ -43,9 +42,9 @@ export namespace Database {
     return getChannelPath()
   })
 
-  export type Transaction = SQLiteTransaction<"sync", void>
+  export type Transaction = SQLiteTransaction<"async", any, any, any>
 
-  type DbClient = SQLiteBunDatabase
+  type DbClient = LibSQLDatabase
 
   type Journal = { sql: string; timestamp: number; name: string }[]
 
@@ -82,17 +81,23 @@ export namespace Database {
     return sql.sort((a, b) => a.timestamp - b.timestamp)
   }
 
-  export const Client = lazy(() => {
+  /**
+   * Cached async init. `lazy()` caches the returned Promise, so concurrent
+   * callers share the same in-flight initialization and the PRAGMAs +
+   * migrations run exactly once. `lazy.reset()` clears the Promise so
+   * `close()` can be followed by a fresh `Client()` call.
+   */
+  export const Client = lazy(async () => {
     log.info("opening database", { path: Path })
 
-    const db = init(Path)
+    const db = await init(Path)
 
-    db.run("PRAGMA journal_mode = WAL")
-    db.run("PRAGMA synchronous = NORMAL")
-    db.run("PRAGMA busy_timeout = 5000")
-    db.run("PRAGMA cache_size = -64000")
-    db.run("PRAGMA foreign_keys = ON")
-    db.run("PRAGMA wal_checkpoint(PASSIVE)")
+    await db.$client.execute("PRAGMA journal_mode = WAL")
+    await db.$client.execute("PRAGMA synchronous = NORMAL")
+    await db.$client.execute("PRAGMA busy_timeout = 5000")
+    await db.$client.execute("PRAGMA cache_size = -64000")
+    await db.$client.execute("PRAGMA foreign_keys = ON")
+    await db.$client.execute("PRAGMA wal_checkpoint(PASSIVE)")
 
     // Apply schema migrations
     const entries =
@@ -109,14 +114,57 @@ export namespace Database {
           item.sql = "select 1;"
         }
       }
-      migrate(db, entries)
+      await applyMigrations(db, entries)
     }
 
     return db
   })
 
-  export function close() {
-    Client().$client.close()
+  /**
+   * Minimal drop-in replacement for `drizzle-orm/libsql/migrator`'s `migrate()`.
+   * The libsql migrator in drizzle-orm@1.0.0-beta only accepts `MigrationConfig`
+   * with a `migrationsFolder` path, but lightcode has always fed migrations as
+   * an in-memory `MigrationsJournal` (either bundled at build time via
+   * `OPENCODE_MIGRATIONS` or read from disk in dev). We reproduce the same
+   * behavior as the previous `drizzle-orm/bun-sqlite/migrator.migrate` journal
+   * overload: create `__drizzle_migrations`, skip already-applied entries (by
+   * `created_at` timestamp, same convention), and run the rest.
+   */
+  async function applyMigrations(db: Awaited<ReturnType<typeof init>>, journal: Journal) {
+    await db.$client.execute(`
+      CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hash TEXT NOT NULL,
+        created_at NUMERIC,
+        name TEXT,
+        applied_at TEXT
+      )
+    `)
+    const applied = await db.$client.execute("SELECT created_at FROM __drizzle_migrations ORDER BY created_at ASC")
+    const seen = new Set<number>()
+    for (const row of applied.rows) {
+      const ts = Number(row.created_at)
+      if (Number.isFinite(ts)) seen.add(ts)
+    }
+    for (const entry of journal) {
+      if (seen.has(entry.timestamp)) continue
+      const statements = entry.sql
+        .split("--> statement-breakpoint")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      for (const stmt of statements) {
+        await db.$client.execute(stmt)
+      }
+      await db.$client.execute({
+        sql: 'INSERT INTO __drizzle_migrations ("hash", "created_at", "name", "applied_at") VALUES (?, ?, ?, ?)',
+        args: ["", entry.timestamp, entry.name, new Date().toISOString()],
+      })
+    }
+  }
+
+  export async function close() {
+    const db = await Client()
+    db.$client.close()
     Client.reset()
   }
 
@@ -127,14 +175,15 @@ export namespace Database {
     effects: (() => void | Promise<void>)[]
   }>("database")
 
-  export function use<T>(callback: (trx: TxOrDb) => T): T {
+  export async function use<T>(callback: (trx: TxOrDb) => Promise<T> | T): Promise<T> {
     try {
-      return callback(ctx.use().tx)
+      return await callback(ctx.use().tx)
     } catch (err) {
       if (err instanceof Context.NotFound) {
         const effects: (() => void | Promise<void>)[] = []
-        const result = ctx.provide({ effects, tx: Client() }, () => callback(Client()))
-        for (const effect of effects) effect()
+        const client = await Client()
+        const result = await ctx.provide({ effects, tx: client }, () => callback(client))
+        for (const fx of effects) await fx()
         return result
       }
       throw err
@@ -150,23 +199,26 @@ export namespace Database {
     }
   }
 
-  type NotPromise<T> = T extends Promise<any> ? never : T
-
-  export function transaction<T>(
-    callback: (tx: TxOrDb) => NotPromise<T>,
+  export async function transaction<T>(
+    callback: (tx: TxOrDb) => Promise<T> | T,
     options?: {
       behavior?: "deferred" | "immediate" | "exclusive"
     },
-  ): NotPromise<T> {
+  ): Promise<T> {
     try {
-      return callback(ctx.use().tx)
+      return await callback(ctx.use().tx)
     } catch (err) {
       if (err instanceof Context.NotFound) {
         const effects: (() => void | Promise<void>)[] = []
-        const txCallback = InstanceState.bind((tx: TxOrDb) => ctx.provide({ tx, effects }, () => callback(tx)))
-        const result = Client().transaction(txCallback, { behavior: options?.behavior })
-        for (const effect of effects) effect()
-        return result as NotPromise<T>
+        const client = await Client()
+        const txCallback = InstanceState.bind((tx: Transaction) =>
+          ctx.provide({ tx, effects }, () => Promise.resolve(callback(tx))),
+        )
+        const result = await client.transaction(txCallback, {
+          behavior: options?.behavior,
+        })
+        for (const fx of effects) await fx()
+        return result as T
       }
       throw err
     }
