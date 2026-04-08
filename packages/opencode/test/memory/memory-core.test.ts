@@ -19,9 +19,8 @@ import os from "os"
 import path from "path"
 import { rm } from "fs/promises"
 import { Database } from "../../src/storage/db"
-import { Instance } from "../../src/project/instance"
 import { WorkingMemory } from "../../src/memory/working-memory"
-import { SemanticRecall } from "../../src/memory/semantic-recall"
+import { FTS5Backend, format as formatArtifacts } from "../../src/memory/fts5-backend"
 import { Handoff } from "../../src/memory/handoff"
 import { Memory } from "../../src/memory/provider"
 import type { ScopeRef } from "../../src/memory/contracts"
@@ -75,13 +74,6 @@ describe("SC-10: Fresh DB migration", () => {
     expect(tables).toContain("memory_agent_handoffs")
     expect(tables).toContain("memory_fork_contexts")
     expect(tables).toContain("memory_links")
-  })
-
-  test("creates FTS5 virtual table for memory_artifacts", () => {
-    const vtables = Database.use((db) =>
-      db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='memory_artifacts_fts'"),
-    )
-    expect(vtables.length).toBe(1)
   })
 })
 
@@ -154,8 +146,9 @@ describe("SC-6: Scope isolation", () => {
     expect(records.some((r) => r.key === "user_key" && r.scope_type === "user")).toBe(true)
   })
 
-  test("artifact search with project scope doesn't return user scope artifacts", () => {
-    SemanticRecall.index({
+  test("artifact search with project scope doesn't return user scope artifacts", async () => {
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "observation",
@@ -169,7 +162,7 @@ describe("SC-6: Scope isolation", () => {
       deleted_at: null,
     })
 
-    SemanticRecall.index({
+    await fts.index({
       scope_type: "user",
       scope_id: "default",
       type: "observation",
@@ -184,7 +177,7 @@ describe("SC-6: Scope isolation", () => {
     })
 
     // Search with only project scope
-    const results = SemanticRecall.search("observation", [projectScope], 10)
+    const results = await fts.search("observation", [projectScope], 10)
     expect(results.every((r) => r.scope_type === "project")).toBe(true)
   })
 })
@@ -193,42 +186,9 @@ describe("SC-5: FTS5 search", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("FTS5 keyword search returns relevant artifacts", () => {
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "test-project",
-      type: "decision",
-      title: "Auth Strategy Decision",
-      content: "We decided to use JWT tokens for authentication instead of sessions",
-      topic_key: null,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "test-project",
-      type: "pattern",
-      title: "React Component Pattern",
-      content: "All components should be written as functional components with hooks",
-      topic_key: null,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    const results = SemanticRecall.search("authentication JWT", [projectScope], 10)
-    expect(results.length).toBeGreaterThan(0)
-    expect(results.some((r) => r.title.includes("Auth"))).toBe(true)
-  })
-
-  test("FTS5 special character query does not crash", () => {
-    SemanticRecall.index({
+  test("FTS5 special character query does not crash", async () => {
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "observation",
@@ -243,9 +203,9 @@ describe("SC-5: FTS5 search", () => {
     })
 
     // These should not throw — special chars are sanitized
-    expect(() => SemanticRecall.search("AND OR NOT *", [projectScope], 5)).not.toThrow()
-    expect(() => SemanticRecall.search("fix: auth bug", [projectScope], 5)).not.toThrow()
-    expect(() => SemanticRecall.search("(test)", [projectScope], 5)).not.toThrow()
+    await expect(fts.search("AND OR NOT *", [projectScope], 5)).resolves.toBeDefined()
+    await expect(fts.search("fix: auth bug", [projectScope], 5)).resolves.toBeDefined()
+    await expect(fts.search("(test)", [projectScope], 5)).resolves.toBeDefined()
   })
 })
 
@@ -253,49 +213,9 @@ describe("SC-7: Topic-key dedupe", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("same topic_key updates existing artifact, not insert new", () => {
-    const topicKey = "architecture/auth-model"
-
-    const id1 = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "test-project",
-      type: "decision",
-      title: "Auth Model V1",
-      content: "Initial auth model using sessions",
-      topic_key: topicKey,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    const id2 = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "test-project",
-      type: "decision",
-      title: "Auth Model V2",
-      content: "Updated auth model using JWT tokens",
-      topic_key: topicKey,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // Same ID (upsert, not new record)
-    expect(id1).toBe(id2)
-
-    // Revision count incremented
-    const artifact = SemanticRecall.get(id1)
-    expect(artifact).toBeDefined()
-    expect(artifact!.revision_count).toBe(2)
-    expect(artifact!.title).toBe("Auth Model V2")
-  })
-
-  test("different topic_keys create separate artifacts", () => {
-    const id1 = SemanticRecall.index({
+  test("different topic_keys create separate artifacts", async () => {
+    const fts = new FTS5Backend()
+    const id1 = await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "decision",
@@ -309,7 +229,7 @@ describe("SC-7: Topic-key dedupe", () => {
       deleted_at: null,
     })
 
-    const id2 = SemanticRecall.index({
+    const id2 = await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "decision",
@@ -326,10 +246,11 @@ describe("SC-7: Topic-key dedupe", () => {
     expect(id1).not.toBe(id2)
   })
 
-  test("hash dedupe within window increments duplicate_count", () => {
+  test("hash dedupe within window increments duplicate_count", async () => {
+    const fts = new FTS5Backend()
     const sameContent = "This exact content will be duplicated"
 
-    const id1 = SemanticRecall.index({
+    const id1 = await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "observation",
@@ -343,7 +264,7 @@ describe("SC-7: Topic-key dedupe", () => {
       deleted_at: null,
     })
 
-    const id2 = SemanticRecall.index({
+    const id2 = await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "observation",
@@ -360,70 +281,19 @@ describe("SC-7: Topic-key dedupe", () => {
     // Same ID (dedupe)
     expect(id1).toBe(id2)
 
-    const artifact = SemanticRecall.get(id1)
+    const artifact = fts.get(id1)
     expect(artifact!.duplicate_count).toBe(2)
   })
 })
 
-describe("SC-8: Semantic recall indexable and queryable", () => {
+describe("SC-8: format() respects token budget", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("index artifact and retrieve by get()", () => {
-    const id = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "test-project",
-      type: "pattern",
-      title: "Drizzle ORM Pattern",
-      content: "Always use snake_case for column names in Drizzle schema",
-      topic_key: "patterns/drizzle",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    const artifact = SemanticRecall.get(id)
-    expect(artifact).toBeDefined()
-    expect(artifact!.title).toBe("Drizzle ORM Pattern")
-    expect(artifact!.scope_type).toBe("project")
-    expect(artifact!.topic_key).toBe("patterns/drizzle")
-  })
-
-  test("soft-deleted artifact excluded from search results", () => {
-    const id = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "test-project",
-      type: "observation",
-      title: "Deleted observation",
-      content: "This observation will be deleted",
-      topic_key: null,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // Verify it's searchable before deletion
-    const before = SemanticRecall.search("deleted observation", [projectScope], 10)
-    expect(before.some((r) => r.id === id)).toBe(true)
-
-    // Soft delete
-    SemanticRecall.remove(id)
-
-    // Should not appear in search
-    const after = SemanticRecall.search("deleted observation", [projectScope], 10)
-    expect(after.some((r) => r.id === id)).toBe(false)
-
-    // get() also excludes deleted
-    expect(SemanticRecall.get(id)).toBeUndefined()
-  })
-
-  test("format() respects token budget", () => {
+  test("format() respects token budget", async () => {
+    const fts = new FTS5Backend()
     const longContent = "A".repeat(10000)
-    const id = SemanticRecall.index({
+    const id = await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "observation",
@@ -437,9 +307,9 @@ describe("SC-8: Semantic recall indexable and queryable", () => {
       deleted_at: null,
     })
 
-    const artifacts = [SemanticRecall.get(id)!]
-    const formatted = SemanticRecall.format(artifacts, 100) // 100 token budget
-    // Content should be truncated to ~300 chars preview
+    const artifacts = [fts.get(id)!]
+    const formatted = formatArtifacts(artifacts, 100) // 100 token budget
+    // Content should be truncated — budget caps total output
     if (formatted) {
       expect(formatted.length).toBeLessThan(2000)
     }
@@ -508,7 +378,7 @@ describe("SC-9: No external process required", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("all memory operations succeed without Engram daemon", () => {
+  test("all memory operations succeed without Engram daemon", async () => {
     // Ensure no OPENCODE_MEMORY_USE_ENGRAM is set
     delete process.env["OPENCODE_MEMORY_USE_ENGRAM"]
 
@@ -516,9 +386,10 @@ describe("SC-9: No external process required", () => {
     expect(() => WorkingMemory.set(projectScope, "key", "value")).not.toThrow()
     expect(() => WorkingMemory.get(projectScope)).not.toThrow()
 
-    // Semantic recall
-    expect(() =>
-      SemanticRecall.index({
+    // Semantic recall via FTS5Backend
+    const fts = new FTS5Backend()
+    await expect(
+      fts.index({
         scope_type: "project",
         scope_id: "test-project",
         type: "observation",
@@ -531,8 +402,8 @@ describe("SC-9: No external process required", () => {
         last_seen_at: null,
         deleted_at: null,
       }),
-    ).not.toThrow()
-    expect(() => SemanticRecall.search("daemon", [projectScope], 5)).not.toThrow()
+    ).resolves.toBeDefined()
+    await expect(fts.search("daemon", [projectScope], 5)).resolves.toBeDefined()
 
     // Handoff
     expect(() => Handoff.writeFork({ sessionId: "s1", parentSessionId: "s0", context: "ctx" })).not.toThrow()
@@ -572,7 +443,8 @@ describe("SC-1: buildContext() composes all layers", () => {
   })
 
   test("returns semantic recall when artifacts exist and query matches", async () => {
-    SemanticRecall.index({
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: "test-project",
       type: "decision",

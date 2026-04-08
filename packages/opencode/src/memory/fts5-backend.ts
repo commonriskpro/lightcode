@@ -1,15 +1,11 @@
 /**
- * LightCode Memory Core V1 — Semantic Recall Service
+ * Async `RecallBackend` backed by SQLite FTS5.
  *
- * Similarity-based retrieval of memory artifacts. V1 uses SQLite FTS5 for
- * full-text search. The RecallBackend abstraction allows future swap-in of
- * vector/embedding backends without changing the MemoryProvider interface.
- *
- * Storage patterns borrowed from Engram:
- * - Topic-key upsert: same topic_key → revision_count increments
- * - Hash-based dedupe: same content within 15min window → duplicate_count increments
- * - Soft delete: deleted_at field, excluded from search results
- * - FTS5 query sanitization: wrap terms in quotes to avoid syntax errors
+ * - Wraps the existing two-pass FTS5 search: AND mode first, then prefix-OR
+ *   fallback when needed.
+ * - Preserves topic-key upsert and 15-minute normalized-hash dedupe behavior.
+ * - Uses soft delete via `deleted_at`.
+ * - Can be used directly or composed by `HybridBackend`.
  */
 
 import { createHash } from "crypto"
@@ -17,7 +13,7 @@ import { eq, and, isNull, or, sql } from "drizzle-orm"
 import { Database } from "../storage/db"
 import { Token } from "../util/token"
 import { MemoryArtifactTable } from "./schema.sql"
-import type { MemoryArtifact, ArtifactSearchResult, ScopeRef } from "./contracts"
+import type { MemoryArtifact, ArtifactSearchResult, ScopeRef, RecallBackend } from "./contracts"
 
 const DEDUPE_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
 const MAX_CONTENT_LENGTH = 50_000
@@ -43,12 +39,6 @@ function cleanToken(t: string): string {
   return next
 }
 
-/**
- * Sanitize a search query for FTS5 high-precision AND mode.
- * Each token is double-quoted → exact-token AND matching.
- * "auth JWT tokens" → "auth" "JWT" "tokens"
- * ALL tokens must appear in the document (high precision, lower recall).
- */
 function sanitizeFTS(query: string): string {
   return query
     .trim()
@@ -59,14 +49,6 @@ function sanitizeFTS(query: string): string {
     .join(" ")
 }
 
-/**
- * Sanitize a search query for FTS5 prefix-OR mode (higher recall fallback).
- * Each token becomes a prefix wildcard match joined with OR (implicit in FTS5 when tokens are space-separated without AND).
- * "auth JWT tokens" → auth* OR JWT* OR tokens*
- * ANY token prefix match returns a result (lower precision, much higher recall).
- *
- * Used as a fallback when the high-precision AND mode returns 0 results.
- */
 function sanitizeFTSPrefix(query: string): string {
   return query
     .trim()
@@ -85,16 +67,18 @@ function nowId(): string {
   return `art_${bytes}`
 }
 
-export namespace SemanticRecall {
+export class FTS5Backend implements RecallBackend {
   /**
-   * Index a memory artifact. Implements:
+   * Index a memory artifact.
+   *
+   * Implements:
    * 1. Topic-key upsert (same topic_key in same scope → revision_count++)
    * 2. Hash dedupe within 15-min window (same hash → duplicate_count++)
    * 3. Insert new artifact if no match
    *
    * Returns the artifact ID (existing or new).
    */
-  export function index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): string {
+  async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string> {
     const content =
       artifact.content.length > MAX_CONTENT_LENGTH
         ? artifact.content.slice(0, MAX_CONTENT_LENGTH) + "... [truncated]"
@@ -104,7 +88,7 @@ export namespace SemanticRecall {
     const topicKey = normalizeTopicKey(artifact.topic_key)
     const now = Date.now()
 
-    let resultId = ""
+    let id = ""
 
     Database.transaction(() => {
       // 1. Topic-key upsert
@@ -142,7 +126,7 @@ export namespace SemanticRecall {
               .where(eq(MemoryArtifactTable.id, existing.id))
               .run(),
           )
-          resultId = existing.id
+          id = existing.id
           return
         }
       }
@@ -176,17 +160,17 @@ export namespace SemanticRecall {
             .where(eq(MemoryArtifactTable.id, dup.id))
             .run(),
         )
-        resultId = dup.id
+        id = dup.id
         return
       }
 
       // 3. Insert new artifact
-      const id = nowId()
+      const newId = nowId()
       Database.use((db) =>
         db
           .insert(MemoryArtifactTable)
           .values({
-            id,
+            id: newId,
             scope_type: artifact.scope_type,
             scope_id: artifact.scope_id,
             type: artifact.type,
@@ -203,19 +187,18 @@ export namespace SemanticRecall {
           })
           .run(),
       )
-      resultId = id
+      id = newId
     })
 
-    return resultId
+    return id
   }
 
   /**
-   * Search memory artifacts using FTS5 full-text search.
-   * Results are filtered by scope and ranked by FTS5 relevance.
-   *
-   * Also performs a direct topic_key match (treated as highest priority, rank=-1000).
+   * Search memory artifacts using FTS5.
+   * Two-pass strategy: AND (high precision) → OR prefix fallback (high recall).
+   * Also performs direct topic_key match (rank=-1000, treated as highest priority).
    */
-  export function search(query: string, scopes: ScopeRef[], limit = 10): MemoryArtifact[] {
+  async search(query: string, scopes: ScopeRef[], limit = 10): Promise<MemoryArtifact[]> {
     if (!query.trim() || !scopes.length) return []
 
     const results: ArtifactSearchResult[] = []
@@ -228,7 +211,7 @@ export namespace SemanticRecall {
       sql` OR `,
     )
 
-    // Direct topic_key match (Engram-style: "/" in query = topic_key lookup)
+    // Direct topic_key match
     if (query.includes("/")) {
       const topicResults = Database.use((db) =>
         db
@@ -249,25 +232,11 @@ export namespace SemanticRecall {
       }
     }
 
-    // FTS5 two-pass search strategy for production-quality recall:
-    //
-    // Pass 1 — High-precision AND mode (all tokens quoted, exact match):
-    //   "auth" "JWT" "tokens" → document must contain ALL tokens exactly.
-    //   Best for short, precise queries. High precision, lower recall.
-    //
-    // Pass 2 — High-recall prefix-OR mode (fallback when AND returns 0):
-    //   auth* OR JWT* OR tokens* → document needs ANY prefix match.
-    //   Catches "authentication" from "auth*", "authorization" from "auth*", etc.
-    //   Much higher recall for natural language queries like "how does auth work".
-    //
-    // This two-pass approach fixes the production recall quality issue where
-    // a query like "authentication system" returned 0 results because "auth"
-    // (with exact-AND) doesn't match "authentication" in the indexed content.
     const ftsQueryAnd = sanitizeFTS(query)
     const ftsQueryOr = sanitizeFTSPrefix(query)
 
-    const runFTSQuery = (ftsQuery: string): (MemoryArtifact & { rank: number })[] => {
-      return Database.use((db) =>
+    const runFTSQuery = (ftsQuery: string): (MemoryArtifact & { rank: number })[] =>
+      Database.use((db) =>
         db.all(sql`
           SELECT a.id, a.scope_type, a.scope_id, a.type, a.title, a.content,
                  a.topic_key, a.normalized_hash, a.revision_count, a.duplicate_count,
@@ -282,13 +251,11 @@ export namespace SemanticRecall {
           LIMIT ${limit}
         `),
       ) as (MemoryArtifact & { rank: number })[]
-    }
 
     if (ftsQueryAnd) {
       // Pass 1: AND mode
-      let andResults: (MemoryArtifact & { rank: number })[] = []
       try {
-        andResults = runFTSQuery(ftsQueryAnd)
+        const andResults = runFTSQuery(ftsQueryAnd)
         for (const r of andResults) {
           if (!seen.has(r.id)) {
             results.push(r)
@@ -302,7 +269,7 @@ export namespace SemanticRecall {
         }
       }
 
-      // Pass 2: prefix-OR mode fallback — only if AND returned 0 new results
+      // Pass 2: prefix-OR fallback — only if AND returned 0 new results
       if (results.length === 0 && ftsQueryOr) {
         try {
           const orResults = runFTSQuery(ftsQueryOr)
@@ -327,9 +294,8 @@ export namespace SemanticRecall {
 
   /**
    * Get recent artifacts for a scope, ordered by most recently updated.
-   * Used as a non-FTS fallback when no semantic query is available.
    */
-  export function recent(scopes: ScopeRef[], limit = 10): MemoryArtifact[] {
+  recent(scopes: ScopeRef[], limit = 10): MemoryArtifact[] {
     if (!scopes.length) return []
     const results: MemoryArtifact[] = []
     for (const scope of scopes) {
@@ -357,7 +323,7 @@ export namespace SemanticRecall {
   /**
    * Get a specific artifact by ID.
    */
-  export function get(id: string): MemoryArtifact | undefined {
+  get(id: string): MemoryArtifact | undefined {
     return Database.use((db) =>
       db
         .select()
@@ -370,7 +336,7 @@ export namespace SemanticRecall {
   /**
    * Soft-delete an artifact. Excluded from all subsequent search results.
    */
-  export function remove(id: string): void {
+  async remove(id: string): Promise<void> {
     Database.use((db) =>
       db
         .update(MemoryArtifactTable)
@@ -379,30 +345,29 @@ export namespace SemanticRecall {
         .run(),
     )
   }
+}
 
-  /**
-   * Format search results for prompt injection.
-   * Respects token budget. Returns undefined if empty or budget exhausted.
-   */
-  export function format(artifacts: MemoryArtifact[], budget: number): string | undefined {
-    if (!artifacts.length) return undefined
+/**
+ * Format search results for prompt injection.
+ * Respects token budget. Returns undefined if empty or budget exhausted.
+ */
+export function format(artifacts: MemoryArtifact[], budget: number): string | undefined {
+  if (!artifacts.length) return undefined
 
-    const lines: string[] = []
-    let used = 0
+  const lines: string[] = []
+  let used = 0
 
-    for (let i = 0; i < artifacts.length; i++) {
-      const a = artifacts[i]
-      const scopeLabel = `${a.scope_type}/${a.scope_id}`
-      // V2: expanded preview from 300 → 800 chars for more useful recall context
-      const preview = a.content.length > 800 ? a.content.slice(0, 800) + "…" : a.content
-      const entry = `[${i + 1}] ${a.title} (${scopeLabel})\n${preview}`
-      const est = Token.estimate(entry)
-      if (used + est > budget) break
-      lines.push(entry)
-      used += est
-    }
-
-    if (!lines.length) return undefined
-    return lines.join("\n\n")
+  for (let i = 0; i < artifacts.length; i++) {
+    const a = artifacts[i]
+    const scopeLabel = `${a.scope_type}/${a.scope_id}`
+    const preview = a.content.length > 800 ? a.content.slice(0, 800) + "…" : a.content
+    const entry = `[${i + 1}] ${a.title} (${scopeLabel})\n${preview}`
+    const est = Token.estimate(entry)
+    if (used + est > budget) break
+    lines.push(entry)
+    used += est
   }
+
+  if (!lines.length) return undefined
+  return lines.join("\n\n")
 }

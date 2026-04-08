@@ -1,5 +1,9 @@
 # AutoDream + Engram — Specification
 
+> **⚠️ SUPERSEDED (2026-04-05):** This document describes the original Engram-backed AutoDream design. The current implementation uses LightCode's native SQLite memory store. AutoDream now writes directly to `memory_artifacts` via `Memory.indexArtifact()` without requiring Engram. This spec is retained for historical reference only. See `docs/LIGHTCODE_MEMORY_PRODUCTION_SPEC.md` for the current architecture.
+
+---
+
 ## Requirements
 
 ### REQ-1: `/dream` Slash Command

@@ -45,7 +45,7 @@ export namespace Database {
 
   export type Transaction = SQLiteTransaction<"sync", void>
 
-  type Client = SQLiteBunDatabase
+  type DbClient = SQLiteBunDatabase
 
   type Journal = { sql: string; timestamp: number; name: string }[]
 
@@ -120,7 +120,7 @@ export namespace Database {
     Client.reset()
   }
 
-  export type TxOrDb = Transaction | Client
+  export type TxOrDb = Transaction | DbClient
 
   const ctx = Context.create<{
     tx: TxOrDb

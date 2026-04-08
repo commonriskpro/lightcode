@@ -143,8 +143,19 @@ export function Prompt(props: PromptProps) {
     const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
     if (!last) return
 
+    // Get tokens from the last step-finish part to show the actual context for this step,
+    // not the accumulated tokens from multi-step streaming.
+    const msgParts = sync.data.part[last.id] ?? []
+    const lastStepFinish = msgParts.findLast((p): p is any => p.type === "step-finish")
+
+    // Context should NOT include cache.read because those tokens were already in context
+    // from previous turns - they are not new context. Only cache.write is new.
+    const step = lastStepFinish ?? last
     const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+      step.tokens.input -
+      step.tokens.cache.read + // subtract cache.read (already in context)
+      step.tokens.output +
+      step.tokens.reasoning
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]

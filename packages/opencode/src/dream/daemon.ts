@@ -138,7 +138,7 @@ async function doDream(focus?: string, model?: string, obs?: string) {
           .trim()
 
         if (outputText && outputText.length > 50) {
-          AutoDream.persistConsolidation(
+          await AutoDream.persistConsolidation(
             projectDir,
             focus ? `Dream: ${focus}` : `AutoDream consolidation ${new Date().toISOString().slice(0, 10)}`,
             outputText,

@@ -36,6 +36,7 @@ import { Global } from "@/global"
 import type { LanguageModelV2Usage } from "@ai-sdk/provider"
 import { Effect, Layer, Scope, ServiceMap } from "effect"
 import { makeRuntime } from "@/effect/run-service"
+import { SessionMemory } from "../memory/session-memory"
 
 export namespace Session {
   const log = Log.create({ service: "session" })
@@ -252,11 +253,17 @@ export namespace Session {
       if (!Number.isFinite(value)) return 0
       return value
     }
-    const inputTokens = safe(input.usage.inputTokens ?? 0)
+    // Handle both standard (number) and extended (object with total) inputTokens formats
+    // OpenAI-compatible providers send inputTokens as { total, noCache, cacheRead }
+    const rawInputTokens = input.usage.inputTokens as any
+    const inputTokens = safe(typeof rawInputTokens === "number" ? rawInputTokens : (rawInputTokens?.total ?? 0))
     const outputTokens = safe(input.usage.outputTokens ?? 0)
     const reasoningTokens = safe(input.usage.reasoningTokens ?? 0)
 
-    const cacheReadInputTokens = safe(input.usage.cachedInputTokens ?? 0)
+    // Extract cache read tokens from multiple possible locations:
+    // 1. cachedInputTokens (standard field - Anthropic, OpenAI Responses)
+    // 2. inputTokens.cacheRead (OpenAI-compatible extended format)
+    const cacheReadInputTokens = safe(input.usage.cachedInputTokens ?? (rawInputTokens as any)?.cacheRead ?? 0)
     const cacheWriteInputTokens = safe(
       (input.metadata?.["anthropic"]?.["cacheCreationInputTokens"] ??
         // google-vertex-anthropic returns metadata under "vertex" key
@@ -472,6 +479,7 @@ export namespace Session {
             // Release all in-memory OM state for this session.
             // The DB rows are cleaned up by cascade on SessionTable delete.
             OMBuf.reset(sessionID)
+            void SessionMemory.clear(sessionID)
           })
         } catch (e) {
           log.error(e)

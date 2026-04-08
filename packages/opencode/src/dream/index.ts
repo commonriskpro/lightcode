@@ -136,10 +136,15 @@ export namespace AutoDream {
    *
    * Falls back silently on error — dream consolidation is best-effort.
    */
-  export function persistConsolidation(projectId: string, title: string, content: string, topicKey?: string): void {
+  export async function persistConsolidation(
+    projectId: string,
+    title: string,
+    content: string,
+    topicKey?: string,
+  ): Promise<void> {
     if (!Flag.OPENCODE_DREAM_USE_NATIVE_MEMORY) return
     try {
-      Memory.indexArtifact({
+      await Memory.indexArtifact({
         scope_type: "project",
         scope_id: projectId,
         type: "observation",

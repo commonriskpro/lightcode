@@ -5,6 +5,7 @@ import { MessageV2 } from "./message-v2"
 import { SessionTable, MessageTable, PartTable } from "./session.sql"
 import { ProjectTable } from "../project/project.sql"
 import { Log } from "../util/log"
+import { SessionMemory } from "../memory/session-memory"
 
 const log = Log.create({ service: "session.projector" })
 
@@ -127,6 +128,23 @@ export default [
         })
         .onConflictDoUpdate({ target: PartTable.id, set: { data: rest } })
         .run()
+
+      if (data.part.type !== "text") return
+      if (data.part.synthetic) return
+      if (data.part.ignored) return
+      if (!data.part.text.trim()) return
+
+      const row = db
+        .select({ data: MessageTable.data })
+        .from(MessageTable)
+        .where(and(eq(MessageTable.id, data.part.messageID), eq(MessageTable.session_id, data.part.sessionID)))
+        .get()
+
+      if (!row) return
+      if (row.data.role === "assistant" && !data.part.time?.end) return
+      if (row.data.role !== "user" && row.data.role !== "assistant") return
+
+      void SessionMemory.append(data.part.sessionID, data.part.messageID, data.part.text)
     } catch (err) {
       if (!foreign(err)) throw err
       log.warn("ignored late part update", { partID: id, messageID, sessionID })

@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, StepFinishPart } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo } from "solid-js"
 
@@ -12,6 +12,7 @@ const money = new Intl.NumberFormat("en-US", {
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
+  const parts = (messageID: string) => props.api.state.part(messageID)
   const cost = createMemo(() => msg().reduce((sum, item) => sum + (item.role === "assistant" ? item.cost : 0), 0))
 
   const state = createMemo(() => {
@@ -23,8 +24,20 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       }
     }
 
+    // Get tokens from the last step-finish part to show the actual context for this step,
+    // not the accumulated tokens from multi-step streaming.
+    const msgParts = parts(last.id)
+    const lastStepFinish = msgParts.findLast((p): p is StepFinishPart => p.type === "step-finish")
+
+    // Context should NOT include cache.read because those tokens were already in context
+    // from previous turns - they are not new context. Only cache.write is new.
+    const step = lastStepFinish ?? last
     const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+      step.tokens.input -
+      step.tokens.cache.read + // subtract cache.read (already in context)
+      step.tokens.output +
+      step.tokens.reasoning
+
     const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     return {
       tokens,

@@ -179,27 +179,30 @@ export namespace SessionPrompt {
         { type: "project", id: Instance.project.id },
         Memory.userScope(),
       ],
-      semanticQuery: keep ? undefined : text,
+      excludeMsgIds: msgs.map((msg) => msg.info.id),
+      semanticQuery: text,
     })
     const durable = durableChildHydration(sessionID)
     const recallReused = keep && Boolean(prev?.recall)
-    const recall = recallReused ? prev?.recall : memCtx.semanticRecall
+    const semanticRecall = recallReused ? prev?.recall : memCtx.semanticRecall
+    const recall = [memCtx.sessionRecall, semanticRecall].filter(Boolean).join("\n\n") || undefined
     const block = keep ? prev?.block : memCtx.blocks.find((x) => x.key === PROMPT_BLOCK.SEMANTIC_RECALL)
     const order = {
       [PROMPT_BLOCK.WORKING_MEMORY]: 0,
       [PROMPT_BLOCK.OBSERVATIONS_STABLE]: 1,
       [PROMPT_BLOCK.OBSERVATIONS_LIVE]: 2,
-      [PROMPT_BLOCK.SEMANTIC_RECALL]: 3,
+      [PROMPT_BLOCK.SESSION_RECALL]: 3,
+      [PROMPT_BLOCK.SEMANTIC_RECALL]: 4,
     } as const
     const blocks = (
       block ? [...memCtx.blocks.filter((x) => x.key !== PROMPT_BLOCK.SEMANTIC_RECALL), block] : memCtx.blocks
     ).sort((a, b) => order[a.key] - order[b.key])
 
-    if (recall && text) {
+    if (semanticRecall && text) {
       recalls.set(sessionID, {
         query: text,
         norm: QueryReuse.normalize(text),
-        recall,
+        recall: semanticRecall,
         block,
       })
     }
@@ -213,7 +216,7 @@ export namespace SessionPrompt {
     }
   }
 
-  function indexSessionArtifacts(sessionID: SessionID): void {
+  async function indexSessionArtifacts(sessionID: SessionID): Promise<void> {
     const finalObs = OM.get(sessionID)
     const obsContent = finalObs?.reflections ?? finalObs?.observations
     if (!obsContent || obsContent.length <= 100) return
@@ -227,19 +230,28 @@ export namespace SessionPrompt {
         .slice(0, 100) ||
       `Session ${new Date().toISOString().slice(0, 10)}`
 
-    Memory.indexArtifact({
-      scope_type: "project",
-      scope_id: Instance.project.id,
-      type: "observation",
-      title: obsTitle,
-      content: obsContent,
-      topic_key: `session/${sessionID}/observations`,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
+    try {
+      await Memory.indexArtifact({
+        scope_type: "project",
+        scope_id: Instance.project.id,
+        type: "observation",
+        title: obsTitle,
+        content: obsContent,
+        topic_key: `session/${sessionID}/observations`,
+        normalized_hash: null,
+        revision_count: 1,
+        duplicate_count: 1,
+        last_seen_at: null,
+        deleted_at: null,
+      })
+    } catch (err) {
+      // Non-fatal — session end indexing failure does not affect session result.
+      // But we DO log it so embedding write failures are observable (Mastra-style).
+      log.warn("session-end artifact indexing failed", {
+        sessionID,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   export interface Interface {
@@ -1951,8 +1963,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // This makes project memory grow automatically — previously only AutoDream populated it.
           // Final: use reflections (higher quality) when available; use current_task as title
           // for better FTS5 searchability vs the generic date-only title from V3.
+          //
+          // Runs after the user already has their assistant message — same phase as Mastra's
+          // processOutputResult. Awaited so embeddings complete before session cleanup.
+          // indexSessionArtifacts has its own internal try/catch + log.warn; the outer guard
+          // here is defense-in-depth for sync throws from title derivation.
           try {
-            indexSessionArtifacts(sessionID)
+            yield* Effect.promise(() => indexSessionArtifacts(sessionID))
           } catch {
             // Non-fatal — session end indexing failure does not affect session result
           }

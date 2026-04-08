@@ -5,13 +5,17 @@ import path from "path"
 import fs from "fs/promises"
 import { setTimeout as sleep } from "node:timers/promises"
 import { afterAll } from "bun:test"
+import { Database as BunDB } from "bun:sqlite"
+import { existsSync } from "fs"
 
 // Set XDG env vars FIRST, before any src/ imports
 const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
-  const { Database } = await import("../src/storage/db")
-  Database.close()
+  const mod = await import("../src/storage/db").catch(() => null)
+  try {
+    mod?.Database.close()
+  } catch {}
   const busy = (error: unknown) =>
     typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
   const rm = async (left: number): Promise<void> => {
@@ -45,6 +49,13 @@ process.env["OPENCODE_TEST_HOME"] = testHome
 const testManagedConfigDir = path.join(dir, "managed")
 process.env["OPENCODE_TEST_MANAGED_CONFIG_DIR"] = testManagedConfigDir
 process.env["OPENCODE_DISABLE_DEFAULT_PLUGINS"] = "true"
+
+if (process.platform === "darwin") {
+  const arm = "/opt/homebrew/opt/sqlite3/lib/libsqlite3.dylib"
+  const intel = "/usr/local/opt/sqlite3/lib/libsqlite3.dylib"
+  const lib = existsSync(arm) ? arm : existsSync(intel) ? intel : undefined
+  if (lib) BunDB.setCustomSQLite(lib)
+}
 
 // Write the cache version file to prevent global/index.ts from clearing the cache
 const cacheDir = path.join(dir, "cache", "opencode")

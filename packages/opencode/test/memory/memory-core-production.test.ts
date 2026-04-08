@@ -1,17 +1,16 @@
 /**
  * LightCode Memory — Production Validation Tests
  *
- * Tests for all production-readiness changes:
- * P-1:  Working memory precedence — thread > agent > project (key-based dedup)
- * P-2:  FTS5 two-pass search — AND mode first, prefix-OR fallback
+ * Tests for production-readiness changes that remain unique after Phase 4 + shim removal:
+ * P-1:  Working memory precedence — thread > agent > project > user > global_pattern (bug fix)
+ * P-2:  FTS5 two-pass search unique cases (singular→plural, special chars, scope filter both modes, topic_key scope)
  * P-3:  Memory.buildContext() fallback to recent() when FTS returns empty
  * P-4:  Agent scope is operational in UpdateWorkingMemoryTool
- * P-5:  Agent scope is included in Memory.buildContext() ancestry
- * P-6:  runLoop has structural section comments (code readability)
- * P-7:  Dead Engram recall code removed from system.ts
+ * P-5:  Agent/user scope in Memory.buildContext() ancestry + block metadata ordering
+ * P-5C: update_user_memory permission approval gate (security-critical)
+ * P-6B: Working memory guidance is present in provider hot path output
  * P-8:  OPENCODE_MEMORY_USE_ENGRAM flag removed from flag.ts
- * P-9:  Scope dormancy documented in contracts.ts
- * P-R:  No regressions on existing behaviors
+ * P-9:  Scope defaults remain stable
  */
 
 import { beforeEach, afterEach, describe, test, expect } from "bun:test"
@@ -21,9 +20,8 @@ import { rm } from "fs/promises"
 import { Database } from "../../src/storage/db"
 import { DEFAULT_USER_SCOPE_ID } from "../../src/memory/contracts"
 import { Memory } from "../../src/memory/provider"
-import { SemanticRecall } from "../../src/memory/semantic-recall"
+import { FTS5Backend } from "../../src/memory/fts5-backend"
 import { WorkingMemory } from "../../src/memory/working-memory"
-import { Handoff } from "../../src/memory/handoff"
 import { OM } from "../../src/session/om"
 import { ProjectTable } from "../../src/project/project.sql"
 import { ProjectID } from "../../src/project/schema"
@@ -32,7 +30,6 @@ import { SessionID } from "../../src/session/schema"
 import { UpdateUserMemoryTool, UpdateWorkingMemoryTool } from "../../src/tool/memory"
 import { ToolRegistry } from "../../src/tool/registry"
 import { Instance } from "../../src/project/instance"
-import { SystemPrompt } from "../../src/session/system"
 import type { Tool } from "../../src/tool/tool"
 import type { ScopeRef } from "../../src/memory/contracts"
 import { tmpdir } from "../fixture/fixture"
@@ -235,58 +232,15 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
   })
 })
 
-// ─── P-2: FTS5 Two-Pass Search ────────────────────────────────────────────────
+// ─── P-2: FTS5 Two-Pass Search — unique cases ────────────────────────────────
 
-describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () => {
+describe("P-2: FTS5 two-pass search unique cases", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("AND mode finds exact matches", () => {
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "prod-project",
-      type: "decision",
-      title: "Authentication Decision",
-      content: "We use JWT authentication with 24-hour expiry",
-      topic_key: null,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // "JWT authentication" — both words are in the content → AND mode succeeds
-    const results = SemanticRecall.search("JWT authentication", [projectScope], 10)
-    expect(results.length).toBeGreaterThan(0)
-    expect(results[0].title).toBe("Authentication Decision")
-  })
-
-  test("prefix-OR fallback finds partial matches that AND mode misses", () => {
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "prod-project",
-      type: "decision",
-      title: "Auth Architecture",
-      content: "authentication is implemented using stateless JWT tokens with refresh capability",
-      topic_key: null,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // "auth jwt" — "auth" would NOT match "authentication" with exact AND mode
-    // but "auth*" prefix matches "authentication" in OR mode
-    const results = SemanticRecall.search("auth jwt", [projectScope], 10)
-    expect(results.length).toBeGreaterThan(0)
-    // Title should contain "Auth"
-    expect(results.some((r) => r.title.toLowerCase().includes("auth"))).toBe(true)
-  })
-
-  test("prefix-OR fallback handles single-token singular to plural matches", () => {
-    SemanticRecall.index({
+  test("prefix-OR fallback handles single-token singular to plural matches", async () => {
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: "prod-project",
       type: "decision",
@@ -300,13 +254,14 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
       deleted_at: null,
     })
 
-    const results = SemanticRecall.search("reminder", [projectScope], 10)
+    const results = await fts.search("reminder", [projectScope], 10)
     expect(results.length).toBeGreaterThan(0)
     expect(results.some((r) => r.title === "Plural reminders")).toBe(true)
   })
 
-  test("FTS5 special characters do not crash (two-pass mode)", () => {
-    SemanticRecall.index({
+  test("FTS5 special characters do not crash (two-pass mode)", async () => {
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: "prod-project",
       type: "pattern",
@@ -321,13 +276,14 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
     })
 
     // These should not throw in either AND or OR pass
-    expect(() => SemanticRecall.search("AND OR NOT", [projectScope], 5)).not.toThrow()
-    expect(() => SemanticRecall.search("fix: bug", [projectScope], 5)).not.toThrow()
-    expect(() => SemanticRecall.search("(parens)", [projectScope], 5)).not.toThrow()
+    await expect(fts.search("AND OR NOT", [projectScope], 5)).resolves.toBeDefined()
+    await expect(fts.search("fix: bug", [projectScope], 5)).resolves.toBeDefined()
+    await expect(fts.search("(parens)", [projectScope], 5)).resolves.toBeDefined()
   })
 
-  test("scope filtering works in both AND and OR modes", () => {
-    SemanticRecall.index({
+  test("scope filtering works in both AND and OR modes", async () => {
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: "prod-project",
       type: "observation",
@@ -340,7 +296,7 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
       last_seen_at: null,
       deleted_at: null,
     })
-    SemanticRecall.index({
+    await fts.index({
       scope_type: "user",
       scope_id: "default",
       type: "pattern",
@@ -355,12 +311,13 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
     })
 
     // Only project scope
-    const projectResults = SemanticRecall.search("auth", [projectScope], 10)
+    const projectResults = await fts.search("auth", [projectScope], 10)
     expect(projectResults.every((r) => r.scope_type === "project")).toBe(true)
   })
 
-  test("topic_key search respects scope filters", () => {
-    SemanticRecall.index({
+  test("topic_key search respects scope filters", async () => {
+    const fts = new FTS5Backend()
+    await fts.index({
       scope_type: "project",
       scope_id: projectScope.id,
       type: "decision",
@@ -373,7 +330,7 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
       last_seen_at: null,
       deleted_at: null,
     })
-    SemanticRecall.index({
+    await fts.index({
       scope_type: "user",
       scope_id: userScope.id,
       type: "decision",
@@ -387,8 +344,8 @@ describe("P-2: FTS5 two-pass search — AND mode first, OR prefix fallback", () 
       deleted_at: null,
     })
 
-    const projectResults = SemanticRecall.search("auth/decision", [projectScope], 10)
-    const userResults = SemanticRecall.search("auth/decision", [userScope], 10)
+    const projectResults = await fts.search("auth/decision", [projectScope], 10)
+    const userResults = await fts.search("auth/decision", [userScope], 10)
 
     expect(projectResults).toHaveLength(1)
     expect(projectResults[0].scope_type).toBe("project")
@@ -407,7 +364,7 @@ describe("P-3: Memory.buildContext() falls back to recent() when FTS returns emp
 
   test("returns recent artifacts when FTS query has no matches", async () => {
     // Index an artifact about database design
-    SemanticRecall.index({
+    await Memory.indexArtifact({
       scope_type: "project",
       scope_id: "prod-project",
       type: "decision",
@@ -436,7 +393,7 @@ describe("P-3: Memory.buildContext() falls back to recent() when FTS returns emp
   })
 
   test("returns FTS results when they exist (no unnecessary fallback)", async () => {
-    SemanticRecall.index({
+    await Memory.indexArtifact({
       scope_type: "project",
       scope_id: "prod-project",
       type: "decision",
@@ -458,17 +415,6 @@ describe("P-3: Memory.buildContext() falls back to recent() when FTS returns emp
 
     expect(ctx.semanticRecall).toBeDefined()
     expect(ctx.semanticRecall).toContain("JWT")
-  })
-
-  test("returns undefined semanticRecall when no artifacts at all", async () => {
-    // Empty DB — no artifacts
-    const ctx = await Memory.buildContext({
-      scope: { type: "thread", id: "empty-test" },
-      ancestorScopes: [projectScope],
-      semanticQuery: "some query",
-    })
-
-    expect(ctx.semanticRecall).toBeUndefined()
   })
 })
 
@@ -558,7 +504,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   test("buildContext returns block metadata with stable ordering", async () => {
     seedSession()
     WorkingMemory.set(projectScope, "proj_pref", "project default")
-    SemanticRecall.index({
+    await Memory.indexArtifact({
       scope_type: "project",
       scope_id: projectScope.id,
       type: "decision",
@@ -579,7 +525,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
       current_task: null,
       suggested_continuation: "Continue the stable flow",
       last_observed_at: null,
-            retention_floor_at: null,
+      retention_floor_at: null,
       generation_count: 1,
       observation_tokens: 100,
       observed_message_ids: null,
@@ -606,7 +552,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   })
 
   test("runtime buildContext does not load global_pattern when hot path omits it", async () => {
-    SemanticRecall.index({
+    await Memory.indexArtifact({
       scope_type: "global_pattern",
       scope_id: globalScope.id,
       type: "pattern",
@@ -661,13 +607,6 @@ describe("P-5C: update_user_memory is explicit and controlled", () => {
     expect(WorkingMemory.get(userScope, "workflow")[0].value).toBe("Prefer concise answers")
   })
 
-  test("general working memory tool still does not expose user scope", () => {
-    return UpdateWorkingMemoryTool.init().then((def) => {
-      expect(() => def.parameters.parse({ scope: "thread", key: "ok", value: "yes" })).not.toThrow()
-      expect(() => def.parameters.parse({ scope: "user", key: "no", value: "no" })).toThrow()
-    })
-  })
-
   test("tool does not write user memory when approval rejects", async () => {
     const def = await UpdateUserMemoryTool.init()
     const ctx: Tool.Context = {
@@ -684,47 +623,6 @@ describe("P-5C: update_user_memory is explicit and controlled", () => {
 
     await expect(def.execute({ key: "defaults", value: "dark mode" }, ctx)).rejects.toThrow("rejected")
     expect(WorkingMemory.get(userScope, "defaults")).toHaveLength(0)
-  })
-})
-
-// ─── P-5B: DB-first durable child recovery ───────────────────────────────────
-
-describe("P-5B: Durable child recovery is consumed from DB state", () => {
-  beforeEach(setup)
-  afterEach(teardown)
-
-  test("Memory.writeForkContext persists enriched workingMemorySnapshot payloads", () => {
-    Memory.writeForkContext({
-      session_id: "child-prod-fork-1",
-      parent_session_id: "parent-prod-fork-1",
-      context: JSON.stringify({
-        taskDescription: "Implement auth recovery",
-        currentTask: "Ship auth",
-        suggestedContinuation: "Continue with retries",
-        workingMemorySnapshot: [{ key: "goal", value: "ship auth" }],
-      }),
-    })
-
-    const row = Memory.getForkContext("child-prod-fork-1")
-    expect(row).toBeDefined()
-    expect(JSON.parse(row!.context).workingMemorySnapshot).toEqual([{ key: "goal", value: "ship auth" }])
-  })
-
-  test("Memory.writeHandoff() persists and Memory.getHandoff() retrieves child handoff state", () => {
-    const id = Memory.writeHandoff({
-      parent_session_id: "parent-prod-1",
-      child_session_id: "child-prod-1",
-      context: "Implement auth recovery",
-      working_memory_snap: JSON.stringify([{ key: "goal", value: "ship auth" }]),
-      observation_snap: "Current task: auth recovery",
-      metadata: JSON.stringify({ parentAgent: "build", projectId: "prod-project" }),
-    })
-
-    expect(id).toBeTruthy()
-    const row = Memory.getHandoff("child-prod-1")
-    expect(row).toBeDefined()
-    expect(row!.context).toBe("Implement auth recovery")
-    expect(JSON.parse(row!.working_memory_snap!)[0].value).toBe("ship auth")
   })
 })
 
@@ -748,15 +646,6 @@ describe("P-6B: Working memory guidance is present in provider hot path output",
   })
 })
 
-// ─── P-7: Dead Engram recall code removed from system.ts ──────────────────────
-
-describe("P-7: Dead Engram recall code removed from system.ts", () => {
-  test("legacy recall APIs are absent from the public runtime surface", () => {
-    expect((SystemPrompt as Record<string, unknown>).recall).toBeUndefined()
-    expect((SystemPrompt as Record<string, unknown>).projectWorkingMemory).toBeUndefined()
-  })
-})
-
 // ─── P-8: OPENCODE_MEMORY_USE_ENGRAM removed from flag.ts ─────────────────────
 
 describe("P-8: OPENCODE_MEMORY_USE_ENGRAM flag removed from flag.ts", () => {
@@ -777,122 +666,5 @@ describe("P-9: Scope defaults remain stable", () => {
   test("user scope helper uses the exported default id", () => {
     expect(DEFAULT_USER_SCOPE_ID).toBe("default")
     expect(Memory.userScope()).toEqual({ type: "user", id: DEFAULT_USER_SCOPE_ID })
-  })
-})
-
-// ─── P-R: No regression ───────────────────────────────────────────────────────
-
-describe("P-R: No regression on prior behaviors", () => {
-  beforeEach(setup)
-  afterEach(teardown)
-
-  test("WorkingMemory CRUD unchanged", () => {
-    WorkingMemory.set(projectScope, "k", "v")
-    expect(WorkingMemory.get(projectScope, "k")[0].value).toBe("v")
-  })
-
-  test("SemanticRecall topic_key dedupe unchanged", () => {
-    const id1 = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "prod-project",
-      type: "decision",
-      title: "D1",
-      content: "c1",
-      topic_key: "prod/regression/dedupe",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-    const id2 = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "prod-project",
-      type: "decision",
-      title: "D2",
-      content: "c2",
-      topic_key: "prod/regression/dedupe",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-    expect(id1).toBe(id2)
-    expect(SemanticRecall.get(id1)!.revision_count).toBe(2)
-  })
-
-  test("Memory.buildContext() returns correct structure", async () => {
-    WorkingMemory.set(projectScope, "regression_key", "value for regression")
-    const ctx = await Memory.buildContext({
-      scope: { type: "thread", id: "regression-test" },
-      ancestorScopes: [projectScope],
-    })
-    expect(ctx.workingMemory).toBeDefined()
-    expect(ctx.workingMemory).toContain("regression_key")
-  })
-
-  test("Handoff fork persistence unchanged", () => {
-    Handoff.writeFork({ sessionId: "c-prod", parentSessionId: "p-prod", context: "ctx" })
-    expect(Handoff.getFork("c-prod")!.context).toBe("ctx")
-  })
-
-  test("addBufferSafe() still exists and is callable", () => {
-    const { OM } = require("../../src/session/om/record")
-    expect(typeof OM.addBufferSafe).toBe("function")
-  })
-})
-
-// ─── Production recall: integration quality test ──────────────────────────────
-
-describe("Production recall quality: natural language queries work", () => {
-  beforeEach(setup)
-  afterEach(teardown)
-
-  test("natural language query 'how does authentication work' can find auth artifacts", () => {
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "prod-project",
-      type: "decision",
-      title: "Authentication Architecture",
-      content:
-        "authentication is handled via JWT tokens. Users authenticate by sending credentials to /auth/login endpoint which returns a signed JWT token with 24-hour expiry.",
-      topic_key: "architecture/auth",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // This query would have returned 0 results with the old exact-AND mode
-    // because "how", "does", "work" are NOT in the content.
-    // With OR prefix mode, "auth*" → matches "authentication", "authenticate"
-    const results = SemanticRecall.search("how does auth work", [projectScope], 10)
-
-    // The two-pass search should find it via OR mode
-    expect(results.length).toBeGreaterThan(0)
-    expect(results.some((r) => r.title.toLowerCase().includes("auth"))).toBe(true)
-  })
-
-  test("exact match still works with two-pass approach", () => {
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "prod-project",
-      type: "pattern",
-      title: "TypeScript Strict Mode Pattern",
-      content: "All TypeScript code must use strict mode with noImplicitAny enabled",
-      topic_key: null,
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // Exact token match — AND mode should find this first
-    const results = SemanticRecall.search("TypeScript strict", [projectScope], 10)
-    expect(results.length).toBeGreaterThan(0)
-    expect(results[0].title).toBe("TypeScript Strict Mode Pattern")
   })
 })

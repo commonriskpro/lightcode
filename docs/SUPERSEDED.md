@@ -37,7 +37,7 @@ Deprecated files are retained only when they still serve a clear compatibility o
 ### 4. AutoDream + Engram MCP consolidation path
 
 **Status**: REPLACED (default behavior)  
-**Superseded by**: `AutoDream.persistConsolidation()` in `packages/opencode/src/dream/index.ts` → writes to `memory_artifacts` via `Memory.indexArtifact()`  
+**Superseded by**: `AutoDream.persistConsolidation()` (async) in `packages/opencode/src/dream/index.ts` → awaited call to `Memory.indexArtifact()` → `HybridBackend.index()` → `memory_artifacts` + `memory_artifacts_vec`  
 **Reason**: AutoDream called Engram MCP `mem_save` / `mem_update` to persist cross-session consolidations. Required Engram daemon. Now writes directly to `lightcode.db`.  
 **Feature flag**: `OPENCODE_DREAM_USE_NATIVE_MEMORY=false` preserves the legacy consolidation path temporarily.
 
@@ -71,12 +71,12 @@ Deprecated files are retained only when they still serve a clear compatibility o
 
 ### Cross-session recall via MCP
 
-| Old                                       | New                                                   |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `callEngramTool(all, "mem_context", ...)` | `Memory.buildContext({ semanticQuery, ... })`         |
-| `callEngramTool(all, "mem_search", ...)`  | `SemanticRecall.search()` / `SemanticRecall.recent()` |
-| Returns arbitrary MCP tool result text    | Returns typed `MemoryArtifact[]`                      |
-| Requires running Engram daemon            | No external process needed                            |
+| Old                                       | New                                                                   |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| `callEngramTool(all, "mem_context", ...)` | `Memory.buildContext({ semanticQuery, ... })`                         |
+| `callEngramTool(all, "mem_search", ...)`  | `HybridBackend.search()` (FTS5 + embeddings) / `FTS5Backend.recent()` |
+| Returns arbitrary MCP tool result text    | Returns typed `MemoryArtifact[]`                                      |
+| Requires running Engram daemon            | No external process needed                                            |
 
 ### Fork continuity
 

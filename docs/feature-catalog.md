@@ -27,7 +27,7 @@ LightCode has a native SQLite-backed memory system that persists context across 
 
 At session start (step 1 only), `Memory.buildContext()` loads native cross-session context from `lightcode.db`:
 
-- **Semantic recall**: `SemanticRecall.search()` against `memory_artifacts` using the first user message as the query, with `recent()` fallback when FTS returns nothing
+- **Semantic recall**: `HybridBackend.search()` against `memory_artifacts` (FTS5 + embeddings via RRF) using the first user message as the query, with `FTS5Backend.recent()` fallback when both FTS and embedding search return nothing
 - **Working memory**: `WorkingMemory.getForScopes()` across `thread > agent > project`
 
 Injected as:
@@ -35,7 +35,7 @@ Injected as:
 - `system[2]` → `<memory-recall>`
 - `system[3]` → `<working-memory>`
 
-- Source: `src/session/prompt.ts`, `src/memory/provider.ts`, `src/memory/semantic-recall.ts`, `src/memory/working-memory.ts`
+- Source: `src/session/prompt.ts`, `src/memory/provider.ts`, `src/memory/hybrid-backend.ts`, `src/memory/fts5-backend.ts`, `src/memory/embedding-backend.ts`, `src/memory/working-memory.ts`
 
 ### Layer 2 — Intra-Session Observer
 
@@ -52,7 +52,7 @@ Background LLM extracts structured facts from the conversation every **6k tokens
 
 Observations stored in `ObservationTable` (SQLite, session-scoped). Injected at `system[1]` each turn as `<local-observations>...</local-observations>`.
 
-- Default model: `google/gemini-2.5-flash`
+- Default model: `opencode/qwen3.6-plus-free`
 - Opt-out: `experimental.observer: false`
 - Source: `src/session/om/buffer.ts`, `src/session/om/observer.ts`, `src/session/prompt.ts:1515-1569`
 
@@ -360,7 +360,7 @@ Accessible via `/features`. Space toggles runtime features. Enter opens model/co
 | Markdown Rendering   | ❌ env only |      —       | on      | `OPENCODE_EXPERIMENTAL_MARKDOWN`                                               |
 | OpenTelemetry        |     ✅      |      —       | off     | AI SDK span tracing                                                            |
 | AutoDream            |     ✅      |      ✅      | off     | Native background consolidation into `memory_artifacts`                        |
-| Observer + Reflector |     ✅      |      ✅      | off     | Shared background memory model; default: `google/gemini-2.5-flash`             |
+| Observer + Reflector |     ✅      |      ✅      | **on**  | Shared background memory model; default: `opencode/qwen3.6-plus-free`          |
 | Async Memory Agents  |      —      |      ✅      | n/a     | Opens a sub-dialog for Observer, Reflector, AutoDream, and Observer thresholds |
 
 Features that are **env only** (LSP Tool, Plan Mode, Workspaces) are not shown in `/features` — they must be set via environment variable and cannot be toggled at runtime.

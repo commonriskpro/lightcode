@@ -39,6 +39,7 @@ export const PROMPT_BLOCK = {
   WORKING_MEMORY: "working_memory",
   OBSERVATIONS_STABLE: "observations_stable",
   OBSERVATIONS_LIVE: "observations_live",
+  SESSION_RECALL: "session_recall",
   SEMANTIC_RECALL: "semantic_recall",
 } as const
 
@@ -63,6 +64,8 @@ export interface MemoryContext {
   observations: string | undefined
   /** Similarity-based retrieval: relevant prior knowledge */
   semanticRecall: string | undefined
+  /** Intra-session similarity recall from prior user/assistant text */
+  sessionRecall: string | undefined
   /** Stable observation layer, separated for prompt-cache aware assembly */
   observationsStable: string | undefined
   /** Volatile observation hints, separated from the stable observation layer */
@@ -78,6 +81,7 @@ export interface MemoryContext {
 export interface ContextBuildOptions {
   scope: ScopeRef
   ancestorScopes?: ScopeRef[]
+  excludeMsgIds?: string[]
   recentHistoryLimit?: number
   workingMemoryBudget?: number
   observationsBudget?: number
@@ -187,11 +191,43 @@ export interface MemoryLink {
 
 // ─── Recall Backend Abstraction ───────────────────────────────────────────────
 
-/** Backend interface for semantic recall. V1 uses FTS5, future versions can use vector embeddings. */
+/** Backend interface for semantic recall. V1 uses FTS5, V2 adds vector embedding backends. */
 export interface RecallBackend {
-  index(artifact: MemoryArtifact): void
-  search(query: string, scopes: ScopeRef[], limit: number): MemoryArtifact[]
-  remove(id: string): void
+  index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string>
+  search(query: string, scopes: ScopeRef[], limit: number): Promise<MemoryArtifact[]>
+  remove(id: string): Promise<void>
+}
+
+// ─── Session Recall ───────────────────────────────────────────────────────────
+
+export interface SessionRecallResult {
+  msgId: string
+  text: string
+  score: number
+}
+
+// ─── Embedder Contracts ───────────────────────────────────────────────────────
+
+/**
+ * Parsed representation of `experimental.memory.embedder` config value.
+ * Format: "provider/model" — e.g. "fastembed/bge-small-en-v1.5" or "openai/text-embedding-3-small".
+ */
+export type EmbedderConfig = {
+  provider: string
+  model: string
+  /** Fixed embedding dimension — 384 for BGE-Small (default), varies per model. */
+  dim: number
+}
+
+/**
+ * Runtime embedder interface. All implementations must produce float32 vectors
+ * of consistent dimension equal to `dim`.
+ */
+export interface EmbedderBackend {
+  /** Generate embeddings for one or more text inputs. Returns one vector per input. */
+  embed(texts: string[]): Promise<number[][]>
+  /** Dimension of the output vectors produced by this backend. */
+  dim: number
 }
 
 // ─── MemoryProvider Interface ─────────────────────────────────────────────────
@@ -201,8 +237,8 @@ export interface MemoryProvider {
   getWorkingMemory(scope: ScopeRef, key?: string): WorkingMemoryRecord[]
   setWorkingMemory(scope: ScopeRef, key: string, value: string, format?: "markdown" | "json"): void
   getObservations(sessionId: string): ObservationRecord | undefined
-  searchArtifacts(query: string, scopes: ScopeRef[], limit?: number): MemoryArtifact[]
-  indexArtifact(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): string
+  searchArtifacts(query: string, scopes: ScopeRef[], limit?: number): Promise<MemoryArtifact[]>
+  indexArtifact(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string>
   getHandoff(childSessionId: string): AgentHandoff | undefined
   writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): string
   getForkContext(sessionId: string): ForkContext | undefined

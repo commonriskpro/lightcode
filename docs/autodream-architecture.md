@@ -1,6 +1,10 @@
 # AutoDream: Background Memory Consolidation — Complete Architecture
 
-Source: Claude Code (`/Users/saturno/Downloads/src`)
+> **Historical Note (2026-04-05):** This document describes Claude Code's AutoDream architecture and was used as reference for LightCode's implementation. LightCode's AutoDream now uses native SQLite memory (no Engram dependency). The integration proposal in Section 14 was implemented, but in reverse: AutoDream writes to `memory_artifacts` natively, not via Engram MCP.
+
+---
+
+_Source: Claude Code (`/Users/saturno/Downloads/src`)_
 
 ---
 
@@ -244,14 +248,41 @@ Both run from `stopHooks.ts`, both use the same tool sandbox:
 
 ---
 
-## 14. Integration with Engram (Proposed for LightCode)
+## 14. LightCode's Native Implementation
 
-AutoDream writes to flat `.md` files in a memory directory. Engram stores structured observations in SQLite with FTS5 search. A LightCode integration could:
+LightCode's AutoDream was implemented with a native approach instead of Engram integration:
 
-1. **Replace file-based memory with Engram calls**: Instead of FileEdit/FileWrite to `memory/*.md`, the dream agent calls `mem_save`, `mem_update`, `mem_search`
-2. **Replace grep transcript scanning with `mem_context` + `mem_search`**: Engram already stores session summaries and observations — no need to grep JSONL files
-3. **Replace MEMORY.md index with `mem_search`**: FTS5 search replaces manual index maintenance
-4. **Keep the gate/lock/trigger mechanism**: The scheduling logic (24h timer, 5-session threshold, PID lock) is sound and independent of the storage backend
-5. **Keep the 4-phase consolidation prompt**: Adapt Phase 2-4 to use Engram MCP tools instead of file tools
+### What Was Implemented
 
-This eliminates the need for a memory directory, MEMORY.md index management, and Phase 4 pruning (Engram handles deduplication via `topic_key` upserts).
+1. **Native SQLite backend**: AutoDream writes directly to `memory_artifacts` in `lightcode.db` via `Memory.indexArtifact()`
+2. **ObservationTable**: Sessions store observations locally in SQLite (session-scoped)
+3. **AutoDream daemon**: Background process with internal scheduler (~1h interval)
+4. **Native gate system**: Feature flag, time threshold, session count, Flock lock
+5. **No external dependencies**: No Engram binary, no MCP setup required
+
+### Memory Flow
+
+```
+Session idle → AutoDream idle() → Dream agent reads ObservationTable + summaries
+→ Consolidates knowledge → Memory.indexArtifact() (async, via HybridBackend) → memory_artifacts + memory_artifacts_vec (SQLite)
+→ HybridBackend.search() (FTS5 + embeddings via RRF) picks up artifacts in next session
+```
+
+### Differences from Claude Code's Engram Approach
+
+| Aspect                | Claude Code + Engram       | LightCode (native)                        |
+| --------------------- | -------------------------- | ----------------------------------------- |
+| Storage               | `.md` files or Engram MCP  | `lightcode.db` (SQLite + sqlite-vec)      |
+| Search                | `mem_search` (Engram FTS5) | FTS5 + embeddings via RRF (HybridBackend) |
+| Deduplication         | `topic_key` upserts        | `topic_key` upserts + hash dedupe in FTS5 |
+| Dependencies          | Engram binary required     | None (self-contained)                     |
+| Consolidation trigger | 24h + 5 sessions (gates)   | ~1h internal scheduler + idle event       |
+
+### Source Files
+
+- `src/dream/index.ts` — AutoDream namespace, gate system, daemon management
+- `src/dream/ensure.ts` — Native daemon process management
+- `src/dream/daemon.ts` — Daemon HTTP server for dream execution
+- `src/dream/prompt.txt` — Consolidation prompt
+- `src/memory/provider.ts` — `Memory.buildContext()` for recall
+- `src/memory/index.ts` — `Memory.indexArtifact()` for persistence

@@ -36,8 +36,22 @@ export function SubagentFooter() {
     const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
     if (!last) return
 
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+    // Get tokens from the last step-finish part to show the actual context for this step,
+    // not the accumulated tokens from multi-step streaming.
+    const msgParts = sync.data.part[last.id] ?? []
+    const lastStepFinish = msgParts.findLast((p): p is any => p.type === "step-finish")
+
+    const tokens = lastStepFinish
+      ? lastStepFinish.tokens.input +
+        lastStepFinish.tokens.output +
+        lastStepFinish.tokens.reasoning +
+        lastStepFinish.tokens.cache.read +
+        lastStepFinish.tokens.cache.write
+      : last.tokens.input +
+        last.tokens.output +
+        last.tokens.reasoning +
+        last.tokens.cache.read +
+        last.tokens.cache.write
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]

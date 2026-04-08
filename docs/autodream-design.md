@@ -1,5 +1,9 @@
 # AutoDream + Engram — Technical Design
 
+> **⚠️ SUPERSEDED (2026-04-05):** This document describes the original Engram-backed AutoDream design. The current implementation uses LightCode's native SQLite memory store. AutoDream now writes directly to `memory_artifacts` via `Memory.indexArtifact()` without requiring Engram. This design doc is retained for historical reference only. See `docs/LIGHTCODE_MEMORY_PRODUCTION_DESIGN.md` for the current architecture.
+
+---
+
 ## Architecture Overview
 
 ```

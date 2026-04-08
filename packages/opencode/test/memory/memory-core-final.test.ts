@@ -1,18 +1,12 @@
 /**
  * LightCode Memory Core Final — Validation Tests
  *
- * Tests cover all Final changes:
- * F-1:  addBufferSafe() atomically writes buffer + observed IDs in one transaction
- * F-2:  prompt.ts uses addBufferSafe() as canonical OM write path
- * F-3:  Fork context snapshot is enriched (task, OM continuation, WM keys)
- * F-4:  Memory.writeHandoff() is wired in task.ts for non-fork sessions
- * F-5:  Auto-index uses reflections > observations, and meaningful title
- * F-6:  SystemPrompt.recall() removed — Memory.buildContext() is canonical
- * F-7:  SystemPrompt.projectWorkingMemory() removed — Memory.buildContext() is canonical
- * F-8:  <engram-recall> renamed to <memory-recall>
- * F-9:  Stale "Requires Engram" comments fixed in config.ts
- * F-10: record.ts stale comment fixed
- * F-R:  No regressions on V1/V2/V3 behaviors
+ * Tests cover Final changes that remain unique after Phase 4 + shim removal:
+ * F-1: addBufferSafe() merges observed ids into existing record (unique merge-path coverage)
+ * F-3: Fork context snapshot is enriched (task, OM continuation, WM keys)
+ * F-4: Memory.writeHandoff() is wired in task.ts for non-fork sessions (provider layer)
+ * F-5: buildContext formats semantic recall with <memory-recall> tags
+ * F-8: wrapRecall uses <memory-recall> not <engram-recall>
  */
 
 import { beforeEach, afterEach, describe, test, expect } from "bun:test"
@@ -21,10 +15,7 @@ import path from "path"
 import { rm } from "fs/promises"
 import { Database } from "../../src/storage/db"
 import { Memory } from "../../src/memory/provider"
-import { SemanticRecall } from "../../src/memory/semantic-recall"
-import { WorkingMemory } from "../../src/memory/working-memory"
-import { Handoff } from "../../src/memory/handoff"
-import { OM, OMBuf } from "../../src/session/om"
+import { OM } from "../../src/session/om"
 import { ProjectID } from "../../src/project/schema"
 import { ProjectTable } from "../../src/project/project.sql"
 import { SessionTable } from "../../src/session/session.sql"
@@ -107,40 +98,11 @@ function seedSession(sid: SessionID, pid = projectScope.id) {
   )
 }
 
-// ─── F-1: addBufferSafe() atomicity ──────────────────────────────────────────
+// ─── F-1: addBufferSafe() merges observed ids into existing record ────────────
 
-describe("F-1: addBufferSafe() — canonical OM write path", () => {
+describe("F-1: addBufferSafe() merge path", () => {
   beforeEach(setup)
   afterEach(teardown)
-
-  test("addBufferSafe() is exported from OM namespace", () => {
-    expect(typeof OM.addBufferSafe).toBe("function")
-  })
-
-  test("addBufferSafe() creates placeholder observation state for first write", () => {
-    const sid = SessionID.make("final-om-001")
-    seedSession(sid)
-    OM.addBufferSafe(
-      {
-        id: "buf-final-001",
-        session_id: sid,
-        observations: "first batch",
-        message_tokens: 10,
-        observation_tokens: 20,
-        starts_at: 1,
-        ends_at: 2,
-        first_msg_id: MessageID.make("m1"),
-        last_msg_id: MessageID.make("m2"),
-        time_created: Date.now(),
-        time_updated: Date.now(),
-      },
-      sid,
-      ["m1", "m2"],
-    )
-
-    expect(OM.buffers(sid)).toHaveLength(1)
-    expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2"]))
-  })
 
   test("addBufferSafe() merges observed ids into existing record", () => {
     const sid = SessionID.make("final-om-002")
@@ -153,7 +115,7 @@ describe("F-1: addBufferSafe() — canonical OM write path", () => {
       current_task: null,
       suggested_continuation: null,
       last_observed_at: null,
-            retention_floor_at: null,
+      retention_floor_at: null,
       generation_count: 0,
       observation_tokens: 0,
       observed_message_ids: JSON.stringify(["m1"]),
@@ -180,16 +142,6 @@ describe("F-1: addBufferSafe() — canonical OM write path", () => {
     )
 
     expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2", "m3"]))
-  })
-})
-
-// ─── F-2: prompt.ts uses addBufferSafe() ─────────────────────────────────────
-
-describe("F-2: addBufferSafe() remains the canonical runtime OM API", () => {
-  test("OM exposes addBufferSafe while older helpers remain optional internals", () => {
-    expect(typeof OM.addBufferSafe).toBe("function")
-    expect(typeof OM.addBuffer).toBe("function")
-    expect(typeof OM.trackObserved).toBe("function")
   })
 })
 
@@ -254,39 +206,14 @@ describe("F-4: Memory.writeHandoff() wired for non-fork sessions", () => {
   })
 })
 
-// ─── F-5: Auto-index uses reflections + meaningful title ──────────────────────
+// ─── F-5: buildContext formats semantic recall with <memory-recall> tags ─────
 
-describe("F-5: Auto-index improved title and content quality", () => {
+describe("F-5: buildContext semantic recall tag formatting", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("session end auto-index indexes reflections over observations", () => {
-    // Index an artifact simulating session end with reflections
-    const reflectContent =
-      "JWT authentication implemented. Architecture: stateless tokens, 24h expiry. Decisions: no refresh tokens in V1."
-    Memory.indexArtifact({
-      scope_type: "project",
-      scope_id: "final-project",
-      type: "observation",
-      title: "JWT authentication implemented", // current_task style title
-      content: reflectContent,
-      topic_key: "session/ses_test/observations",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-
-    // Must be searchable by topic content
-    const results = SemanticRecall.search("JWT authentication stateless", [projectScope], 5)
-    expect(results.length).toBeGreaterThan(0)
-    expect(results[0].title).toBe("JWT authentication implemented")
-    expect(results[0].content).toContain("stateless tokens")
-  })
-
   test("buildContext formats semantic recall with memory-recall tags", async () => {
-    Memory.indexArtifact({
+    await Memory.indexArtifact({
       scope_type: "project",
       scope_id: "final-project",
       type: "observation",
@@ -312,25 +239,7 @@ describe("F-5: Auto-index improved title and content quality", () => {
   })
 })
 
-// ─── F-6: SystemPrompt.recall() removed ──────────────────────────────────────
-
-describe("F-6: SystemPrompt.recall() removed — Memory.buildContext() is canonical", () => {
-  test("SystemPrompt does not export recall() function", async () => {
-    const { SystemPrompt } = await import("../../src/session/system")
-    expect((SystemPrompt as any).recall).toBeUndefined()
-  })
-})
-
-// ─── F-7: SystemPrompt.projectWorkingMemory() removed ─────────────────────────
-
-describe("F-7: SystemPrompt.projectWorkingMemory() removed", () => {
-  test("SystemPrompt does not export projectWorkingMemory() function", async () => {
-    const { SystemPrompt } = await import("../../src/session/system")
-    expect((SystemPrompt as any).projectWorkingMemory).toBeUndefined()
-  })
-})
-
-// ─── F-8: <engram-recall> renamed to <memory-recall> ─────────────────────────
+// ─── F-8: wrapRecall uses <memory-recall> not <engram-recall> ────────────────
 
 describe("F-8: wrapRecall uses <memory-recall> not <engram-recall>", () => {
   test("wrapRecall returns <memory-recall> tag", async () => {
@@ -339,121 +248,5 @@ describe("F-8: wrapRecall uses <memory-recall> not <engram-recall>", () => {
     expect(result).toContain("<memory-recall>")
     expect(result).not.toContain("<engram-recall>")
     expect(result).toContain("test content")
-  })
-
-  test("Memory.buildContext() also uses <memory-recall> (consistent)", async () => {
-    await setup()
-    try {
-      SemanticRecall.index({
-        scope_type: "project",
-        scope_id: "final-project",
-        type: "decision",
-        title: "Memory recall test",
-        content: "Using memory-recall tag for semantic recall context",
-        topic_key: null,
-        normalized_hash: null,
-        revision_count: 1,
-        duplicate_count: 1,
-        last_seen_at: null,
-        deleted_at: null,
-      })
-
-      const ctx = await Memory.buildContext({
-        scope: { type: "thread", id: "final-test" },
-        ancestorScopes: [projectScope],
-        semanticQuery: "memory recall tag",
-      })
-
-      if (ctx.semanticRecall) {
-        expect(ctx.semanticRecall).toContain("<memory-recall>")
-        expect(ctx.semanticRecall).not.toContain("<engram-recall>")
-      }
-    } finally {
-      await teardown()
-    }
-  })
-})
-
-// ─── F-R: No regression ───────────────────────────────────────────────────────
-
-describe("F-R: No regression on prior behaviors", () => {
-  beforeEach(setup)
-  afterEach(teardown)
-
-  test("WorkingMemory CRUD unchanged", () => {
-    WorkingMemory.set(projectScope, "k", "v")
-    expect(WorkingMemory.get(projectScope, "k")[0].value).toBe("v")
-  })
-
-  test("SemanticRecall FTS5 search unchanged", () => {
-    SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "final-project",
-      type: "decision",
-      title: "Final regression check",
-      content: "All prior FTS5 search functionality should still work correctly",
-      topic_key: "final/regression",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-    const r = SemanticRecall.search("regression FTS5", [projectScope], 5)
-    expect(r.length).toBeGreaterThan(0)
-  })
-
-  test("Memory.buildContext() still returns all layers", async () => {
-    WorkingMemory.set(projectScope, "final_test", "regression check")
-    const ctx = await Memory.buildContext({
-      scope: { type: "thread", id: "final-regression" },
-      ancestorScopes: [projectScope],
-    })
-    expect(ctx.workingMemory).toBeDefined()
-    expect(ctx.workingMemory).toContain("regression check")
-  })
-
-  test("Handoff.writeFork + getFork unchanged", () => {
-    Handoff.writeFork({ sessionId: "c-final", parentSessionId: "p-final", context: "test" })
-    expect(Handoff.getFork("c-final")!.context).toBe("test")
-  })
-
-  test("topic_key dedupe still works", () => {
-    const id1 = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "final-project",
-      type: "decision",
-      title: "D1",
-      content: "c1",
-      topic_key: "final/dedupe-test",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-    const id2 = SemanticRecall.index({
-      scope_type: "project",
-      scope_id: "final-project",
-      type: "decision",
-      title: "D2",
-      content: "c2",
-      topic_key: "final/dedupe-test",
-      normalized_hash: null,
-      revision_count: 1,
-      duplicate_count: 1,
-      last_seen_at: null,
-      deleted_at: null,
-    })
-    expect(id1).toBe(id2)
-    expect(SemanticRecall.get(id1)!.revision_count).toBe(2)
-  })
-
-  test("wrapWorkingMemory still includes guidance text", async () => {
-    const { SystemPrompt } = await import("../../src/session/system")
-    const wrapped = SystemPrompt.wrapWorkingMemory("## Goals\n- Build memory")
-    expect(wrapped).toContain("<working-memory>")
-    expect(wrapped).toContain("update_working_memory")
-    expect(wrapped).toContain("Build memory")
   })
 })

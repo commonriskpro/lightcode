@@ -5,7 +5,7 @@
  * 1. Recent History  — handled by caller (session/prompt.ts)
  * 2. Working Memory  — WorkingMemory service
  * 3. Observational Memory — existing OM system (session/om/)
- * 4. Semantic Recall — SemanticRecall service
+ * 4. Semantic Recall — HybridBackend + SessionMemory
  *
  * This is the canonical entry point for all memory operations in LightCode.
  * The runtime MUST use this provider — no scattered direct DB access for memory.
@@ -14,11 +14,15 @@
 import { Token } from "../util/token"
 import { createHash } from "crypto"
 import { WorkingMemory } from "./working-memory"
-import { SemanticRecall } from "./semantic-recall"
 import { Handoff } from "./handoff"
 import { OM } from "../session/om/record"
 import { SystemPrompt } from "../session/system"
 import type { SessionID } from "../session/schema"
+import { FTS5Backend, format as formatArtifacts } from "./fts5-backend"
+import { EmbeddingBackend } from "./embedding-backend"
+import { HybridBackend } from "./hybrid-backend"
+import { SessionMemory } from "./session-memory"
+import { Embedder } from "./embedder"
 import type {
   ContextBuildOptions,
   MemoryContext,
@@ -29,8 +33,22 @@ import type {
   ForkContext,
   ObservationRecord,
   PromptBlock,
+  SessionRecallResult,
 } from "./contracts"
 import { DEFAULT_USER_SCOPE_ID, PROMPT_BLOCK } from "./contracts"
+
+const fts = new FTS5Backend()
+let backend: Promise<HybridBackend> | undefined
+
+async function getBackend(): Promise<HybridBackend> {
+  if (backend) return backend
+  backend = (async () => {
+    const embedder = await Embedder.get()
+    if (!embedder) return new HybridBackend(fts, null)
+    return new HybridBackend(fts, new EmbeddingBackend(embedder, fts))
+  })()
+  return backend
+}
 
 // ─── System prompt wrappers ───────────────────────────────────────────────────
 
@@ -43,6 +61,18 @@ function wrapWorkingMemory(body: string, scope: string): string {
 
 function wrapSemanticRecall(body: string): string {
   return `<memory-recall>\n${body}\n</memory-recall>`
+}
+
+function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  return text.slice(0, limit) + "…"
+}
+
+function wrapSessionRecall(items: { score: number; text: string }[]): string | undefined {
+  if (!items.length) return undefined
+  return `<session-recall>\n${items
+    .map((item) => `[score=${item.score.toFixed(2)}] ${truncate(item.text, 400)}`)
+    .join("\n")}\n</session-recall>`
 }
 
 // ─── Memory namespace ─────────────────────────────────────────────────────────
@@ -69,23 +99,29 @@ export namespace Memory {
     const allScopes = [opts.scope, ...(opts.ancestorScopes ?? [])]
 
     // Load all layers in parallel
-    const [wRecords, omRec, ftsArtifacts] = await Promise.all([
+    const search = opts.semanticQuery
+      ? (await getBackend()).search(opts.semanticQuery, allScopes, 10)
+      : Promise.resolve([] as MemoryArtifact[])
+    const session =
+      opts.scope.type === "thread" && opts.semanticQuery
+        ? SessionMemory.recall(opts.scope.id as SessionID, opts.semanticQuery, 5, opts.excludeMsgIds)
+        : Promise.resolve([] as SessionRecallResult[])
+
+    const [wRecords, omRec, ftsArtifacts, sessionResults] = await Promise.all([
       Promise.resolve(WorkingMemory.getForScopes(opts.scope, opts.ancestorScopes ?? [])),
       Promise.resolve(
         opts.scope.type === "thread"
           ? (OM.get(opts.scope.id as SessionID) as ObservationRecord | undefined)
           : undefined,
       ),
-      opts.semanticQuery
-        ? Promise.resolve(SemanticRecall.search(opts.semanticQuery, allScopes, 10))
-        : Promise.resolve([] as MemoryArtifact[]),
+      search,
+      session,
     ])
 
     // Fallback: if FTS5 returned no results AND a query was provided,
     // fall back to recency-ordered artifacts for these scopes.
     // This ensures semanticRecall is never silently empty when artifacts exist.
-    const artifacts =
-      ftsArtifacts.length === 0 && opts.semanticQuery ? SemanticRecall.recent(allScopes, 5) : ftsArtifacts
+    const artifacts = ftsArtifacts.length === 0 && opts.semanticQuery ? fts.recent(allScopes, 5) : ftsArtifacts
 
     // Format each layer with token budgets
     const rawWM = WorkingMemory.format(wRecords, wBudget)
@@ -98,12 +134,14 @@ export namespace Memory {
     const observationsLive = omRec ? SystemPrompt.observationsLive(omRec) : undefined
     const observations = SystemPrompt.mergeObservations(observationsStable, observationsLive)
 
-    const rawRecall = artifacts.length ? SemanticRecall.format(artifacts, rBudget) : undefined
+    const rawRecall = artifacts.length ? formatArtifacts(artifacts, rBudget) : undefined
     const semanticRecall = rawRecall ? wrapSemanticRecall(rawRecall) : undefined
+    const sessionRecall = wrapSessionRecall(sessionResults)
     const blocks = [
       block(PROMPT_BLOCK.WORKING_MEMORY, workingMemory, true),
       block(PROMPT_BLOCK.OBSERVATIONS_STABLE, observationsStable, true),
       block(PROMPT_BLOCK.OBSERVATIONS_LIVE, observationsLive, false),
+      block(PROMPT_BLOCK.SESSION_RECALL, sessionRecall, false),
       block(PROMPT_BLOCK.SEMANTIC_RECALL, semanticRecall, false),
     ].filter((x): x is PromptBlock => Boolean(x))
 
@@ -116,6 +154,7 @@ export namespace Memory {
       workingMemory,
       observations,
       semanticRecall,
+      sessionRecall,
       observationsStable,
       observationsLive,
       blocks,
@@ -156,12 +195,16 @@ export namespace Memory {
 
   // ─── Semantic Recall ────────────────────────────────────────────────────────
 
-  export function searchArtifacts(query: string, scopes: ScopeRef[], limit = 10): MemoryArtifact[] {
-    return SemanticRecall.search(query, scopes, limit)
+  export async function searchArtifacts(query: string, scopes: ScopeRef[], limit = 10): Promise<MemoryArtifact[]> {
+    const b = await getBackend()
+    return b.search(query, scopes, limit)
   }
 
-  export function indexArtifact(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): string {
-    return SemanticRecall.index(artifact)
+  export async function indexArtifact(
+    artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">,
+  ): Promise<string> {
+    const b = await getBackend()
+    return b.index(artifact)
   }
 
   // ─── Handoff and Fork ───────────────────────────────────────────────────────

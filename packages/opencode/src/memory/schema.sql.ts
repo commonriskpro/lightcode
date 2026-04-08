@@ -119,6 +119,28 @@ export const MemoryLinkTable = sqliteTable(
   (t) => [index("idx_link_from").on(t.from_artifact_id), index("idx_link_to").on(t.to_artifact_id)],
 )
 
+// ─── sqlite-vec Virtual Tables (NOT modeled in Drizzle) ──────────────────────
+//
+// The following virtual tables exist at runtime but CANNOT be expressed in
+// Drizzle ORM because Drizzle has no virtual-table support.
+// They are created via raw SQL in:
+//   migration/20260408100000_embedding-recall/migration.sql
+//
+// Table: memory_artifacts_vec
+//   vec0 virtual table storing 384-dim float embeddings for memory_artifacts.
+//   Columns: artifact_id TEXT PRIMARY KEY, embedding FLOAT[384]
+//   Purpose: cross-session semantic similarity search (embedding recall backend)
+//
+// Table: memory_session_vectors
+//   vec0 virtual table for per-session ephemeral message embeddings.
+//   Columns: msg_id TEXT, session_id TEXT, chunk_idx INTEGER,
+//            embedding FLOAT[384], +text TEXT, +created_at INTEGER
+//   Purpose: intra-session recall (session memory)
+//   Lifecycle: entries cleared on session close via SessionMemory.clear(sid)
+//
+// IMPORTANT: sqlite-vec must be loaded (via sqliteVec.load(db)) BEFORE
+// any migration that references these tables runs. See db.bun.ts.
+
 // ─── Exported types ───────────────────────────────────────────────────────────
 
 export type WorkingMemoryRow = typeof WorkingMemoryTable.$inferSelect

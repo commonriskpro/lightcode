@@ -96,13 +96,14 @@ All performance features are **on by default**. AutoDream (background memory) is
 
 ### Enable AutoDream (persistent memory consolidation)
 
-Requires [Engram](https://github.com/nicobailon/engram) installed and configured as an MCP server.
+AutoDream consolidates memory automatically when sessions go idle. It writes to LightCode's native memory store.
 
 ```jsonc
 // ~/.config/lightcode/config.jsonc
 {
   "experimental": {
     "autodream": true,
+    "autodream_model": "google/gemini-2.5-flash", // Model for consolidation
   },
 }
 ```
@@ -165,17 +166,17 @@ The binary is at `./packages/opencode/dist/opencode-<platform>/bin/opencode`.
 
 ## 7. Key Commands
 
-| Command     | What it does                                   |
-| ----------- | ---------------------------------------------- |
-| `Tab`       | Switch between build/plan agents               |
-| `/models`   | Switch AI model                                |
-| `/compact`  | Summarize conversation (reduce context)        |
-| `/dream`    | Trigger memory consolidation (requires Engram) |
-| `/sessions` | Browse previous sessions                       |
-| `/help`     | Show all keybinds and commands                 |
-| `/themes`   | Change TUI theme                               |
-| `Ctrl+C`    | Cancel current operation                       |
-| `Ctrl+D`    | Exit                                           |
+| Command     | What it does                            |
+| ----------- | --------------------------------------- |
+| `Tab`       | Switch between build/plan agents        |
+| `/models`   | Switch AI model                         |
+| `/compact`  | Summarize conversation (reduce context) |
+| `/dream`    | Trigger memory consolidation            |
+| `/sessions` | Browse previous sessions                |
+| `/help`     | Show all keybinds and commands          |
+| `/themes`   | Change TUI theme                        |
+| `Ctrl+C`    | Cancel current operation                |
+| `Ctrl+D`    | Exit                                    |
 
 ---
 

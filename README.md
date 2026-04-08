@@ -185,8 +185,8 @@ Session goes idle
 
 Next session starts (step 1)
   → Memory.buildContext({ semanticQuery: firstUserMessage })
-      → SemanticRecall.search() / recent() → system[2]
-      → WorkingMemory.getForScopes()       → system[3]
+      → HybridBackend.search() (FTS5 + embeddings via RRF) → system[2]
+      → WorkingMemory.getForScopes()                        → system[3]
 ```
 
 ---
@@ -214,7 +214,7 @@ All memory features are toggleable from the TUI via `/features` (space to toggle
     "autodream": false, // Background memory consolidation
     "autodream_model": "anthropic/claude-haiku-4-5", // Model for AutoDream
     "observer": true, // Intra-session Observer (default: on)
-    "observer_model": "google/gemini-2.5-flash", // Model for Observer (default)
+    "observer_model": "opencode/qwen3.6-plus-free", // Model for Observer (default)
     "deferred_tools": true, // Deferred tool loading
   },
 }

@@ -1089,6 +1089,17 @@ export namespace Config {
             .describe(
               "Safety cap on the number of messages sent to the LLM when OM has not yet observed (boundary=0). Default 80. Has no effect once OM has fired — the lastObservedAt boundary takes over.",
             ),
+          memory: z
+            .object({
+              embedder: z
+                .string()
+                .optional()
+                .describe(
+                  "Embedding model in 'provider/model' format. Examples: 'fastembed/bge-small-en-v1.5' (default, zero-config local), 'openai/text-embedding-3-small', 'google/gemini-embedding-001'. If unset, defaults to fastembed if available, otherwise FTS5-only.",
+                ),
+            })
+            .optional()
+            .describe("Embedding-based memory recall configuration"),
         })
         .optional(),
     })

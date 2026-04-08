@@ -413,13 +413,12 @@ export namespace Memory {
           : undefined,
       ),
       opts.semanticQuery
-        ? Promise.resolve(SemanticRecall.search(opts.semanticQuery, allScopes, 10))
+        ? (await getBackend()).search(opts.semanticQuery, allScopes, 10) // HybridBackend (FTS5 + embeddings via RRF)
         : Promise.resolve([] as MemoryArtifact[]),
     ])
 
-    // Fallback: si FTS devuelve 0, usar recent()
-    const artifacts =
-      ftsArtifacts.length === 0 && opts.semanticQuery ? SemanticRecall.recent(allScopes, 5) : ftsArtifacts
+    // Fallback: si hybrid search devuelve 0, usar FTS5Backend.recent()
+    const artifacts = ftsArtifacts.length === 0 && opts.semanticQuery ? fts.recent(allScopes, 5) : ftsArtifacts
 
     // Formateo con token budgets
     const rawWM = WorkingMemory.format(wRecords, wBudget)
@@ -428,7 +427,7 @@ export namespace Memory {
     const rawObs = omRec ? formatObservations(omRec, oBudget) : undefined
     const observations = rawObs ?? undefined
 
-    const rawRecall = artifacts.length ? SemanticRecall.format(artifacts, rBudget) : undefined
+    const rawRecall = artifacts.length ? format(artifacts, rBudget) : undefined
     const semanticRecall = rawRecall ? wrapSemanticRecall(rawRecall) : undefined
 
     return {
@@ -665,12 +664,16 @@ export const UpdateUserMemoryTool = Tool.define("update_user_memory", {
 // execution: Memory.setUserMemory(key, value)
 ```
 
-### 3.7 Semantic Recall (Búsqueda Semántica con FTS5)
+### 3.7 Semantic Recall (Búsqueda Híbrida: FTS5 + Embeddings via RRF)
 
-**Archivo:** `packages/opencode/src/memory/semantic-recall.ts`
+**Archivos:**
+
+- `packages/opencode/src/memory/fts5-backend.ts` — FTS5 lexical backend
+- `packages/opencode/src/memory/embedding-backend.ts` — sqlite-vec embedding backend
+- `packages/opencode/src/memory/hybrid-backend.ts` — RRF composition (k=60)
 
 ```typescript
-// semantic-recall.ts:88-210 - Namespace SemanticRecall
+// fts5-backend.ts - class FTS5Backend (async RecallBackend implementation)
 
 /**
  * Index a memory artifact.
@@ -678,8 +681,11 @@ export const UpdateUserMemoryTool = Tool.define("update_user_memory", {
  * 1. Topic-key upsert (same topic_key → revision_count++)
  * 2. Hash dedupe within 15-min window (same hash → duplicate_count++)
  * 3. Insert new artifact if no match
+ *
+ * When routed through HybridBackend.index(), the EmbeddingBackend
+ * additionally writes the embedding vector to memory_artifacts_vec.
  */
-export function index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): string {
+async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string> {
   const content =
     artifact.content.length > MAX_CONTENT_LENGTH
       ? artifact.content.slice(0, MAX_CONTENT_LENGTH) + "... [truncated]"
@@ -1458,14 +1464,16 @@ async function loadRuntimeMemory(
   }
 }
 
-// prompt.ts:183-210 - indexSessionArtifacts
-function indexSessionArtifacts(sessionID: SessionID): void {
+// prompt.ts - indexSessionArtifacts (async, awaited at session loop exit)
+async function indexSessionArtifacts(sessionID: SessionID): Promise<void> {
   const finalObs = OM.get(sessionID)
   const obsContent = finalObs?.reflections ?? finalObs?.observations
   if (!obsContent || obsContent.length <= 100) return
 
-  // Index as MemoryArtifact (project scope)
-  Memory.indexArtifact({
+  try {
+    // Index as MemoryArtifact (project scope) via HybridBackend
+    // (FTS5 write + embedding write when embedder is configured)
+    await Memory.indexArtifact({
     scope_type: "project",
     scope_id: Instance.project.id,
     type: "observation",
@@ -1639,7 +1647,7 @@ obs = appendBlock(obs, "durable-child-context", durableObs)
     ┌─────────────────────────────────────────────────────────────┐
     │                FALLBACK CHECK                               │
     │  if (ftsArtifacts.length === 0 && semanticQuery)          │
-    │    artifacts = SemanticRecall.recent(allScopes, 5)        │
+    │    artifacts = fts.recent(allScopes, 5)                   │
     └──────────────────────────────┬──────────────────────────────┘
                                    │
                                    ▼
