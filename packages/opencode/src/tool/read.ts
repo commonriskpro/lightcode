@@ -21,9 +21,9 @@ const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`
 export const ReadTool = Tool.define("read", {
   description: DESCRIPTION,
   parameters: z.object({
-    filePath: z.string().describe("The absolute path to the file or directory to read"),
-    offset: z.coerce.number().describe("The line number to start reading from (1-indexed)").optional(),
-    limit: z.coerce.number().describe("The maximum number of lines to read (defaults to 2000)").optional(),
+    filePath: z.string().describe("Absolute path to the file or directory"),
+    offset: z.coerce.number().describe("Line number to start from (1-indexed)").optional(),
+    limit: z.coerce.number().describe("Max lines to read").optional(),
   }),
   async execute(params, ctx) {
     if (params.offset !== undefined && params.offset < 1) {

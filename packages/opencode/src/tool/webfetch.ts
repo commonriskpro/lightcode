@@ -11,12 +11,9 @@ const MAX_TIMEOUT = 120 * 1000 // 2 minutes
 export const WebFetchTool = Tool.define("webfetch", {
   description: DESCRIPTION,
   parameters: z.object({
-    url: z.string().describe("The URL to fetch content from"),
-    format: z
-      .enum(["text", "markdown", "html"])
-      .default("markdown")
-      .describe("The format to return the content in (text, markdown, or html). Defaults to markdown."),
-    timeout: z.number().describe("Optional timeout in seconds (max 120)").optional(),
+    url: z.string().describe("URL to fetch"),
+    format: z.enum(["text", "markdown", "html"]).default("markdown").describe("Return format (default: markdown)"),
+    timeout: z.number().describe("Timeout in seconds (max 120)").optional(),
   }),
   async execute(params, ctx) {
     // Validate URL

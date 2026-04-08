@@ -32,17 +32,9 @@ export const UpdateWorkingMemoryTool = Tool.define("update_working_memory", {
   parameters: z.object({
     scope: z
       .enum(["thread", "agent", "project"])
-      .describe(
-        '"thread" = this conversation only | "agent" = this agent across sessions | "project" = all agents and sessions for this project',
-      ),
-    key: z
-      .string()
-      .min(1)
-      .max(100)
-      .describe(
-        'Short identifier for this memory entry (e.g. "current_goal", "tech_stack", "auth_decision", "constraints")',
-      ),
-    value: z.string().min(1).max(10_000).describe("The content to remember. Be concise and factual."),
+      .describe("thread=this session, agent=across sessions, project=all sessions"),
+    key: z.string().min(1).max(100).describe("Short identifier for this memory entry"),
+    value: z.string().min(1).max(10_000).describe("Content to remember"),
   }),
   async execute({ scope, key, value }, ctx) {
     const scopeRef =
@@ -75,16 +67,8 @@ export const UpdateUserMemoryTool = Tool.define("update_user_memory", {
     "Do NOT use this for project architecture, temporary goals, cross-project patterns, or secrets. " +
     "Every call requires explicit approval before writing.",
   parameters: z.object({
-    key: z
-      .string()
-      .min(1)
-      .max(100)
-      .describe('Short identifier for the user memory entry (e.g. "preferences", "defaults", "workflow")'),
-    value: z
-      .string()
-      .min(1)
-      .max(10_000)
-      .describe("Durable user-wide memory content. Keep it concise, stable, and non-sensitive."),
+    key: z.string().min(1).max(100).describe("Short identifier for this user memory entry"),
+    value: z.string().min(1).max(10_000).describe("Durable user-wide memory content"),
   }),
   async execute({ key, value }, ctx) {
     const scope = Memory.userScope()

@@ -36,7 +36,6 @@ import { makeRuntime } from "@/effect/run-service"
 import { Env } from "../env"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
-import { AnnotateTool } from "./annotate"
 import { RecallTool } from "./recall"
 import { UpdateUserMemoryTool, UpdateWorkingMemoryTool } from "./memory"
 
@@ -143,7 +142,6 @@ export namespace ToolRegistry {
         const lsp = yield* build(LspTool)
         const batch = yield* build(BatchTool)
         const plan = yield* build(PlanExitTool)
-        const annotate = yield* build(AnnotateTool)
         const recall = yield* build(RecallTool)
         const updateWorkingMemory = yield* build(UpdateWorkingMemoryTool)
         const updateUserMemory = yield* build(UpdateUserMemoryTool)
@@ -181,7 +179,6 @@ export namespace ToolRegistry {
             defer(safe(updateUserMemory), "Persist user-wide preferences or defaults with explicit approval"),
             defer(patch, "Apply unified diff patches"),
             ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [defer(safe(lsp), "Language server diagnostics and hover")] : []),
-            defer(annotate, "Open URL and return visual annotations via Puppeteer"),
             ...(cfg.experimental?.batch_tool === true ? [defer(batch, "Run multiple tools in parallel")] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [plan] : []),
             ...custom,
