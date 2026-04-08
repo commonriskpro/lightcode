@@ -14,6 +14,9 @@ type Alignment = {
   messageBP: { i: number; role: string }[]
   toolBP: string[]
 }
+type BPStatus = "stable" | "broke" | "new" | "always"
+type BPStatusMap = { bp1: BPStatus; bp2: BPStatus; bp3: "always"; bp4: BPStatus }
+
 type Profile = {
   sessionID: string
   requestAt: number
@@ -22,6 +25,8 @@ type Profile = {
   cache: { read: number; write: number; input: number }
   tools?: { count: number; names: string[]; tokens: number }
   alignment?: Alignment
+  prevHashes?: Record<string, string>
+  bpStatus?: BPStatusMap
 }
 
 const LABELS: Record<string, string> = {
@@ -183,6 +188,37 @@ export function DialogCacheDebug() {
               )}
             </Show>
 
+            {/* Breakpoint stability — only shown for Anthropic-like providers (alignment present) */}
+            <Show when={p().alignment && p().bpStatus}>
+              {(_) => {
+                const bp = () => p().bpStatus!
+                const color = (s: BPStatus) =>
+                  s === "stable" ? theme.success : s === "broke" ? theme.error : theme.textMuted
+                const icon = (s: BPStatus) => (s === "stable" ? "✓" : s === "broke" ? "⚡" : s === "always" ? "↻" : "·")
+                const entries: [string, BPStatus][] = [
+                  ["BP1 head+sys", bp().bp1],
+                  ["BP2 memory  ", bp().bp2],
+                  ["BP3 conv    ", bp().bp3],
+                  ["BP4 tools   ", bp().bp4],
+                ]
+                return (
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>breakpts</text>
+                    <For each={entries}>
+                      {([label, status]) => (
+                        <box flexDirection="row" gap={0}>
+                          <text fg={color(status)} attributes={status === "broke" ? TextAttributes.BOLD : 0}>
+                            {icon(status)}
+                          </text>
+                          <text fg={color(status)}>{label}</text>
+                        </box>
+                      )}
+                    </For>
+                  </box>
+                )
+              }}
+            </Show>
+
             {/* Totals */}
             <box flexDirection="row" gap={2}>
               <text fg={theme.textMuted}>local prompt {fmt(total())} tokens</text>
@@ -193,6 +229,9 @@ export function DialogCacheDebug() {
             <For each={p().layers}>
               {(layer) => {
                 const pct = total() > 0 ? Math.round((layer.tokens / total()) * 100) : 0
+                const prev = p().prevHashes?.[layer.key]
+                const broke = layer.hash && prev && layer.hash !== prev
+                const stable = layer.hash && prev && layer.hash === prev
                 return (
                   <box flexDirection="row" gap={1}>
                     <text fg={theme.textMuted}>{LABELS[layer.key] ?? layer.key.padEnd(14)}</text>
@@ -201,6 +240,14 @@ export function DialogCacheDebug() {
                     <text fg={theme.textMuted}>{pct}%</text>
                     <Show when={layer.hash}>
                       <text fg={theme.textMuted}>{layer.hash!.slice(0, 8)}</text>
+                    </Show>
+                    <Show when={broke}>
+                      <text fg={theme.error} attributes={TextAttributes.BOLD}>
+                        ⚡broke
+                      </text>
+                    </Show>
+                    <Show when={stable}>
+                      <text fg={theme.success}>✓</text>
                     </Show>
                   </box>
                 )
