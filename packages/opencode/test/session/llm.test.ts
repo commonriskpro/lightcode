@@ -1301,7 +1301,7 @@ describe("session.llm.stream", () => {
     })
   })
 
-  test("strips inputSchema for tools marked with _noSchema", async () => {
+  test("sends full inputSchema for all tools (noSchema stripping removed)", async () => {
     const server = state.server
     if (!server) throw new Error("Server not initialized")
 
@@ -1362,13 +1362,12 @@ describe("session.llm.stream", () => {
           execute: async () => ({ output: "" }),
         })
 
-        // Tool marked _noSchema — schema should be stripped in the outgoing request
+        // Second tool — also sends full schema
         const noSchemaT = tool({
           description: "A tool without schema",
           inputSchema: z.object({ cmd: z.string(), timeout: z.number().optional() }),
           execute: async () => ({ output: "" }),
         })
-        ;(noSchemaT as any)._noSchema = true
 
         const stream = await LLM.stream({
           user,
@@ -1391,13 +1390,13 @@ describe("session.llm.stream", () => {
         const full = tools?.find((t) => t.function?.name === "with_schema")
         const stripped = tools?.find((t) => t.function?.name === "no_schema")
 
-        // with_schema: should have real parameters
+        // both tools should have their real parameters — noSchema stripping was removed
         expect(full?.function?.parameters).toBeDefined()
         expect(Object.keys((full?.function?.parameters as any)?.properties ?? {})).not.toHaveLength(0)
 
-        // no_schema: parameters should be stripped to empty object schema
+        // no_schema tool also sends full schema now (noSchema stripping removed)
         expect(stripped?.function?.parameters).toBeDefined()
-        expect((stripped?.function?.parameters as any)?.properties).toEqual({})
+        expect(Object.keys((stripped?.function?.parameters as any)?.properties ?? {})).not.toHaveLength(0)
       },
     })
   })

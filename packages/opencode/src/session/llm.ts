@@ -531,6 +531,12 @@ export namespace LLM {
                 const names = args.params.tools.filter((t) => t.type === "function").map((t) => t.name)
                 const tokens = Token.estimate(JSON.stringify(args.params.tools))
                 PromptProfile.updateTools(input.sessionID, { count: names.length, names, tokens })
+                // DEBUG: log per-tool token breakdown
+                for (const t of args.params.tools) {
+                  if (t.type !== "function") continue
+                  const tok = Token.estimate(JSON.stringify(t))
+                  l.info("tool-token-debug", { name: t.name, tok })
+                }
               }
 
               return args.params
