@@ -108,12 +108,11 @@ export namespace SessionPrompt {
     return base ? `${base}\n\n${next}` : next
   }
 
-  function durableChildHydration(sessionID: SessionID): {
+  async function durableChildHydration(sessionID: SessionID): Promise<{
     workingMemory?: string
     observations?: string
-  } {
-    const handoff = Memory.getHandoff(sessionID)
-    const fork = Memory.getForkContext(sessionID)
+  }> {
+    const [handoff, fork] = await Promise.all([Memory.getHandoff(sessionID), Memory.getForkContext(sessionID)])
 
     let workingMemory: string | undefined
     let observations: string | undefined
@@ -182,7 +181,7 @@ export namespace SessionPrompt {
       excludeMsgIds: msgs.map((msg) => msg.info.id),
       semanticQuery: text,
     })
-    const durable = durableChildHydration(sessionID)
+    const durable = await durableChildHydration(sessionID)
     const recallReused = keep && Boolean(prev?.recall)
     const semanticRecall = recallReused ? prev?.recall : memCtx.semanticRecall
     const recall = [memCtx.sessionRecall, semanticRecall].filter(Boolean).join("\n\n") || undefined
@@ -217,7 +216,7 @@ export namespace SessionPrompt {
   }
 
   async function indexSessionArtifacts(sessionID: SessionID): Promise<void> {
-    const finalObs = OM.get(sessionID)
+    const finalObs = await OM.get(sessionID)
     const obsContent = finalObs?.reflections ?? finalObs?.observations
     if (!obsContent || obsContent.length <= 100) return
 
@@ -1642,7 +1641,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             // Observer + activate + block are handled entirely in processor.ts
             // (after the assistant message is written, so the full turn is included).
             // prompt.ts is a pure consumer: reads the OM record to build context.
-            const obsRec = OM.get(sessionID)
+            const obsRec = yield* Effect.promise(() => OM.get(sessionID))
             const omCfg = yield* Effect.promise(() => Config.get())
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)

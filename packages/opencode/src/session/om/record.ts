@@ -17,33 +17,35 @@ function mergeIds(existing: string | null, next: string[]): string {
 }
 
 export namespace OM {
-  export function get(sid: SessionID): ObservationRecord | undefined {
-    return Database.use((db) => db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get())
+  export async function get(sid: SessionID): Promise<ObservationRecord | undefined> {
+    return (await Database.use((db) =>
+      db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get(),
+    )) as ObservationRecord | undefined
   }
 
-  export function upsert(rec: ObservationRecord): void {
-    Database.use((db) =>
+  export async function upsert(rec: ObservationRecord): Promise<void> {
+    await Database.use((db) =>
       db.insert(ObservationTable).values(rec).onConflictDoUpdate({ target: ObservationTable.id, set: rec }).run(),
     )
   }
 
-  export function buffers(sid: SessionID): ObservationBuffer[] {
-    return Database.use((db) =>
+  export async function buffers(sid: SessionID): Promise<ObservationBuffer[]> {
+    return (await Database.use((db) =>
       db
         .select()
         .from(ObservationBufferTable)
         .where(eq(ObservationBufferTable.session_id, sid))
         .orderBy(asc(ObservationBufferTable.starts_at))
         .all(),
-    )
+    )) as ObservationBuffer[]
   }
 
   // addBuffer + activate implement the Mastra-style async pre-compute pattern.
   // addBuffer() is called from the main runLoop (prompt.ts) after each Observer.run() cycle.
   // addBufferSafe() is the canonical write path — prefer it over addBuffer() in production.
   // activate() is called when the "activate" or "block" signal fires to condense buffers.
-  export function addBuffer(buf: ObservationBuffer): void {
-    Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+  export async function addBuffer(buf: ObservationBuffer): Promise<void> {
+    await Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
   }
 
   /**
@@ -59,17 +61,17 @@ export namespace OM {
    * With multiple buffers, the last writer wins — which is correct because
    * the most recent Observer run has the freshest task context.
    */
-  export function addBufferSafe(
+  export async function addBufferSafe(
     buf: ObservationBuffer,
     sid: SessionID,
     msgIds: string[],
     task?: string | null,
     continuation?: string | null,
-  ): void {
-    Database.transaction(() => {
-      Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+  ): Promise<void> {
+    await Database.transaction(async () => {
+      await Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
 
-      const rec = Database.use((db) =>
+      const rec = await Database.use((db) =>
         db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get(),
       )
       if (rec) {
@@ -79,7 +81,9 @@ export namespace OM {
         }
         if (task != null) patch.current_task = task
         if (continuation != null) patch.suggested_continuation = continuation
-        Database.use((db) => db.update(ObservationTable).set(patch).where(eq(ObservationTable.session_id, sid)).run())
+        await Database.use((db) =>
+          db.update(ObservationTable).set(patch).where(eq(ObservationTable.session_id, sid)).run(),
+        )
       } else {
         // First observation for this session — insert placeholder.
         // activate() will overwrite observations/tokens; current_task persists via ...rec spread.
@@ -98,17 +102,17 @@ export namespace OM {
           time_created: Date.now(),
           time_updated: Date.now(),
         }
-        Database.use((db) => db.insert(ObservationTable).values(placeholder).run())
+        await Database.use((db) => db.insert(ObservationTable).values(placeholder).run())
       }
     })
   }
 
   export async function activate(sid: SessionID): Promise<void> {
     return withSessionLock(sid, async () => {
-      const bufs = buffers(sid)
+      const bufs = await buffers(sid)
       if (!bufs.length) return
 
-      const rec = get(sid)
+      const rec = await get(sid)
       const chunks = bufs.map((b) => b.observations)
       // Use LLM to condense chunks into a coherent observation log.
       // Falls back to naive join if observer_model is not configured or LLM fails.
@@ -137,7 +141,9 @@ export namespace OM {
           observed_message_ids: mergeIds(rec.observed_message_ids ?? null, ids),
           time_updated: Date.now(),
         }
-        Database.use((db) => db.update(ObservationTable).set(updated).where(eq(ObservationTable.id, rec.id)).run())
+        await Database.use((db) =>
+          db.update(ObservationTable).set(updated).where(eq(ObservationTable.id, rec.id)).run(),
+        )
       } else {
         const next: ObservationRecord = {
           id: Identifier.ascending("session") as SessionID,
@@ -154,16 +160,18 @@ export namespace OM {
           time_created: Date.now(),
           time_updated: Date.now(),
         }
-        Database.use((db) => db.insert(ObservationTable).values(next).run())
+        await Database.use((db) => db.insert(ObservationTable).values(next).run())
       }
 
-      Database.use((db) => db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run())
+      await Database.use((db) =>
+        db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run(),
+      )
     }) // end withSessionLock
   }
 
   export async function reflect(sid: SessionID, txt: string): Promise<void> {
     return withSessionLock(sid, async () => {
-      Database.use((db) =>
+      await Database.use((db) =>
         db
           .update(ObservationTable)
           .set({ reflections: txt, time_updated: Date.now() })
@@ -173,11 +181,11 @@ export namespace OM {
     })
   }
 
-  export function trackObserved(sid: SessionID, ids: string[]): void {
-    const rec = get(sid)
+  export async function trackObserved(sid: SessionID, ids: string[]): Promise<void> {
+    const rec = await get(sid)
     if (!rec) return
     const merged = mergeIds(rec.observed_message_ids ?? null, ids)
-    Database.use((db) =>
+    await Database.use((db) =>
       db
         .update(ObservationTable)
         .set({ observed_message_ids: merged, time_updated: Date.now() })

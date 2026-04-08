@@ -114,7 +114,7 @@ export default [
       .run()
   }),
 
-  SyncEvent.project(MessageV2.Event.PartUpdated, (db, data) => {
+  SyncEvent.project(MessageV2.Event.PartUpdated, async (db, data) => {
     const { id, messageID, sessionID, ...rest } = data.part
 
     try {
@@ -134,8 +134,8 @@ export default [
       if (data.part.ignored) return
       if (!data.part.text.trim()) return
 
-      const row = db
-        .select({ data: MessageTable.data })
+      const row = await db
+        .select()
         .from(MessageTable)
         .where(and(eq(MessageTable.id, data.part.messageID), eq(MessageTable.session_id, data.part.sessionID)))
         .get()
