@@ -131,8 +131,9 @@ export namespace Project {
         Effect.catch(() => Effect.succeed({ code: 1, text: "", stderr: "" } satisfies GitResult)),
       )
 
-      const db = <T>(fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => T) =>
-        Effect.sync(() => Database.use(fn))
+      const db = <T>(
+        fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
+      ) => Effect.promise(() => Database.use(fn))
 
       const emitUpdated = (data: Info) =>
         Effect.sync(() =>
@@ -347,7 +348,7 @@ export namespace Project {
       })
 
       const list = Effect.fn("Project.list")(function* () {
-        return yield* db((d) => d.select().from(ProjectTable).all().map(fromRow))
+        return yield* db(async (d) => (await d.select().from(ProjectTable).all()).map(fromRow))
       })
 
       const get = Effect.fn("Project.get")(function* (id: ProjectID) {
@@ -476,17 +477,11 @@ export namespace Project {
   }
 
   export function list() {
-    return Database.use((db) =>
-      db
-        .select()
-        .from(ProjectTable)
-        .all()
-        .map((row) => fromRow(row)),
-    )
+    return Database.use(async (db) => (await db.select().from(ProjectTable).all()).map((row) => fromRow(row)))
   }
 
-  export function get(id: ProjectID): Info | undefined {
-    const row = Database.use((db) => db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get())
+  export async function get(id: ProjectID): Promise<Info | undefined> {
+    const row = await Database.use((db) => db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get())
     if (!row) return undefined
     return fromRow(row)
   }

@@ -44,28 +44,28 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
       const decode = Schema.decodeUnknownSync(Info)
 
       const query = <A>(f: DbTransactionCallback<A>) =>
-        Effect.try({
+        Effect.tryPromise({
           try: () => Database.use(f),
           catch: (cause) => new AccountRepoError({ message: "Database operation failed", cause }),
         })
 
       const tx = <A>(f: DbTransactionCallback<A>) =>
-        Effect.try({
+        Effect.tryPromise({
           try: () => Database.transaction(f),
           catch: (cause) => new AccountRepoError({ message: "Database operation failed", cause }),
         })
 
-      const current = (db: DbClient) => {
-        const state = db.select().from(AccountStateTable).where(eq(AccountStateTable.id, ACCOUNT_STATE_ID)).get()
+      const current = async (db: DbClient) => {
+        const state = await db.select().from(AccountStateTable).where(eq(AccountStateTable.id, ACCOUNT_STATE_ID)).get()
         if (!state?.active_account_id) return
-        const account = db.select().from(AccountTable).where(eq(AccountTable.id, state.active_account_id)).get()
+        const account = await db.select().from(AccountTable).where(eq(AccountTable.id, state.active_account_id)).get()
         if (!account) return
         return { ...account, active_org_id: state.active_org_id ?? null }
       }
 
-      const state = (db: DbClient, accountID: AccountID, orgID: Option.Option<OrgID>) => {
+      const state = async (db: DbClient, accountID: AccountID, orgID: Option.Option<OrgID>) => {
         const id = Option.getOrNull(orgID)
-        return db
+        return await db
           .insert(AccountStateTable)
           .values({ id: ACCOUNT_STATE_ID, active_account_id: accountID, active_org_id: id })
           .onConflictDoUpdate({
@@ -80,22 +80,21 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
       )
 
       const list = Effect.fn("AccountRepo.list")(() =>
-        query((db) =>
-          db
-            .select()
-            .from(AccountTable)
-            .all()
-            .map((row: AccountRow) => decode({ ...row, active_org_id: null })),
+        query(async (db) =>
+          (await db.select().from(AccountTable).all()).map((row: AccountRow) =>
+            decode({ ...row, active_org_id: null }),
+          ),
         ),
       )
 
       const remove = Effect.fn("AccountRepo.remove")((accountID: AccountID) =>
-        tx((db) => {
-          db.update(AccountStateTable)
+        tx(async (db) => {
+          await db
+            .update(AccountStateTable)
             .set({ active_account_id: null, active_org_id: null })
             .where(eq(AccountStateTable.active_account_id, accountID))
             .run()
-          db.delete(AccountTable).where(eq(AccountTable.id, accountID)).run()
+          await db.delete(AccountTable).where(eq(AccountTable.id, accountID)).run()
         }).pipe(Effect.asVoid),
       )
 
@@ -124,8 +123,9 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
       )
 
       const persistAccount = Effect.fn("AccountRepo.persistAccount")((input) =>
-        tx((db) => {
-          db.insert(AccountTable)
+        tx(async (db) => {
+          await db
+            .insert(AccountTable)
             .values({
               id: input.id,
               email: input.email,
@@ -145,7 +145,7 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
               },
             })
             .run()
-          void state(db, input.id, input.orgID)
+          await state(db, input.id, input.orgID)
         }).pipe(Effect.asVoid),
       )
 
