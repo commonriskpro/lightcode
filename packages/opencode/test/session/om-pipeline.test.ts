@@ -404,7 +404,7 @@ describe("OM Pipeline — lifecycle", () => {
   )
 
   // OM-5 ─────────────────────────────────────────────────────────────────────
-  it.live("OM-5: tail msgs after last_observed_at are fewer than total msgs", () =>
+  it.live("OM-5: LLM does not receive early turns after OM boundary is set", () =>
     provideTmpdirServer(
       Effect.fnUntraced(function* ({ llm }) {
         const prompt = yield* SessionPrompt.Service
@@ -412,27 +412,36 @@ describe("OM Pipeline — lifecycle", () => {
         const sid = (yield* sessions.create({ title: "om-5" })).id as SessionID
 
         // 5 turns to ensure activate() fires (buffer at iter 2, block at iter 4, activate at iter 5)
+        // Each turn sends a unique marker string so we can detect which turns the LLM sees
         yield* queueOM(llm, MOCK_OBS(1))
         yield* queueOM(llm, MOCK_OBS(2))
         for (let i = 0; i < 5; i++) {
           yield* queueMain(llm)
-          yield* sendTurn(prompt, sid, `turn ${i + 1}`)
+          yield* sendTurn(prompt, sid, `TURN_MARKER_${i + 1}`)
         }
 
         const rec = getOM(sid)
-        const lastObs = rec?.last_observed_at ?? 0
-        expect(lastObs).toBeGreaterThan(0)
+        expect(rec?.last_observed_at ?? 0).toBeGreaterThan(0)
 
-        // Two more turns after the boundary — these form the tail
-        yield* queueMain(llm)
-        yield* sendTurn(prompt, sid, "turn 6")
-        yield* queueMain(llm)
-        yield* sendTurn(prompt, sid, "turn 7")
+        // Reset hits so we only capture the next turn
+        yield* llm.reset
 
-        const all = getMsgs(sid)
-        const tail = all.filter((m) => m.time_created > lastObs)
-        expect(tail.length).toBeLessThan(all.length)
-        expect(tail.length).toBeLessThanOrEqual(4) // max 2 user + 2 assistant for turns 6-7
+        // One more turn after the OM boundary — the LLM should NOT see early turns
+        yield* queueMain(llm)
+        yield* sendTurn(prompt, sid, "TURN_MARKER_6")
+
+        const hits = yield* llm.hits
+        // Only main LLM calls (not OM/title) carry a messages array
+        const mainHits = hits.filter((h) => !isOMCall(h.body) && Array.isArray((h.body as any).messages))
+        expect(mainHits.length).toBeGreaterThan(0)
+
+        // prompt.ts applies the omBoundary filter — the LLM body should NOT contain
+        // the text of turn 1 (which was observed and replaced by the compressed
+        // observation block in the system prompt)
+        const bodyStr = JSON.stringify(mainHits[0]?.body)
+        expect(bodyStr).not.toContain("TURN_MARKER_1")
+        // But it should contain the most recent turn
+        expect(bodyStr).toContain("TURN_MARKER_6")
       }),
       { git: true, config: makeConfig },
     ),
