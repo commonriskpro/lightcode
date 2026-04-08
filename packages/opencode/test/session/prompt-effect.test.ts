@@ -1013,7 +1013,7 @@ unix(
             yield* Effect.promise(async () => {
               const start = Date.now()
               while (Date.now() - start < 5000) {
-                const msgs = await MessageV2.filterCompacted(MessageV2.stream(chat.id))
+                const msgs = MessageV2.filterCompacted(await Array.fromAsync(MessageV2.stream(chat.id)))
                 const taskMsg = msgs.find((item) => item.info.role === "assistant")
                 const tool = taskMsg ? toolPart(taskMsg.parts) : undefined
                 if (tool?.state.status === "running" && tool.state.metadata?.output.includes("first")) return

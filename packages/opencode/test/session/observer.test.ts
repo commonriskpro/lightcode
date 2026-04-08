@@ -256,7 +256,7 @@ describe("session.system.observations", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           }
-          OM.upsert(rec)
+          await OM.upsert(rec)
 
           const result = await SystemPrompt.observations(s.id as SessionID)
           expect(result).not.toBeUndefined()
@@ -280,7 +280,7 @@ describe("session.om.record", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          const result = OM.get(s.id as SessionID)
+          const result = await OM.get(s.id as SessionID)
           expect(result).toBeUndefined()
         } finally {
           await Session.remove(s.id)
@@ -310,8 +310,8 @@ describe("session.om.record", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           }
-          OM.upsert(rec)
-          const got = OM.get(s.id as SessionID)
+          await OM.upsert(rec)
+          const got = await OM.get(s.id as SessionID)
           expect(got).not.toBeUndefined()
           expect(got!.observations).toBe("🔴 fact one")
           expect(got!.generation_count).toBe(1)
@@ -328,7 +328,7 @@ describe("session.om.record", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          const result = OM.buffers(s.id as SessionID)
+          const result = await OM.buffers(s.id as SessionID)
           expect(result).toEqual([])
         } finally {
           await Session.remove(s.id)
@@ -357,8 +357,8 @@ describe("session.om.record", () => {
             time_created: now,
             time_updated: now,
           }
-          OM.addBuffer(buf)
-          const list = OM.buffers(s.id as SessionID)
+          await OM.addBuffer(buf)
+          const list = await OM.buffers(s.id as SessionID)
           expect(list).toHaveLength(1)
           expect(list[0].observations).toBe("buffered chunk")
         } finally {
@@ -392,11 +392,11 @@ describe("session.om.record", () => {
             time_created: now,
             time_updated: now,
           }
-          OM.addBuffer(buf)
+          await OM.addBuffer(buf)
 
           await OM.activate(s.id as SessionID)
 
-          const rec = OM.get(s.id as SessionID)
+          const rec = await OM.get(s.id as SessionID)
           expect(rec).not.toBeUndefined()
           expect(rec!.observations).toContain("chunk one")
           expect(rec!.observations).toContain("chunk two")
@@ -404,7 +404,7 @@ describe("session.om.record", () => {
           expect(rec!.observation_tokens).toBeGreaterThan(0)
           expect(rec!.last_observed_at).toBe(now + 1000)
 
-          const remaining = OM.buffers(s.id as SessionID)
+          const remaining = await OM.buffers(s.id as SessionID)
           expect(remaining).toHaveLength(0)
         } finally {
           await Session.remove(s.id)
@@ -515,9 +515,9 @@ describe("session.om.reflector", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           }
-          OM.upsert(rec)
-          OM.reflect(s.id as SessionID, "condensed text")
-          const got = OM.get(s.id as SessionID)
+          await OM.upsert(rec)
+          await OM.reflect(s.id as SessionID, "condensed text")
+          const got = await OM.get(s.id as SessionID)
           expect(got!.reflections).toBe("condensed text")
           expect(got!.observations).toBe("🔴 user is a TypeScript developer")
         } finally {
@@ -730,7 +730,7 @@ describe("session.om.record currentTask round-trip", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 user is building auth",
@@ -745,7 +745,7 @@ describe("session.om.record currentTask round-trip", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           })
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           expect(got?.current_task).toBe("Implementing JWT middleware")
           expect(got?.suggested_continuation).toBe("Continue with token validation.")
         } finally {
@@ -761,7 +761,7 @@ describe("session.om.record currentTask round-trip", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 fact",
@@ -776,7 +776,7 @@ describe("session.om.record currentTask round-trip", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           })
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           expect(got?.current_task).toBeNull()
           expect(got?.suggested_continuation).toBeNull()
         } finally {
@@ -1411,7 +1411,7 @@ describe("OM.trackObserved", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 fact",
@@ -1426,8 +1426,8 @@ describe("OM.trackObserved", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           })
-          OM.trackObserved(s.id as SessionID, ["msg-1", "msg-2"])
-          const got = OM.get(s.id as SessionID)
+          await OM.trackObserved(s.id as SessionID, ["msg-1", "msg-2"])
+          const got = await OM.get(s.id as SessionID)
           expect(got?.observed_message_ids).not.toBeNull()
           const ids = JSON.parse(got!.observed_message_ids!)
           expect(ids).toContain("msg-1")
@@ -1445,7 +1445,7 @@ describe("OM.trackObserved", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 fact",
@@ -1460,9 +1460,9 @@ describe("OM.trackObserved", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           })
-          OM.trackObserved(s.id as SessionID, ["msg-1", "msg-2"])
-          OM.trackObserved(s.id as SessionID, ["msg-2", "msg-3"])
-          const got = OM.get(s.id as SessionID)
+          await OM.trackObserved(s.id as SessionID, ["msg-1", "msg-2"])
+          await OM.trackObserved(s.id as SessionID, ["msg-2", "msg-3"])
+          const got = await OM.get(s.id as SessionID)
           const ids: string[] = JSON.parse(got!.observed_message_ids!)
           expect(ids).toContain("msg-1")
           expect(ids).toContain("msg-2")
@@ -1482,8 +1482,8 @@ describe("OM.trackObserved", () => {
         const s = await Session.create({})
         try {
           // No upsert — record does not exist — should not throw
-          expect(() => OM.trackObserved(s.id as SessionID, ["msg-1"])).not.toThrow()
-          expect(OM.get(s.id as SessionID)).toBeUndefined()
+          await expect(OM.trackObserved(s.id as SessionID, ["msg-1"])).resolves.toBeUndefined()
+          expect(await OM.get(s.id as SessionID)).toBeUndefined()
         } finally {
           await Session.remove(s.id)
         }
@@ -1505,7 +1505,7 @@ describe("OM.trackObserved", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 fact",
@@ -1521,10 +1521,10 @@ describe("OM.trackObserved", () => {
             time_updated: Date.now(),
           })
           // Call three times with overlapping IDs
-          OM.trackObserved(s.id as SessionID, ["a", "b"])
-          OM.trackObserved(s.id as SessionID, ["b", "c"])
-          OM.trackObserved(s.id as SessionID, ["a", "c", "d"])
-          const got = OM.get(s.id as SessionID)
+          await OM.trackObserved(s.id as SessionID, ["a", "b"])
+          await OM.trackObserved(s.id as SessionID, ["b", "c"])
+          await OM.trackObserved(s.id as SessionID, ["a", "c", "d"])
+          const got = await OM.get(s.id as SessionID)
           const ids: string[] = JSON.parse(got!.observed_message_ids!)
           // Exactly 4 unique IDs — no duplicates
           expect(ids).toHaveLength(4)

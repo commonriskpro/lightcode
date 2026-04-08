@@ -35,16 +35,16 @@ let testDbPath: string
 async function setup() {
   testDbPath = path.join(os.tmpdir(), `daemon-collect-${Math.random().toString(36).slice(2)}.db`)
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   process.env["OPENCODE_DB"] = testDbPath
-  Database.Client()
+  await Database.Client()
 }
 
 async function teardown() {
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   await rm(testDbPath, { force: true }).catch(() => undefined)
@@ -56,29 +56,34 @@ async function teardown() {
 // ─── Mirror of collectProjectObsFromDB from daemon.ts ────────────────────────
 // Same logic, same SQL — testable without spawning a child process.
 
-function collectForDir(dir: string): string {
+async function collectForDir(dir: string): Promise<string> {
   try {
-    const rows = Database.use((db) =>
+    const rows = (await Database.use((db) =>
       db
-        .select({
-          observations: ObservationTable.observations,
-          reflections: ObservationTable.reflections,
-          current_task: ObservationTable.current_task,
-          observation_tokens: ObservationTable.observation_tokens,
-        })
+        .select()
         .from(ObservationTable)
         .innerJoin(SessionTable, eq(ObservationTable.session_id, SessionTable.id))
         .where(eq(SessionTable.directory, dir))
         .all(),
-    )
+    )) as Array<{
+      session_observation: {
+        observations: string | null
+        reflections: string | null
+        current_task: string | null
+        observation_tokens: number
+      }
+    }>
 
     const parts: string[] = []
     for (const row of rows) {
-      if (!row.observation_tokens || row.observation_tokens < 1000) continue
+      if (!row.session_observation.observation_tokens || row.session_observation.observation_tokens < 1000) continue
       const acc: string[] = []
-      if (row.current_task) acc.push(`<current-task>\n${row.current_task}\n</current-task>`)
-      if (row.reflections) acc.push(`<reflections>\n${row.reflections}\n</reflections>`)
-      else if (row.observations) acc.push(`<observations>\n${row.observations}\n</observations>`)
+      if (row.session_observation.current_task)
+        acc.push(`<current-task>\n${row.session_observation.current_task}\n</current-task>`)
+      if (row.session_observation.reflections)
+        acc.push(`<reflections>\n${row.session_observation.reflections}\n</reflections>`)
+      else if (row.session_observation.observations)
+        acc.push(`<observations>\n${row.session_observation.observations}\n</observations>`)
       if (acc.length) parts.push(acc.join("\n\n"))
     }
 
@@ -109,7 +114,7 @@ const PROJECT_DIR = "/tmp/test-dream-project"
 const PROJECT2_DIR = "/tmp/other-project"
 
 function seedProject(dir: string, id: string) {
-  Database.use((db) =>
+  return Database.use((db) =>
     db
       .insert(ProjectTable)
       .values({
@@ -125,7 +130,7 @@ function seedProject(dir: string, id: string) {
 }
 
 function seedSession(id: string, dir: string, projectId: string) {
-  Database.use((db) =>
+  return Database.use((db) =>
     db
       .insert(SessionTable)
       .values({
@@ -151,7 +156,7 @@ function seedObs(opts: {
   current_task?: string | null
   observation_tokens: number
 }) {
-  Database.use((db) =>
+  return Database.use((db) =>
     db
       .insert(ObservationTable)
       .values({
@@ -162,7 +167,7 @@ function seedObs(opts: {
         current_task: opts.current_task ?? null,
         suggested_continuation: null,
         last_observed_at: Date.now(),
-            retention_floor_at: null,
+        retention_floor_at: null,
         generation_count: 1,
         observation_tokens: opts.observation_tokens,
         observed_message_ids: null,
@@ -180,32 +185,32 @@ describe("DC-1: sessions below observation_tokens threshold are skipped", () => 
   beforeEach(setup)
   afterEach(teardown)
 
-  test("skips session with observation_tokens = 0", () => {
-    seedProject(PROJECT_DIR, "proj-1")
-    seedSession("s1", PROJECT_DIR, "proj-1")
-    seedObs({ id: "o1", sessionId: "s1", observations: "some obs", observation_tokens: 0 })
-    expect(collectForDir(PROJECT_DIR)).toBe("")
+  test("skips session with observation_tokens = 0", async () => {
+    await seedProject(PROJECT_DIR, "proj-1")
+    await seedSession("s1", PROJECT_DIR, "proj-1")
+    await seedObs({ id: "o1", sessionId: "s1", observations: "some obs", observation_tokens: 0 })
+    expect(await collectForDir(PROJECT_DIR)).toBe("")
   })
 
-  test("skips session with observation_tokens = 999", () => {
-    seedProject(PROJECT_DIR, "proj-2")
-    seedSession("s2", PROJECT_DIR, "proj-2")
-    seedObs({ id: "o2", sessionId: "s2", observations: "obs", observation_tokens: 999 })
-    expect(collectForDir(PROJECT_DIR)).toBe("")
+  test("skips session with observation_tokens = 999", async () => {
+    await seedProject(PROJECT_DIR, "proj-2")
+    await seedSession("s2", PROJECT_DIR, "proj-2")
+    await seedObs({ id: "o2", sessionId: "s2", observations: "obs", observation_tokens: 999 })
+    expect(await collectForDir(PROJECT_DIR)).toBe("")
   })
 
-  test("includes session with observation_tokens = 1000", () => {
-    seedProject(PROJECT_DIR, "proj-3")
-    seedSession("s3", PROJECT_DIR, "proj-3")
-    seedObs({ id: "o3", sessionId: "s3", observations: "fact A", observation_tokens: 1000 })
-    expect(collectForDir(PROJECT_DIR)).toContain("fact A")
+  test("includes session with observation_tokens = 1000", async () => {
+    await seedProject(PROJECT_DIR, "proj-3")
+    await seedSession("s3", PROJECT_DIR, "proj-3")
+    await seedObs({ id: "o3", sessionId: "s3", observations: "fact A", observation_tokens: 1000 })
+    expect(await collectForDir(PROJECT_DIR)).toContain("fact A")
   })
 
-  test("includes session with observation_tokens = 50000", () => {
-    seedProject(PROJECT_DIR, "proj-4")
-    seedSession("s4", PROJECT_DIR, "proj-4")
-    seedObs({ id: "o4", sessionId: "s4", observations: "deep insight", observation_tokens: 50_000 })
-    expect(collectForDir(PROJECT_DIR)).toContain("deep insight")
+  test("includes session with observation_tokens = 50000", async () => {
+    await seedProject(PROJECT_DIR, "proj-4")
+    await seedSession("s4", PROJECT_DIR, "proj-4")
+    await seedObs({ id: "o4", sessionId: "s4", observations: "deep insight", observation_tokens: 50_000 })
+    expect(await collectForDir(PROJECT_DIR)).toContain("deep insight")
   })
 })
 
@@ -215,32 +220,32 @@ describe("DC-2: uses reflections when present", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("reflections block is included when non-null", () => {
-    seedProject(PROJECT_DIR, "proj-r1")
-    seedSession("sr1", PROJECT_DIR, "proj-r1")
-    seedObs({
+  test("reflections block is included when non-null", async () => {
+    await seedProject(PROJECT_DIR, "proj-r1")
+    await seedSession("sr1", PROJECT_DIR, "proj-r1")
+    await seedObs({
       id: "or1",
       sessionId: "sr1",
       observations: "raw obs",
       reflections: "compressed ref",
       observation_tokens: 5000,
     })
-    const result = collectForDir(PROJECT_DIR)
+    const result = await collectForDir(PROJECT_DIR)
     expect(result).toContain("<reflections>")
     expect(result).toContain("compressed ref")
   })
 
-  test("observations block is NOT included when reflections is present", () => {
-    seedProject(PROJECT_DIR, "proj-r2")
-    seedSession("sr2", PROJECT_DIR, "proj-r2")
-    seedObs({
+  test("observations block is NOT included when reflections is present", async () => {
+    await seedProject(PROJECT_DIR, "proj-r2")
+    await seedSession("sr2", PROJECT_DIR, "proj-r2")
+    await seedObs({
       id: "or2",
       sessionId: "sr2",
       observations: "raw obs",
       reflections: "compressed ref",
       observation_tokens: 5000,
     })
-    const result = collectForDir(PROJECT_DIR)
+    const result = await collectForDir(PROJECT_DIR)
     expect(result).not.toContain("<observations>")
     expect(result).not.toContain("raw obs")
   })
@@ -252,11 +257,17 @@ describe("DC-3: falls back to observations when reflections is null", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("observations block used when reflections is null", () => {
-    seedProject(PROJECT_DIR, "proj-f1")
-    seedSession("sf1", PROJECT_DIR, "proj-f1")
-    seedObs({ id: "of1", sessionId: "sf1", observations: "raw fact", reflections: null, observation_tokens: 2000 })
-    const result = collectForDir(PROJECT_DIR)
+  test("observations block used when reflections is null", async () => {
+    await seedProject(PROJECT_DIR, "proj-f1")
+    await seedSession("sf1", PROJECT_DIR, "proj-f1")
+    await seedObs({
+      id: "of1",
+      sessionId: "sf1",
+      observations: "raw fact",
+      reflections: null,
+      observation_tokens: 2000,
+    })
+    const result = await collectForDir(PROJECT_DIR)
     expect(result).toContain("<observations>")
     expect(result).toContain("raw fact")
   })
@@ -268,28 +279,28 @@ describe("DC-4: current_task is included when present", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("current_task block prepended before observations", () => {
-    seedProject(PROJECT_DIR, "proj-t1")
-    seedSession("st1", PROJECT_DIR, "proj-t1")
-    seedObs({
+  test("current_task block prepended before observations", async () => {
+    await seedProject(PROJECT_DIR, "proj-t1")
+    await seedSession("st1", PROJECT_DIR, "proj-t1")
+    await seedObs({
       id: "ot1",
       sessionId: "st1",
       observations: "obs content",
       current_task: "working on auth system",
       observation_tokens: 3000,
     })
-    const result = collectForDir(PROJECT_DIR)
+    const result = await collectForDir(PROJECT_DIR)
     expect(result).toContain("<current-task>")
     expect(result).toContain("working on auth system")
     // current_task appears before observations
     expect(result.indexOf("<current-task>")).toBeLessThan(result.indexOf("<observations>"))
   })
 
-  test("no current_task block when current_task is null", () => {
-    seedProject(PROJECT_DIR, "proj-t2")
-    seedSession("st2", PROJECT_DIR, "proj-t2")
-    seedObs({ id: "ot2", sessionId: "st2", observations: "obs", current_task: null, observation_tokens: 1500 })
-    expect(collectForDir(PROJECT_DIR)).not.toContain("<current-task>")
+  test("no current_task block when current_task is null", async () => {
+    await seedProject(PROJECT_DIR, "proj-t2")
+    await seedSession("st2", PROJECT_DIR, "proj-t2")
+    await seedObs({ id: "ot2", sessionId: "st2", observations: "obs", current_task: null, observation_tokens: 1500 })
+    expect(await collectForDir(PROJECT_DIR)).not.toContain("<current-task>")
   })
 })
 
@@ -299,23 +310,23 @@ describe("DC-5: multiple sessions are separated by ---", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("two valid sessions joined with ---", () => {
-    seedProject(PROJECT_DIR, "proj-m1")
-    seedSession("sm1", PROJECT_DIR, "proj-m1")
-    seedSession("sm2", PROJECT_DIR, "proj-m1")
-    seedObs({ id: "om1", sessionId: "sm1", observations: "obs-A", observation_tokens: 1000 })
-    seedObs({ id: "om2", sessionId: "sm2", observations: "obs-B", observation_tokens: 1000 })
-    const result = collectForDir(PROJECT_DIR)
+  test("two valid sessions joined with ---", async () => {
+    await seedProject(PROJECT_DIR, "proj-m1")
+    await seedSession("sm1", PROJECT_DIR, "proj-m1")
+    await seedSession("sm2", PROJECT_DIR, "proj-m1")
+    await seedObs({ id: "om1", sessionId: "sm1", observations: "obs-A", observation_tokens: 1000 })
+    await seedObs({ id: "om2", sessionId: "sm2", observations: "obs-B", observation_tokens: 1000 })
+    const result = await collectForDir(PROJECT_DIR)
     expect(result).toContain("obs-A")
     expect(result).toContain("obs-B")
     expect(result).toContain("---")
   })
 
-  test("single valid session has no separator", () => {
-    seedProject(PROJECT_DIR, "proj-m2")
-    seedSession("sm3", PROJECT_DIR, "proj-m2")
-    seedObs({ id: "om3", sessionId: "sm3", observations: "solo obs", observation_tokens: 1000 })
-    expect(collectForDir(PROJECT_DIR)).not.toContain("---")
+  test("single valid session has no separator", async () => {
+    await seedProject(PROJECT_DIR, "proj-m2")
+    await seedSession("sm3", PROJECT_DIR, "proj-m2")
+    await seedObs({ id: "om3", sessionId: "sm3", observations: "solo obs", observation_tokens: 1000 })
+    expect(await collectForDir(PROJECT_DIR)).not.toContain("---")
   })
 })
 
@@ -325,22 +336,22 @@ describe("DC-6: returns empty string for a different project directory", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("session in another directory is not returned", () => {
-    seedProject(PROJECT2_DIR, "proj-x1")
-    seedSession("sx1", PROJECT2_DIR, "proj-x1")
-    seedObs({ id: "ox1", sessionId: "sx1", observations: "other project obs", observation_tokens: 5000 })
+  test("session in another directory is not returned", async () => {
+    await seedProject(PROJECT2_DIR, "proj-x1")
+    await seedSession("sx1", PROJECT2_DIR, "proj-x1")
+    await seedObs({ id: "ox1", sessionId: "sx1", observations: "other project obs", observation_tokens: 5000 })
     // Query for PROJECT_DIR — should find nothing
-    expect(collectForDir(PROJECT_DIR)).toBe("")
+    expect(await collectForDir(PROJECT_DIR)).toBe("")
   })
 
-  test("only sessions matching the queried directory are returned", () => {
-    seedProject(PROJECT_DIR, "proj-x2")
-    seedProject(PROJECT2_DIR, "proj-x3")
-    seedSession("sx2", PROJECT_DIR, "proj-x2")
-    seedSession("sx3", PROJECT2_DIR, "proj-x3")
-    seedObs({ id: "ox2", sessionId: "sx2", observations: "my project", observation_tokens: 2000 })
-    seedObs({ id: "ox3", sessionId: "sx3", observations: "other project", observation_tokens: 2000 })
-    const result = collectForDir(PROJECT_DIR)
+  test("only sessions matching the queried directory are returned", async () => {
+    await seedProject(PROJECT_DIR, "proj-x2")
+    await seedProject(PROJECT2_DIR, "proj-x3")
+    await seedSession("sx2", PROJECT_DIR, "proj-x2")
+    await seedSession("sx3", PROJECT2_DIR, "proj-x3")
+    await seedObs({ id: "ox2", sessionId: "sx2", observations: "my project", observation_tokens: 2000 })
+    await seedObs({ id: "ox3", sessionId: "sx3", observations: "other project", observation_tokens: 2000 })
+    const result = await collectForDir(PROJECT_DIR)
     expect(result).toContain("my project")
     expect(result).not.toContain("other project")
   })
@@ -349,14 +360,14 @@ describe("DC-6: returns empty string for a different project directory", () => {
 // ─── DC-7: DB error resilience ────────────────────────────────────────────────
 
 describe("DC-7: returns empty string on DB error", () => {
-  test("returns '' when DB is not initialized (no setup called)", () => {
+  test("returns '' when DB is not initialized (no setup called)", async () => {
     // DB not open — collectForDir should catch and return ""
     // We test the catch path via the inline mirror which wraps in try/catch
     Database.Client.reset()
     delete process.env["OPENCODE_DB"]
     // The function catches all errors and returns ""
     // In an uninitialized state it may throw internally — verify it doesn't propagate
-    expect(() => collectForDir("/nonexistent")).not.toThrow()
+    await expect(collectForDir("/nonexistent")).resolves.toBe("")
   })
 })
 
@@ -366,11 +377,11 @@ describe("DC-8: skips rows where both observations and reflections are null", ()
   beforeEach(setup)
   afterEach(teardown)
 
-  test("row with null observations and null reflections produces no output", () => {
-    seedProject(PROJECT_DIR, "proj-n1")
-    seedSession("sn1", PROJECT_DIR, "proj-n1")
-    seedObs({ id: "on1", sessionId: "sn1", observations: null, reflections: null, observation_tokens: 5000 })
-    expect(collectForDir(PROJECT_DIR)).toBe("")
+  test("row with null observations and null reflections produces no output", async () => {
+    await seedProject(PROJECT_DIR, "proj-n1")
+    await seedSession("sn1", PROJECT_DIR, "proj-n1")
+    await seedObs({ id: "on1", sessionId: "sn1", observations: null, reflections: null, observation_tokens: 5000 })
+    expect(await collectForDir(PROJECT_DIR)).toBe("")
   })
 })
 

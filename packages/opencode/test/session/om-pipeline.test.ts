@@ -327,7 +327,7 @@ describe("OM Pipeline — lifecycle", () => {
           yield* sendTurn(prompt, sid, `turn ${i}`)
         }
 
-        const rec = getOM(sid)
+        const rec = yield* Effect.promise(() => getOM(sid))
         expect(rec).not.toBeNull()
         expect(rec?.generation_count ?? 0).toBeGreaterThan(0)
         expect(rec?.observations).not.toBeNull()
@@ -351,7 +351,7 @@ describe("OM Pipeline — lifecycle", () => {
           yield* sendTurn(prompt, sid, `turn ${i + 1}`)
         }
 
-        const rec = getOM(sid)
+        const rec = yield* Effect.promise(() => getOM(sid))
         expect(rec?.observation_tokens ?? 0).toBeGreaterThan(0)
       }),
       { git: true, config: makeConfig },
@@ -373,7 +373,7 @@ describe("OM Pipeline — lifecycle", () => {
           yield* sendTurn(prompt, sid, `turn ${i + 1}`)
         }
 
-        const rec = getOM(sid)
+        const rec = yield* Effect.promise(() => getOM(sid))
         expect(rec?.last_observed_at ?? 0).toBeGreaterThan(0)
       }),
       { git: true, config: makeConfig },
@@ -395,7 +395,7 @@ describe("OM Pipeline — lifecycle", () => {
           yield* sendTurn(prompt, sid, `turn ${i + 1}`)
         }
 
-        const rec = getOM(sid)
+        const rec = yield* Effect.promise(() => getOM(sid))
         // MOCK_OBS includes <current-task>working on topic-N</current-task>
         expect(rec?.current_task).toBeTruthy()
       }),
@@ -420,7 +420,7 @@ describe("OM Pipeline — lifecycle", () => {
           yield* sendTurn(prompt, sid, `TURN_MARKER_${i + 1}`)
         }
 
-        const rec = getOM(sid)
+        const rec = yield* Effect.promise(() => getOM(sid))
         expect(rec?.last_observed_at ?? 0).toBeGreaterThan(0)
 
         // Reset hits so we only capture the next turn
@@ -463,7 +463,7 @@ describe("OM Pipeline — lifecycle", () => {
           yield* sendTurn(prompt, sid, `turn ${i + 1}: question about topic-${i}`)
         }
 
-        const rec = getOM(sid)
+        const rec = yield* Effect.promise(() => getOM(sid))
         expect(rec?.generation_count ?? 0).toBeGreaterThanOrEqual(2)
       }),
       { git: true, config: makeConfig },
@@ -504,8 +504,8 @@ describe("OM Pipeline — 20-turn session", () => {
             yield* queueMain(llm)
             yield* sendTurn(prompt, sid, `turn ${i + 1}: question about topic-${i}`)
 
-            const rec = getOM(sid)
-            const bufs = getBuffers(sid)
+            const rec = yield* Effect.promise(() => getOM(sid))
+            const bufs = yield* Effect.promise(() => getBuffers(sid))
             snapshots.push({
               turn: i + 1,
               genCount: rec?.generation_count ?? 0,
@@ -520,7 +520,7 @@ describe("OM Pipeline — 20-turn session", () => {
           // Give any trailing background work time to settle
           yield* Effect.promise(() => new Promise<void>((r) => setTimeout(r, 500)))
 
-          const final = getOM(sid)
+          const final = yield* Effect.promise(() => getOM(sid))
           const last = snapshots.at(-1)!
 
           // ── Milestone 1: Observer fired ──────────────────────────────────────

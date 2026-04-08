@@ -32,18 +32,18 @@ async function setupTestDb() {
   testDbPath = path.join(os.tmpdir(), `memory-test-${Math.random().toString(36).slice(2)}.db`)
   // Close any existing connection first
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   // Set the DB path via env BEFORE triggering the lazy Client init
   process.env["OPENCODE_DB"] = testDbPath
   // Force init with new path — this runs all migrations
-  Database.Client()
+  await Database.Client()
 }
 
 async function teardownTestDb() {
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   await rm(testDbPath, { force: true }).catch(() => undefined)
@@ -62,12 +62,12 @@ describe("SC-10: Fresh DB migration", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("runs without error and creates all memory tables", () => {
-    const tables = Database.use((db) =>
-      db.all<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'memory_%' ORDER BY name",
-      ),
-    ).map((r) => r.name)
+  test("runs without error and creates all memory tables", async () => {
+    const db = await Database.Client()
+    const res = await db.$client.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'memory_%' ORDER BY name",
+    )
+    const tables = res.rows.map((row: Record<string, unknown>) => String(row.name))
 
     expect(tables).toContain("memory_working")
     expect(tables).toContain("memory_artifacts")
@@ -81,35 +81,35 @@ describe("SC-2: Working memory persists", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("write + read round-trip for project scope", () => {
-    WorkingMemory.set(projectScope, "project_state", "We are building feature X")
-    const records = WorkingMemory.get(projectScope, "project_state")
+  test("write + read round-trip for project scope", async () => {
+    await WorkingMemory.set(projectScope, "project_state", "We are building feature X")
+    const records = await WorkingMemory.get(projectScope, "project_state")
     expect(records).toHaveLength(1)
     expect(records[0].value).toBe("We are building feature X")
     expect(records[0].scope_type).toBe("project")
     expect(records[0].key).toBe("project_state")
   })
 
-  test("update increments version", () => {
-    WorkingMemory.set(projectScope, "goals", "Initial goal")
-    WorkingMemory.set(projectScope, "goals", "Updated goal")
-    const records = WorkingMemory.get(projectScope, "goals")
+  test("update increments version", async () => {
+    await WorkingMemory.set(projectScope, "goals", "Initial goal")
+    await WorkingMemory.set(projectScope, "goals", "Updated goal")
+    const records = await WorkingMemory.get(projectScope, "goals")
     expect(records).toHaveLength(1)
     expect(records[0].value).toBe("Updated goal")
     expect(records[0].version).toBe(2)
   })
 
-  test("write + read round-trip for user scope", () => {
-    WorkingMemory.set(userScope, "preferences", "I prefer TypeScript strict mode")
-    const records = WorkingMemory.get(userScope, "preferences")
+  test("write + read round-trip for user scope", async () => {
+    await WorkingMemory.set(userScope, "preferences", "I prefer TypeScript strict mode")
+    const records = await WorkingMemory.get(userScope, "preferences")
     expect(records).toHaveLength(1)
     expect(records[0].value).toBe("I prefer TypeScript strict mode")
     expect(records[0].scope_type).toBe("user")
   })
 
-  test("write + read for thread scope", () => {
-    WorkingMemory.set(threadScope, "current_task", "Implementing memory core")
-    const records = WorkingMemory.get(threadScope, "current_task")
+  test("write + read for thread scope", async () => {
+    await WorkingMemory.set(threadScope, "current_task", "Implementing memory core")
+    const records = await WorkingMemory.get(threadScope, "current_task")
     expect(records).toHaveLength(1)
     expect(records[0].scope_type).toBe("thread")
   })
@@ -119,24 +119,24 @@ describe("SC-6: Scope isolation", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("writes to project scope don't appear in user scope", () => {
-    WorkingMemory.set(projectScope, "key1", "project value")
-    const userRecords = WorkingMemory.get(userScope, "key1")
+  test("writes to project scope don't appear in user scope", async () => {
+    await WorkingMemory.set(projectScope, "key1", "project value")
+    const userRecords = await WorkingMemory.get(userScope, "key1")
     expect(userRecords).toHaveLength(0)
   })
 
-  test("writes to thread scope don't appear in project scope", () => {
-    WorkingMemory.set(threadScope, "notes", "thread note")
-    const projectRecords = WorkingMemory.get(projectScope, "notes")
+  test("writes to thread scope don't appear in project scope", async () => {
+    await WorkingMemory.set(threadScope, "notes", "thread note")
+    const projectRecords = await WorkingMemory.get(projectScope, "notes")
     expect(projectRecords).toHaveLength(0)
   })
 
-  test("getForScopes returns records from all scopes in order", () => {
-    WorkingMemory.set(projectScope, "shared_key", "project value")
-    WorkingMemory.set(userScope, "user_key", "user value")
-    WorkingMemory.set(threadScope, "thread_key", "thread value")
+  test("getForScopes returns records from all scopes in order", async () => {
+    await WorkingMemory.set(projectScope, "shared_key", "project value")
+    await WorkingMemory.set(userScope, "user_key", "user value")
+    await WorkingMemory.set(threadScope, "thread_key", "thread value")
 
-    const records = WorkingMemory.getForScopes(threadScope, [projectScope, userScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [projectScope, userScope])
     expect(records.length).toBeGreaterThanOrEqual(3)
     // Thread key should appear
     expect(records.some((r) => r.key === "thread_key" && r.scope_type === "thread")).toBe(true)
@@ -281,7 +281,7 @@ describe("SC-7: Topic-key dedupe", () => {
     // Same ID (dedupe)
     expect(id1).toBe(id2)
 
-    const artifact = fts.get(id1)
+    const artifact = await fts.get(id1)
     expect(artifact!.duplicate_count).toBe(2)
   })
 })
@@ -307,7 +307,8 @@ describe("SC-8: format() respects token budget", () => {
       deleted_at: null,
     })
 
-    const artifacts = [fts.get(id)!]
+    const got = await fts.get(id)
+    const artifacts = got ? [got] : []
     const formatted = formatArtifacts(artifacts, 100) // 100 token budget
     // Content should be truncated — budget caps total output
     if (formatted) {
@@ -320,14 +321,14 @@ describe("SC-4: Fork context durability", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("fork context persists and is retrievable", () => {
-    Handoff.writeFork({
+  test("fork context persists and is retrievable", async () => {
+    await Handoff.writeFork({
       sessionId: "child-session-001",
       parentSessionId: "parent-session-001",
       context: JSON.stringify({ task: "Implement auth", tools: ["bash", "edit"] }),
     })
 
-    const fork = Handoff.getFork("child-session-001")
+    const fork = await Handoff.getFork("child-session-001")
     expect(fork).toBeDefined()
     expect(fork!.session_id).toBe("child-session-001")
     expect(fork!.parent_session_id).toBe("parent-session-001")
@@ -336,21 +337,21 @@ describe("SC-4: Fork context durability", () => {
     expect(ctx.task).toBe("Implement auth")
   })
 
-  test("getFork returns undefined for session with no fork", () => {
-    const fork = Handoff.getFork("nonexistent-session")
+  test("getFork returns undefined for session with no fork", async () => {
+    const fork = await Handoff.getFork("nonexistent-session")
     expect(fork).toBeUndefined()
   })
 
-  test("duplicate fork write (same sessionId) does upsert, not error", () => {
-    Handoff.writeFork({ sessionId: "child-001", parentSessionId: "parent-001", context: "v1" })
-    Handoff.writeFork({ sessionId: "child-001", parentSessionId: "parent-001", context: "v2" })
+  test("duplicate fork write (same sessionId) does upsert, not error", async () => {
+    await Handoff.writeFork({ sessionId: "child-001", parentSessionId: "parent-001", context: "v1" })
+    await Handoff.writeFork({ sessionId: "child-001", parentSessionId: "parent-001", context: "v2" })
 
-    const fork = Handoff.getFork("child-001")
+    const fork = await Handoff.getFork("child-001")
     expect(fork!.context).toBe("v2")
   })
 
-  test("agent handoff persists with WM snapshot", () => {
-    const id = Handoff.writeHandoff({
+  test("agent handoff persists with WM snapshot", async () => {
+    const id = await Handoff.writeHandoff({
       parent_session_id: "parent-001",
       child_session_id: "child-002",
       context: "Implement JWT authentication",
@@ -361,15 +362,15 @@ describe("SC-4: Fork context durability", () => {
 
     expect(id).toBeTruthy()
 
-    const handoff = Handoff.getHandoff("child-002")
+    const handoff = await Handoff.getHandoff("child-002")
     expect(handoff).toBeDefined()
     expect(handoff!.child_session_id).toBe("child-002")
     expect(handoff!.parent_session_id).toBe("parent-001")
     expect(JSON.parse(handoff!.working_memory_snap!).goal).toBe("implement JWT")
   })
 
-  test("getHandoff returns undefined for session with no handoff", () => {
-    const handoff = Handoff.getHandoff("nonexistent-child")
+  test("getHandoff returns undefined for session with no handoff", async () => {
+    const handoff = await Handoff.getHandoff("nonexistent-child")
     expect(handoff).toBeUndefined()
   })
 })
@@ -383,8 +384,8 @@ describe("SC-9: No external process required", () => {
     delete process.env["OPENCODE_MEMORY_USE_ENGRAM"]
 
     // Working memory
-    expect(() => WorkingMemory.set(projectScope, "key", "value")).not.toThrow()
-    expect(() => WorkingMemory.get(projectScope)).not.toThrow()
+    await expect(WorkingMemory.set(projectScope, "key", "value")).resolves.toBeUndefined()
+    await expect(WorkingMemory.get(projectScope)).resolves.toBeDefined()
 
     // Semantic recall via FTS5Backend
     const fts = new FTS5Backend()
@@ -406,8 +407,8 @@ describe("SC-9: No external process required", () => {
     await expect(fts.search("daemon", [projectScope], 5)).resolves.toBeDefined()
 
     // Handoff
-    expect(() => Handoff.writeFork({ sessionId: "s1", parentSessionId: "s0", context: "ctx" })).not.toThrow()
-    expect(() => Handoff.getFork("s1")).not.toThrow()
+    await expect(Handoff.writeFork({ sessionId: "s1", parentSessionId: "s0", context: "ctx" })).resolves.toBeUndefined()
+    await expect(Handoff.getFork("s1")).resolves.toBeDefined()
   })
 })
 
@@ -430,8 +431,8 @@ describe("SC-1: buildContext() composes all layers", () => {
   })
 
   test("returns working memory when WM record exists", async () => {
-    WorkingMemory.set(projectScope, "project_state", "Building memory core")
-    WorkingMemory.set(userScope, "preferences", "Use TypeScript strict mode")
+    await WorkingMemory.set(projectScope, "project_state", "Building memory core")
+    await WorkingMemory.set(userScope, "preferences", "Use TypeScript strict mode")
 
     const ctx = await Memory.buildContext({
       scope: threadScope,
@@ -471,7 +472,7 @@ describe("SC-1: buildContext() composes all layers", () => {
   test("token budgets are respected", async () => {
     // Fill WM with a lot of content
     for (let i = 0; i < 20; i++) {
-      WorkingMemory.set(projectScope, `key_${i}`, "A".repeat(500))
+      await WorkingMemory.set(projectScope, `key_${i}`, "A".repeat(500))
     }
 
     const ctx = await Memory.buildContext({
@@ -491,19 +492,23 @@ describe("Working memory: global_pattern scope strips private tags", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("private tags stripped from global_pattern writes", () => {
-    WorkingMemory.set(globalScope, "pattern", "Use <private>my-secret-key-123</private> for TypeScript strict patterns")
+  test("private tags stripped from global_pattern writes", async () => {
+    await WorkingMemory.set(
+      globalScope,
+      "pattern",
+      "Use <private>my-secret-key-123</private> for TypeScript strict patterns",
+    )
 
-    const records = WorkingMemory.get(globalScope, "pattern")
+    const records = await WorkingMemory.get(globalScope, "pattern")
     expect(records).toHaveLength(1)
     expect(records[0].value).not.toContain("my-secret-key-123")
     expect(records[0].value).not.toContain("<private>")
     expect(records[0].value).toContain("TypeScript strict patterns")
   })
 
-  test("private tags preserved in non-global scopes", () => {
-    WorkingMemory.set(projectScope, "secrets", "API key: <private>sk-abc123</private>")
-    const records = WorkingMemory.get(projectScope, "secrets")
+  test("private tags preserved in non-global scopes", async () => {
+    await WorkingMemory.set(projectScope, "secrets", "API key: <private>sk-abc123</private>")
+    const records = await WorkingMemory.get(projectScope, "secrets")
     expect(records[0].value).toContain("<private>sk-abc123</private>")
   })
 })
@@ -512,16 +517,16 @@ describe("Working memory: clearScope", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("clearScope removes all records for a scope", () => {
-    WorkingMemory.set(projectScope, "key1", "v1")
-    WorkingMemory.set(projectScope, "key2", "v2")
-    WorkingMemory.set(userScope, "userKey", "userVal")
+  test("clearScope removes all records for a scope", async () => {
+    await WorkingMemory.set(projectScope, "key1", "v1")
+    await WorkingMemory.set(projectScope, "key2", "v2")
+    await WorkingMemory.set(userScope, "userKey", "userVal")
 
-    WorkingMemory.clearScope(projectScope)
+    await WorkingMemory.clearScope(projectScope)
 
-    expect(WorkingMemory.get(projectScope)).toHaveLength(0)
+    expect(await WorkingMemory.get(projectScope)).toHaveLength(0)
     // User scope unaffected
-    expect(WorkingMemory.get(userScope)).toHaveLength(1)
+    expect(await WorkingMemory.get(userScope)).toHaveLength(1)
   })
 })
 
@@ -529,9 +534,9 @@ describe("Memory.setWorkingMemory / getWorkingMemory via provider", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("provider delegates to WorkingMemory service correctly", () => {
-    Memory.setWorkingMemory(projectScope, "goals", "Build memory core V1")
-    const records = Memory.getWorkingMemory(projectScope, "goals")
+  test("provider delegates to WorkingMemory service correctly", async () => {
+    await Memory.setWorkingMemory(projectScope, "goals", "Build memory core V1")
+    const records = await Memory.getWorkingMemory(projectScope, "goals")
     expect(records).toHaveLength(1)
     expect(records[0].value).toBe("Build memory core V1")
   })
@@ -541,13 +546,13 @@ describe("Memory.writeForkContext / getForkContext via provider", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("provider fork context round-trip", () => {
-    Memory.writeForkContext({
+  test("provider fork context round-trip", async () => {
+    await Memory.writeForkContext({
       session_id: "child-999",
       parent_session_id: "parent-999",
       context: "context data",
     })
-    const fork = Memory.getForkContext("child-999")
+    const fork = await Memory.getForkContext("child-999")
     expect(fork).toBeDefined()
     expect(fork!.context).toBe("context data")
   })

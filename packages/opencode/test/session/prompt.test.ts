@@ -550,10 +550,10 @@ describe("session.prompt.reflector-threshold", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           }
-          OM.upsert(rec)
+          await OM.upsert(rec)
           // Below threshold → Reflector.run must return without writing reflections
           await Reflector.run(s.id as SessionID)
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           // reflections must remain null — run short-circuited
           expect(got!.reflections).toBeNull()
         } finally {
@@ -584,10 +584,10 @@ describe("session.prompt.reflector-threshold", () => {
             time_created: Date.now(),
             time_updated: Date.now(),
           }
-          OM.upsert(rec)
+          await OM.upsert(rec)
           // Exactly at threshold (not >) → no-op
           await Reflector.run(s.id as SessionID)
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           expect(got!.reflections).toBeNull()
         } finally {
           await Session.remove(s.id)

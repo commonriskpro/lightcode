@@ -36,16 +36,16 @@ let testDbPath: string
 async function setupTestDb() {
   testDbPath = path.join(os.tmpdir(), `memory-v2-test-${Math.random().toString(36).slice(2)}.db`)
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   process.env["OPENCODE_DB"] = testDbPath
-  Database.Client()
+  await Database.Client()
 }
 
 async function teardownTestDb() {
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   await rm(testDbPath, { force: true }).catch(() => undefined)
@@ -111,11 +111,11 @@ describe("V2-1: OM atomicity — seal only advances after write succeeds", () =>
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("addBufferSafe persists buffer and observed ids together", () => {
+  test("addBufferSafe persists buffer and observed ids together", async () => {
     const sid = SessionID.make("v2-atomic-001")
-    seedSession(sid)
+    await seedSession(sid)
 
-    OM.addBufferSafe(
+    await OM.addBufferSafe(
       {
         id: "buf-v2-001",
         session_id: sid,
@@ -133,8 +133,8 @@ describe("V2-1: OM atomicity — seal only advances after write succeeds", () =>
       ["m1", "m2"],
     )
 
-    expect(OM.buffers(sid)).toHaveLength(1)
-    expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2"]))
+    expect(await OM.buffers(sid)).toHaveLength(1)
+    expect((await OM.get(sid))?.observed_message_ids).toBe(JSON.stringify(["m1", "m2"]))
   })
 
   test("OMBuf.seal advances in-memory state independently of DB writes", () => {
@@ -188,8 +188,8 @@ describe("V2-3: Working memory injects into system prompt", () => {
   })
 
   test("Memory.buildContext returns working memory via canonical path (replaces projectWorkingMemory)", async () => {
-    WorkingMemory.set(projectScope, "goals", "Implement memory core V2")
-    WorkingMemory.set(projectScope, "constraints", "No external daemon dependency")
+    await WorkingMemory.set(projectScope, "goals", "Implement memory core V2")
+    await WorkingMemory.set(projectScope, "constraints", "No external daemon dependency")
 
     const ctx = await Memory.buildContext({
       scope: { type: "thread", id: "test-thread" },
@@ -218,10 +218,10 @@ describe("V2-4: update_working_memory tool", () => {
   beforeEach(setupTestDb)
   afterEach(teardownTestDb)
 
-  test("tool stores working memory correctly via Memory.setWorkingMemory", () => {
+  test("tool stores working memory correctly via Memory.setWorkingMemory", async () => {
     // Test the underlying service call directly (tool execute delegates to it)
-    Memory.setWorkingMemory({ type: "project", id: "v2-tool-project" }, "architecture", "Event-sourced with CQRS")
-    const records = Memory.getWorkingMemory({ type: "project", id: "v2-tool-project" }, "architecture")
+    await Memory.setWorkingMemory({ type: "project", id: "v2-tool-project" }, "architecture", "Event-sourced with CQRS")
+    const records = await Memory.getWorkingMemory({ type: "project", id: "v2-tool-project" }, "architecture")
 
     expect(records).toHaveLength(1)
     expect(records[0].value).toBe("Event-sourced with CQRS")
@@ -286,7 +286,7 @@ describe("V2-5: FTS5Backend.recent() returns latest artifacts", () => {
       deleted_at: null,
     })
 
-    const recent = fts.recent([projectScope], 5)
+    const recent = await fts.recent([projectScope], 5)
     expect(recent.length).toBe(2)
     // Most recently updated first
     expect(recent[0].title).toBe("New artifact")
@@ -324,7 +324,7 @@ describe("V2-5: FTS5Backend.recent() returns latest artifacts", () => {
       deleted_at: null,
     })
 
-    const recent = fts.recent([projectScope], 10)
+    const recent = await fts.recent([projectScope], 10)
     expect(recent.every((r) => r.scope_type === "project")).toBe(true)
     expect(recent.length).toBe(1)
   })
@@ -371,7 +371,7 @@ describe("V2-6: Dream persistConsolidation writes to memory_artifacts", () => {
     // Should be ONE artifact with revision_count=2
     const scope: ScopeRef = { type: "project", id: "test-project-dedup" }
     const fts = new FTS5Backend()
-    const all = fts.recent([scope], 10)
+    const all = await fts.recent([scope], 10)
     expect(all.length).toBe(1)
     expect(all[0].revision_count).toBe(2)
     expect(all[0].title).toBe("Dream v2")
@@ -414,7 +414,8 @@ describe("V2-F: format() uses 800-char preview", () => {
       deleted_at: null,
     })
 
-    const artifacts = [fts.get(id)!]
+    const got = await fts.get(id)
+    const artifacts = got ? [got] : []
     const formatted = formatArtifacts(artifacts, 5000) // high budget
 
     // Should contain 800 chars of A's (not 300)

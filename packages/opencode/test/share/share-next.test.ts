@@ -170,7 +170,7 @@ describe("ShareNext", () => {
           expect(result.url).toBe("https://legacy-share.example.com/share/abc")
           expect(result.secret).toBe("sec_123")
 
-          const row = share(session.id)
+          const row = yield* Effect.promise(() => share(session.id))
           expect(row?.id).toBe("shr_abc")
           expect(row?.url).toBe("https://legacy-share.example.com/share/abc")
           expect(row?.secret).toBe("sec_123")

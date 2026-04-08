@@ -128,7 +128,7 @@ describe("session.om.reflector retry loop", () => {
           // No model configured in test → should resolve without throwing
           await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
           // reflections must remain null — no model to run
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           expect(got?.reflections).toBeNull()
         } finally {
           await Session.remove(s.id)
@@ -158,7 +158,7 @@ describe("session.om.reflector retry loop", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: null,
@@ -174,7 +174,7 @@ describe("session.om.reflector retry loop", () => {
             time_updated: Date.now(),
           })
           await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           expect(got?.reflections).toBeNull()
         } finally {
           await Session.remove(s.id)
@@ -193,7 +193,7 @@ describe("session.om.reflector retry loop", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 short observation",
@@ -210,7 +210,7 @@ describe("session.om.reflector retry loop", () => {
           })
           await expect(Reflector.run(s.id as SessionID)).resolves.toBeUndefined()
           // reflections must remain null — threshold not reached
-          const got = OM.get(s.id as SessionID)
+          const got = await OM.get(s.id as SessionID)
           expect(got?.reflections).toBeNull()
         } finally {
           await Session.remove(s.id)
@@ -228,7 +228,7 @@ describe("session.om.reflector retry loop", () => {
       fn: async () => {
         const s = await Session.create({})
         try {
-          OM.upsert({
+          await OM.upsert({
             id: s.id as SessionID,
             session_id: s.id as SessionID,
             observations: "🔴 " + "fact ".repeat(60_000),

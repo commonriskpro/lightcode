@@ -29,16 +29,16 @@ let testDbPath: string
 async function setup() {
   testDbPath = path.join(os.tmpdir(), `final-test-${Math.random().toString(36).slice(2)}.db`)
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   process.env["OPENCODE_DB"] = testDbPath
-  Database.Client()
+  await Database.Client()
 }
 
 async function teardown() {
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   await rm(testDbPath, { force: true }).catch(() => undefined)
@@ -104,10 +104,10 @@ describe("F-1: addBufferSafe() merge path", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("addBufferSafe() merges observed ids into existing record", () => {
+  test("addBufferSafe() merges observed ids into existing record", async () => {
     const sid = SessionID.make("final-om-002")
-    seedSession(sid)
-    OM.upsert({
+    await seedSession(sid)
+    await OM.upsert({
       id: SessionID.make("obs-final-002"),
       session_id: sid,
       observations: null,
@@ -123,7 +123,7 @@ describe("F-1: addBufferSafe() merge path", () => {
       time_updated: Date.now(),
     })
 
-    OM.addBufferSafe(
+    await OM.addBufferSafe(
       {
         id: "buf-final-002",
         session_id: sid,
@@ -141,7 +141,7 @@ describe("F-1: addBufferSafe() merge path", () => {
       ["m2", "m3"],
     )
 
-    expect(OM.get(sid)?.observed_message_ids).toBe(JSON.stringify(["m1", "m2", "m3"]))
+    expect((await OM.get(sid))?.observed_message_ids).toBe(JSON.stringify(["m1", "m2", "m3"]))
   })
 })
 
@@ -151,8 +151,8 @@ describe("F-3: Fork context snapshot is enriched", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("Memory.writeForkContext stores enriched JSON", () => {
-    Memory.writeForkContext({
+  test("Memory.writeForkContext stores enriched JSON", async () => {
+    await Memory.writeForkContext({
       session_id: "child-final-001",
       parent_session_id: "parent-final-001",
       context: JSON.stringify({
@@ -168,7 +168,7 @@ describe("F-3: Fork context snapshot is enriched", () => {
       }),
     })
 
-    const fork = Memory.getForkContext("child-final-001")
+    const fork = await Memory.getForkContext("child-final-001")
     expect(fork).toBeDefined()
 
     const ctx = JSON.parse(fork!.context)
@@ -186,8 +186,8 @@ describe("F-4: Memory.writeHandoff() wired for non-fork sessions", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("Memory.writeHandoff() persists to memory_agent_handoffs", () => {
-    const id = Memory.writeHandoff({
+  test("Memory.writeHandoff() persists to memory_agent_handoffs", async () => {
+    const id = await Memory.writeHandoff({
       parent_session_id: "parent-handoff-001",
       child_session_id: "child-handoff-001",
       context: "Implement payment processing module",
@@ -198,7 +198,7 @@ describe("F-4: Memory.writeHandoff() wired for non-fork sessions", () => {
 
     expect(id).toBeTruthy()
 
-    const handoff = Memory.getHandoff("child-handoff-001")
+    const handoff = await Memory.getHandoff("child-handoff-001")
     expect(handoff).toBeDefined()
     expect(handoff!.parent_session_id).toBe("parent-handoff-001")
     expect(handoff!.context).toBe("Implement payment processing module")

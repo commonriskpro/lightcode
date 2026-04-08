@@ -69,10 +69,10 @@ describe("SyncEvent", () => {
   describe("run", () => {
     test(
       "inserts event row",
-      withInstance(() => {
+      withInstance(async () => {
         const { Created } = setup()
         SyncEvent.run(Created, { id: "evt_1", name: "first" })
-        const rows = Database.use((db) => db.select().from(EventTable).all())
+        const rows = await Database.use((db) => db.select().from(EventTable).all())
         expect(rows).toHaveLength(1)
         expect(rows[0].type).toBe("item.created.1")
         expect(rows[0].aggregate_id).toBe("evt_1")
@@ -81,11 +81,11 @@ describe("SyncEvent", () => {
 
     test(
       "increments seq per aggregate",
-      withInstance(() => {
+      withInstance(async () => {
         const { Created } = setup()
         SyncEvent.run(Created, { id: "evt_1", name: "first" })
         SyncEvent.run(Created, { id: "evt_1", name: "second" })
-        const rows = Database.use((db) => db.select().from(EventTable).all())
+        const rows = await Database.use((db) => db.select().from(EventTable).all())
         expect(rows).toHaveLength(2)
         expect(rows[1].seq).toBe(rows[0].seq + 1)
       }),
@@ -93,10 +93,10 @@ describe("SyncEvent", () => {
 
     test(
       "uses custom aggregate field from agg()",
-      withInstance(() => {
+      withInstance(async () => {
         const { Sent } = setup()
         SyncEvent.run(Sent, { item_id: "evt_1", to: "james" })
-        const rows = Database.use((db) => db.select().from(EventTable).all())
+        const rows = await Database.use((db) => db.select().from(EventTable).all())
         expect(rows).toHaveLength(1)
         expect(rows[0].aggregate_id).toBe("evt_1")
       }),
@@ -135,7 +135,7 @@ describe("SyncEvent", () => {
   describe("replay", () => {
     test(
       "inserts event from external payload",
-      withInstance(() => {
+      withInstance(async () => {
         const id = Identifier.descending("message")
         SyncEvent.replay({
           id: "evt_1",
@@ -144,7 +144,7 @@ describe("SyncEvent", () => {
           aggregateID: id,
           data: { id, name: "replayed" },
         })
-        const rows = Database.use((db) => db.select().from(EventTable).all())
+        const rows = await Database.use((db) => db.select().from(EventTable).all())
         expect(rows).toHaveLength(1)
         expect(rows[0].aggregate_id).toBe(id)
       }),

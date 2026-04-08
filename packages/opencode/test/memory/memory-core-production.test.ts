@@ -41,16 +41,16 @@ let testDbPath: string
 async function setup() {
   testDbPath = path.join(os.tmpdir(), `prod-test-${Math.random().toString(36).slice(2)}.db`)
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   process.env["OPENCODE_DB"] = testDbPath
-  Database.Client()
+  await Database.Client()
 }
 
 async function teardown() {
   try {
-    Database.close()
+    await Database.close()
   } catch {}
   Database.Client.reset()
   await rm(testDbPath, { force: true }).catch(() => undefined)
@@ -120,11 +120,11 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test("thread value wins over project when same key (bug fix)", () => {
-    WorkingMemory.set(projectScope, "goals", "Project goals: ship V1")
-    WorkingMemory.set(threadScope, "goals", "Thread goals: fix auth bug")
+  test("thread value wins over project when same key (bug fix)", async () => {
+    await WorkingMemory.set(projectScope, "goals", "Project goals: ship V1")
+    await WorkingMemory.set(threadScope, "goals", "Thread goals: fix auth bug")
 
-    const records = WorkingMemory.getForScopes(threadScope, [projectScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [projectScope])
 
     // Only ONE record for key "goals" — thread wins
     const goalRecords = records.filter((r) => r.key === "goals")
@@ -133,11 +133,11 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(goalRecords[0].scope_type).toBe("thread")
   })
 
-  test("agent value wins over project when same key", () => {
-    WorkingMemory.set(projectScope, "constraints", "No breaking changes")
-    WorkingMemory.set(agentScope, "constraints", "Focus only on auth module")
+  test("agent value wins over project when same key", async () => {
+    await WorkingMemory.set(projectScope, "constraints", "No breaking changes")
+    await WorkingMemory.set(agentScope, "constraints", "Focus only on auth module")
 
-    const records = WorkingMemory.getForScopes(agentScope, [projectScope])
+    const records = await WorkingMemory.getForScopes(agentScope, [projectScope])
 
     const constraintRecords = records.filter((r) => r.key === "constraints")
     expect(constraintRecords.length).toBe(1)
@@ -145,12 +145,12 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(constraintRecords[0].scope_type).toBe("agent")
   })
 
-  test("thread > agent > project precedence chain", () => {
-    WorkingMemory.set(projectScope, "context", "Project context")
-    WorkingMemory.set(agentScope, "context", "Agent context")
-    WorkingMemory.set(threadScope, "context", "Thread context — most specific")
+  test("thread > agent > project precedence chain", async () => {
+    await WorkingMemory.set(projectScope, "context", "Project context")
+    await WorkingMemory.set(agentScope, "context", "Agent context")
+    await WorkingMemory.set(threadScope, "context", "Thread context — most specific")
 
-    const records = WorkingMemory.getForScopes(threadScope, [agentScope, projectScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [agentScope, projectScope])
 
     const contextRecords = records.filter((r) => r.key === "context")
     expect(contextRecords.length).toBe(1)
@@ -158,12 +158,12 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(contextRecords[0].scope_type).toBe("thread")
   })
 
-  test("unique keys from all scopes are all returned", () => {
-    WorkingMemory.set(projectScope, "proj_key", "project value")
-    WorkingMemory.set(agentScope, "agent_key", "agent value")
-    WorkingMemory.set(threadScope, "thread_key", "thread value")
+  test("unique keys from all scopes are all returned", async () => {
+    await WorkingMemory.set(projectScope, "proj_key", "project value")
+    await WorkingMemory.set(agentScope, "agent_key", "agent value")
+    await WorkingMemory.set(threadScope, "thread_key", "thread value")
 
-    const records = WorkingMemory.getForScopes(threadScope, [agentScope, projectScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [agentScope, projectScope])
 
     // All 3 unique keys should be present (no cross-scope collision here)
     const keys = records.map((r) => r.key)
@@ -173,12 +173,12 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(records.length).toBe(3)
   })
 
-  test("user scope below project in precedence", () => {
-    WorkingMemory.set(userScope, "preference", "User pref")
-    WorkingMemory.set(projectScope, "preference", "Project pref overrides user")
+  test("user scope below project in precedence", async () => {
+    await WorkingMemory.set(userScope, "preference", "User pref")
+    await WorkingMemory.set(projectScope, "preference", "Project pref overrides user")
 
     // project is an ancestor before user in the chain
-    const records = WorkingMemory.getForScopes(threadScope, [projectScope, userScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [projectScope, userScope])
 
     const prefRecords = records.filter((r) => r.key === "preference")
     expect(prefRecords.length).toBe(1)
@@ -186,16 +186,16 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(prefRecords[0].scope_type).toBe("project")
   })
 
-  test("old bug: scope_type:key dedup key was wrong — verify fix", () => {
+  test("old bug: scope_type:key dedup key was wrong — verify fix", async () => {
     // This is the regression test for the production bug.
     // Before the fix, dedup key was `"${scope_type}:${key}"` which means
     // project:"goals" and thread:"goals" were treated as different keys → BOTH returned.
     // After fix: dedup key is just `key` → only thread's "goals" returned.
 
-    WorkingMemory.set(projectScope, "goals", "Project goals")
-    WorkingMemory.set(threadScope, "goals", "Thread goals")
+    await WorkingMemory.set(projectScope, "goals", "Project goals")
+    await WorkingMemory.set(threadScope, "goals", "Thread goals")
 
-    const records = WorkingMemory.getForScopes(threadScope, [projectScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [projectScope])
 
     // Correct behavior: exactly 1 record for "goals" (thread wins)
     const goalRecords = records.filter((r) => r.key === "goals")
@@ -204,14 +204,14 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(goalRecords[0].scope_type).toBe("thread")
   })
 
-  test("thread > agent > project > user > global_pattern precedence chain", () => {
-    WorkingMemory.set(globalScope, "mode", "Global mode")
-    WorkingMemory.set(userScope, "mode", "User mode")
-    WorkingMemory.set(projectScope, "mode", "Project mode")
-    WorkingMemory.set(agentScope, "mode", "Agent mode")
-    WorkingMemory.set(threadScope, "mode", "Thread mode")
+  test("thread > agent > project > user > global_pattern precedence chain", async () => {
+    await WorkingMemory.set(globalScope, "mode", "Global mode")
+    await WorkingMemory.set(userScope, "mode", "User mode")
+    await WorkingMemory.set(projectScope, "mode", "Project mode")
+    await WorkingMemory.set(agentScope, "mode", "Agent mode")
+    await WorkingMemory.set(threadScope, "mode", "Thread mode")
 
-    const records = WorkingMemory.getForScopes(threadScope, [agentScope, projectScope, userScope, globalScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [agentScope, projectScope, userScope, globalScope])
     const mode = records.filter((r) => r.key === "mode")
 
     expect(mode).toHaveLength(1)
@@ -219,11 +219,11 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
     expect(mode[0].value).toBe("Thread mode")
   })
 
-  test("fixed precedence does not depend on ancestor order", () => {
-    WorkingMemory.set(userScope, "policy", "User policy")
-    WorkingMemory.set(projectScope, "policy", "Project policy")
+  test("fixed precedence does not depend on ancestor order", async () => {
+    await WorkingMemory.set(userScope, "policy", "User policy")
+    await WorkingMemory.set(projectScope, "policy", "Project policy")
 
-    const records = WorkingMemory.getForScopes(threadScope, [userScope, projectScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [userScope, projectScope])
     const policy = records.filter((r) => r.key === "policy")
 
     expect(policy).toHaveLength(1)
@@ -436,8 +436,8 @@ describe("P-4: Agent scope is operational in UpdateWorkingMemoryTool", () => {
   test("agent scope writes to agent scope_type in working memory", async () => {
     await setup()
     try {
-      WorkingMemory.set(agentScope, "mode", "build agent operational memory")
-      const records = WorkingMemory.get(agentScope, "mode")
+      await WorkingMemory.set(agentScope, "mode", "build agent operational memory")
+      const records = await WorkingMemory.get(agentScope, "mode")
       expect(records).toHaveLength(1)
       expect(records[0].scope_type).toBe("agent")
       expect(records[0].scope_id).toBe("build")
@@ -461,8 +461,8 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   afterEach(teardown)
 
   test("agent working memory is included when passed as ancestor scope", async () => {
-    WorkingMemory.set(agentScope, "agent_goal", "Build the auth module end to end")
-    WorkingMemory.set(projectScope, "proj_goal", "Ship LightCode V1")
+    await WorkingMemory.set(agentScope, "agent_goal", "Build the auth module end to end")
+    await WorkingMemory.set(projectScope, "proj_goal", "Ship LightCode V1")
 
     const ctx = await Memory.buildContext({
       scope: { type: "thread", id: "agent-scope-test" },
@@ -475,11 +475,11 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
     expect(ctx.workingMemory).toContain("Ship LightCode V1")
   })
 
-  test("thread overrides agent when same key (precedence works with agent in chain)", () => {
-    WorkingMemory.set(agentScope, "focus", "Agent focus: refactoring")
-    WorkingMemory.set(threadScope, "focus", "Thread focus: current PR review")
+  test("thread overrides agent when same key (precedence works with agent in chain)", async () => {
+    await WorkingMemory.set(agentScope, "focus", "Agent focus: refactoring")
+    await WorkingMemory.set(threadScope, "focus", "Thread focus: current PR review")
 
-    const records = WorkingMemory.getForScopes(threadScope, [agentScope, projectScope])
+    const records = await WorkingMemory.getForScopes(threadScope, [agentScope, projectScope])
     const focusRecords = records.filter((r) => r.key === "focus")
 
     expect(focusRecords).toHaveLength(1)
@@ -488,8 +488,8 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   })
 
   test("buildContext includes user working memory when user scope is in ancestry", async () => {
-    WorkingMemory.set(projectScope, "proj_pref", "project default")
-    WorkingMemory.set(userScope, "user_pref", "user default")
+    await WorkingMemory.set(projectScope, "proj_pref", "project default")
+    await WorkingMemory.set(userScope, "user_pref", "user default")
 
     const ctx = await Memory.buildContext({
       scope: { type: "thread", id: "user-scope-test" },
@@ -503,7 +503,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
 
   test("buildContext returns block metadata with stable ordering", async () => {
     seedSession()
-    WorkingMemory.set(projectScope, "proj_pref", "project default")
+    await WorkingMemory.set(projectScope, "proj_pref", "project default")
     await Memory.indexArtifact({
       scope_type: "project",
       scope_id: projectScope.id,
@@ -517,7 +517,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
       last_seen_at: null,
       deleted_at: null,
     })
-    OM.upsert({
+    await OM.upsert({
       id: SessionID.make("obs-prod-blocks"),
       session_id: SessionID.make(threadScope.id),
       observations: "Stable observations body",
@@ -604,7 +604,7 @@ describe("P-5C: update_user_memory is explicit and controlled", () => {
     await def.execute({ key: "workflow", value: "Prefer concise answers" }, ctx)
 
     expect(asked).toBe(1)
-    expect(WorkingMemory.get(userScope, "workflow")[0].value).toBe("Prefer concise answers")
+    expect((await WorkingMemory.get(userScope, "workflow"))[0].value).toBe("Prefer concise answers")
   })
 
   test("tool does not write user memory when approval rejects", async () => {
@@ -622,7 +622,7 @@ describe("P-5C: update_user_memory is explicit and controlled", () => {
     }
 
     await expect(def.execute({ key: "defaults", value: "dark mode" }, ctx)).rejects.toThrow("rejected")
-    expect(WorkingMemory.get(userScope, "defaults")).toHaveLength(0)
+    expect(await WorkingMemory.get(userScope, "defaults")).toHaveLength(0)
   })
 })
 
@@ -633,7 +633,7 @@ describe("P-6B: Working memory guidance is present in provider hot path output",
   afterEach(teardown)
 
   test("Memory.buildContext workingMemory includes update_working_memory guidance", async () => {
-    WorkingMemory.set(projectScope, "goals", "Ship production memory")
+    await WorkingMemory.set(projectScope, "goals", "Ship production memory")
 
     const ctx = await Memory.buildContext({
       scope: { type: "thread", id: "wm-guidance-test" },
