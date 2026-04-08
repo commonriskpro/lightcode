@@ -1018,8 +1018,8 @@ export namespace ProviderTransform {
     const npm = model.api.npm
     const id = model.api.id
     // Anthropic native deferLoading — supported for both direct SDK and Vertex gateway.
-    // Both preserve the full AI SDK serialization pipeline so defer_loading is
-    // correctly encoded as a providerOptions field (not a raw body field).
+    // The opencode-anthropic-login-via-cli plugin re-serializes the body but preserves
+    // all tool fields via spread (...tool), so defer_loading survives correctly.
     if (npm === "@ai-sdk/anthropic" || npm === "@ai-sdk/google-vertex/anthropic") {
       if (["sonnet-4", "opus-4"].some((v) => id.includes(v))) return "anthropic"
     }
