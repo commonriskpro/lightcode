@@ -547,18 +547,18 @@ export namespace MessageV2 {
       and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)),
     )
 
-  function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
+  async function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
     const ids = rows.map((row) => row.id)
     const partByMessage = new Map<string, MessageV2.Part[]>()
     if (ids.length > 0) {
-      const partRows = Database.use((db) =>
+      const partRows = (await Database.use((db) =>
         db
           .select()
           .from(PartTable)
           .where(inArray(PartTable.message_id, ids))
           .orderBy(PartTable.message_id, PartTable.id)
           .all(),
-      )
+      )) as (typeof PartTable.$inferSelect)[]
       for (const row of partRows) {
         const next = part(row)
         const list = partByMessage.get(row.message_id)
@@ -834,12 +834,12 @@ export namespace MessageV2 {
     return Effect.runPromise(toModelMessagesEffect(input, model, options))
   }
 
-  export function page(input: { sessionID: SessionID; limit: number; before?: string }) {
+  export async function page(input: { sessionID: SessionID; limit: number; before?: string }) {
     const before = input.before ? cursor.decode(input.before) : undefined
     const where = before
       ? and(eq(MessageTable.session_id, input.sessionID), older(before))
       : eq(MessageTable.session_id, input.sessionID)
-    const rows = Database.use((db) =>
+    const rows = (await Database.use((db) =>
       db
         .select()
         .from(MessageTable)
@@ -847,10 +847,10 @@ export namespace MessageV2 {
         .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
         .limit(input.limit + 1)
         .all(),
-    )
+    )) as (typeof MessageTable.$inferSelect)[]
     if (rows.length === 0) {
-      const row = Database.use((db) =>
-        db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.id, input.sessionID)).get(),
+      const row = await Database.use((db) =>
+        db.select().from(SessionTable).where(eq(SessionTable.id, input.sessionID)).get(),
       )
       if (!row) throw new NotFoundError({ message: `Session not found: ${input.sessionID}` })
       return {
@@ -861,7 +861,7 @@ export namespace MessageV2 {
 
     const more = rows.length > input.limit
     const slice = more ? rows.slice(0, input.limit) : rows
-    const items = hydrate(slice)
+    const items = await hydrate(slice)
     items.reverse()
     const tail = slice.at(-1)
     return {
@@ -871,11 +871,11 @@ export namespace MessageV2 {
     }
   }
 
-  export function* stream(sessionID: SessionID) {
+  export async function* stream(sessionID: SessionID) {
     const size = 50
     let before: string | undefined
     while (true) {
-      const next = page({ sessionID, limit: size, before })
+      const next = await page({ sessionID, limit: size, before })
       if (next.items.length === 0) break
       for (let i = next.items.length - 1; i >= 0; i--) {
         yield next.items[i]
@@ -885,10 +885,10 @@ export namespace MessageV2 {
     }
   }
 
-  export function parts(message_id: MessageID) {
-    const rows = Database.use((db) =>
+  export async function parts(message_id: MessageID) {
+    const rows = (await Database.use((db) =>
       db.select().from(PartTable).where(eq(PartTable.message_id, message_id)).orderBy(PartTable.id).all(),
-    )
+    )) as (typeof PartTable.$inferSelect)[]
     return rows.map(
       (row) =>
         ({
@@ -900,18 +900,18 @@ export namespace MessageV2 {
     )
   }
 
-  export function get(input: { sessionID: SessionID; messageID: MessageID }): WithParts {
-    const row = Database.use((db) =>
+  export async function get(input: { sessionID: SessionID; messageID: MessageID }): Promise<WithParts> {
+    const row = (await Database.use((db) =>
       db
         .select()
         .from(MessageTable)
         .where(and(eq(MessageTable.id, input.messageID), eq(MessageTable.session_id, input.sessionID)))
         .get(),
-    )
+    )) as typeof MessageTable.$inferSelect | undefined
     if (!row) throw new NotFoundError({ message: `Message not found: ${input.messageID}` })
     return {
       info: info(row),
-      parts: parts(input.messageID),
+      parts: await parts(input.messageID),
     }
   }
 
@@ -934,7 +934,7 @@ export namespace MessageV2 {
   }
 
   export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
-    return filterCompacted(stream(sessionID))
+    return filterCompacted(yield* Effect.promise(() => Array.fromAsync(stream(sessionID))))
   })
 
   export function fromError(

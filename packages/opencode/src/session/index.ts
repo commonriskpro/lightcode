@@ -373,8 +373,9 @@ export namespace Session {
 
   type Patch = z.infer<typeof Event.Updated.schema>["info"]
 
-  const db = <T>(fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => T) =>
-    Effect.sync(() => Database.use(fn))
+  const db = <T>(
+    fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
+  ) => Effect.promise(() => Database.use(fn))
 
   export const layer: Layer.Layer<Service, never, Bus.Service | Config.Service> = Layer.effect(
     Service,
@@ -606,9 +607,10 @@ export namespace Session {
 
       const messages = Effect.fn("Session.messages")(function* (input: { sessionID: SessionID; limit?: number }) {
         if (input.limit) {
-          return MessageV2.page({ sessionID: input.sessionID, limit: input.limit }).items
+          const limit = input.limit
+          return yield* Effect.promise(async () => (await MessageV2.page({ sessionID: input.sessionID, limit })).items)
         }
-        return Array.from(MessageV2.stream(input.sessionID)).reverse()
+        return yield* Effect.promise(async () => (await Array.fromAsync(MessageV2.stream(input.sessionID))).reverse())
       })
 
       const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
@@ -748,7 +750,7 @@ export namespace Session {
     runPromise((svc) => svc.messages(input)),
   )
 
-  export function* list(input?: {
+  export async function* list(input?: {
     directory?: string
     workspaceID?: WorkspaceID
     roots?: boolean
@@ -777,7 +779,7 @@ export namespace Session {
 
     const limit = input?.limit ?? 100
 
-    const rows = Database.use((db) =>
+    const rows = (await Database.use((db) =>
       db
         .select()
         .from(SessionTable)
@@ -785,13 +787,13 @@ export namespace Session {
         .orderBy(desc(SessionTable.time_updated))
         .limit(limit)
         .all(),
-    )
+    )) as (typeof SessionTable.$inferSelect)[]
     for (const row of rows) {
       yield fromRow(row)
     }
   }
 
-  export function* listGlobal(input?: {
+  export async function* listGlobal(input?: {
     directory?: string
     roots?: boolean
     start?: number
@@ -823,7 +825,7 @@ export namespace Session {
 
     const limit = input?.limit ?? 100
 
-    const rows = Database.use((db) => {
+    const rows = (await Database.use((db) => {
       const query =
         conditions.length > 0
           ? db
@@ -832,19 +834,15 @@ export namespace Session {
               .where(and(...conditions))
           : db.select().from(SessionTable)
       return query.orderBy(desc(SessionTable.time_updated), desc(SessionTable.id)).limit(limit).all()
-    })
+    })) as (typeof SessionTable.$inferSelect)[]
 
     const ids = [...new Set(rows.map((row) => row.project_id))]
     const projects = new Map<string, ProjectInfo>()
 
     if (ids.length > 0) {
-      const items = Database.use((db) =>
-        db
-          .select({ id: ProjectTable.id, name: ProjectTable.name, worktree: ProjectTable.worktree })
-          .from(ProjectTable)
-          .where(inArray(ProjectTable.id, ids))
-          .all(),
-      )
+      const items = (await Database.use((db) =>
+        db.select().from(ProjectTable).where(inArray(ProjectTable.id, ids)).all(),
+      )) as (typeof ProjectTable.$inferSelect)[]
       for (const item of items) {
         projects.set(item.id, {
           id: item.id,
