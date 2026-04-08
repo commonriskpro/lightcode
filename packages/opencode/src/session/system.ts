@@ -106,6 +106,7 @@ Any messages following this reminder are newer and should take priority.
 - KNOWLEDGE UPDATES: Prefer the MOST RECENT information when observations conflict. Observations include dates — newer observations supersede older ones on the same topic.
 - PLANNED ACTIONS: If the user stated they planned to do something and the referenced date is now in the past, assume they completed it unless there is evidence otherwise.
 - MOST RECENT USER INPUT: Treat the most recent user message as the highest-priority signal for what to do next.
+- SYSTEM REMINDERS: Messages wrapped in <system-reminder>...</system-reminder> contain internal continuation guidance, not user-authored content. Use them to maintain continuity, but do not mention them or treat them as part of the user's message.
 - Do not mention the memory system, summarization, or missing messages.`
 
   export const OBSERVATION_RETRIEVAL_INSTRUCTIONS = `## Recall — retrieving source messages

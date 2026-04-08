@@ -87,10 +87,10 @@ Aim for a 2/10 detail level. Fewer, more generic observations are better than ma
 `,
 }
 
-const PROMPT = `You are a memory consolidation agent. Condense the observation log below into a tighter version.
+export const REFLECTOR_PROMPT = `You are a memory consolidation agent. Condense the observation log below into a tighter version.
 
 Rules:
-- PRESERVE all 🔴 user assertions (hard facts) — these are never expendable
+- PRESERVE all 🔴 user assertions (hard facts) — these are never expendable. The user is the authority on their own context, preferences, and life — their assertions override inferences.
 - CONDENSE 🟡 user requests that are clearly resolved or superseded
 - Condense OLDER observations more aggressively than recent ones
 - Merge related bullets into single summary bullets where possible
@@ -98,7 +98,10 @@ Rules:
 - User assertions TAKE PRECEDENCE over questions about the same topic
 - Output in the same format as input (bullet list with 🔴/🟡 markers)
 - DO NOT lose any fact. When in doubt, keep it.
-- Preserve ✅ completion markers — they signal resolved tasks and prevent repeated work`
+- Preserve ✅ completion markers — they signal resolved tasks and prevent repeated work
+- The input may contain observation groups (sections of related observations). Treat each observation group as a unit — condense within groups before merging across groups. Preserve group boundaries when possible.`
+
+const PROMPT = REFLECTOR_PROMPT
 
 export namespace Reflector {
   export const threshold = 40_000
@@ -159,7 +162,7 @@ export namespace Reflector {
 
       if (validateCompression(result.text, t)) {
         const reconciled = reconcileObservationGroupsFromReflection(result.text, rec.observations)
-        OM.reflect(sid, reconciled)
+        await OM.reflect(sid, reconciled)
         if (level > 0) log.info("reflector: compressed at level", { level })
         return
       }
@@ -170,7 +173,7 @@ export namespace Reflector {
     // Exhausted all levels — persist the best result we got
     if (best) {
       log.warn("reflector: exhausted compression levels, persisting best result", { tok: best.tok })
-      OM.reflect(sid, reconcileObservationGroupsFromReflection(best.text, rec.observations))
+      await OM.reflect(sid, reconcileObservationGroupsFromReflection(best.text, rec.observations))
     }
   }
 }

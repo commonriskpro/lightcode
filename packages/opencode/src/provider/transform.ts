@@ -216,6 +216,11 @@ export namespace ProviderTransform {
     }
   }
 
+  // Exported for llm.ts to apply breakpoints at block-construction time (Mastra-style)
+  export function cacheOptsPublic(model: Provider.Model, long: boolean) {
+    return cacheOpts(model, long)
+  }
+
   function applyBreakpoint(msg: ModelMessage, opts: Record<string, any>, model: Provider.Model) {
     const messageLevel = isAnthropicLike(model)
     const contentLevel = !messageLevel && Array.isArray(msg.content) && msg.content.length > 0
@@ -277,26 +282,61 @@ export namespace ProviderTransform {
     return 0
   }
 
+  // Returns true when the message has active tool-calls or tool-results —
+  // signals the model is mid agentic loop, so BP3 would always miss.
+  function hasToolActivity(msg: ModelMessage): boolean {
+    if (!Array.isArray(msg.content)) return false
+    return msg.content.some((p: any) => p.type === "tool-call" || p.type === "tool-result")
+  }
+
+  // Mastra-style cache strategy:
+  // BP-system: applied at block-construction time in llm.ts (knows exactly what each block is)
+  // BP-conversation: last assistant message when not in agentic loop (applied here post-hoc)
+  // BP-tools: applied in llm.ts transformParams on last non-deferred tool
+  //
+  // This mirrors Mastra's promptCacheMiddleware which puts breakpoints on:
+  //   1. Last system message (BP-system — stable context)
+  //   2. Last message in the array (BP-conversation — conversation tail)
   function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-    const system = msgs.filter((msg) => msg.role === "system")
-    if (system[0] && tokenLen(system[0]) >= MIN_CACHE_TOKENS) applyBreakpoint(system[0], cacheOpts(model, true), model)
-    const core = system.slice(1).find((m) => memoryCore(m) && tokenLen(m) >= MIN_CACHE_TOKENS)
-    if (core) applyBreakpoint(core, cacheOpts(model, false), model)
-    const fallback = system.slice(1).find((m) => stableSystem(m) && m !== core && tokenLen(m) >= MIN_CACHE_TOKENS)
-    if (!core && fallback) applyBreakpoint(fallback, cacheOpts(model, false), model)
-
-    // Anthropic allows only four explicit breakpoints total. LightCode reserves
-    // one for the final tool definition in LLM.stream(), so keep message-level
-    // cache points to three: system[0], one stable memory/head boundary, and BP4.
-    const used = Number(Boolean(system[0])) + Number(Boolean(core || fallback))
-    if (used >= 3) return msgs
-
+    // BP-conversation only — system BPs are already applied in llm.ts
+    // Only fire when NOT in an agentic loop (last msg has tool activity → skip)
     const conversation = msgs.filter((msg) => msg.role !== "system")
-    if (conversation.length >= 3) {
-      applyBreakpoint(conversation[conversation.length - 2], cacheOpts(model, false), model)
+    const last = conversation[conversation.length - 1]
+    const inAgenticLoop = last && hasToolActivity(last)
+
+    if (!inAgenticLoop && conversation.length >= 2) {
+      const lastAssistant = [...conversation].reverse().find((m) => m.role === "assistant")
+      if (lastAssistant) applyBreakpoint(lastAssistant, cacheOpts(model, false), model)
     }
 
     return msgs
+  }
+
+  // Exported for testing only
+  export function applyCachingPublic(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
+    return applyCaching(msgs, model)
+  }
+
+  // Apply BP4: cache breakpoint on the last eligible tool (1h TTL).
+  // "Eligible" = not deferred (Anthropic rejects cache_control + deferLoading on same tool).
+  // Placed on the LAST non-deferred tool to maximize tokens under the breakpoint.
+  // Previously placed on the first-from-the-end non-deferred tool (same logic),
+  // but now extracted here so it's testable and colocated with the rest of the cache strategy.
+  export function applyToolCachingPublic(tools: any[], model: Provider.Model): any[] {
+    if (!isAnthropicLike(model)) return tools
+    const hasDefer = (t: any) =>
+      t?.providerOptions?.anthropic?.deferLoading || t?.providerOptions?.bedrock?.deferLoading
+    const last = [...tools].reverse().find((t) => !hasDefer(t)) as any
+    if (last) {
+      last.providerOptions = {
+        ...(last.providerOptions ?? {}),
+        anthropic: {
+          ...(last.providerOptions as any)?.anthropic,
+          cacheControl: { type: "ephemeral", ttl: "1h" },
+        },
+      }
+    }
+    return tools
   }
 
   function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {

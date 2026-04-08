@@ -955,3 +955,91 @@ describe("session.message-v2.fromError", () => {
     expect(result.name).toBe("MessageAbortedError")
   })
 })
+
+// ─── Fase 4: part-level filtering via sealAfter ───────────────────────────────
+
+describe("toModelMessages — sealAfter part-level filtering", () => {
+  const mid = (s: string) => MessageID.make(s)
+  const pid = (s: string) => PartID.make(s)
+
+  function makeAssistant(id: string, parts: Array<{ text?: string; endTime?: number }>): MessageV2.WithParts {
+    return {
+      info: {
+        id: mid(id),
+        sessionID,
+        role: "assistant",
+        providerID,
+        modelID: ModelID.make("test-model"),
+        time: { created: 1000 },
+        parentID: mid("root"),
+        mode: "",
+        agent: "build",
+        path: { cwd: "/", root: "/" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      } as unknown as MessageV2.Assistant,
+      parts: parts.map((p, i) => ({
+        id: pid(`${id}-p${i}`),
+        messageID: mid(id),
+        sessionID,
+        type: "text" as const,
+        text: p.text ?? `part-${i}`,
+        time: { start: 100 * i, end: p.endTime ?? 100 * i + 50 },
+        synthetic: false,
+      })) as MessageV2.Part[],
+    }
+  }
+
+  // Helper: extract text content from ModelMessage (content is a flat array)
+  function texts(result: Awaited<ReturnType<typeof MessageV2.toModelMessages>>, idx = 0) {
+    const msg = result[idx] as any
+    if (!msg) return []
+    // ModelMessage content can be string or array of content parts
+    if (typeof msg.content === "string") return msg.content ? [msg.content] : []
+    if (Array.isArray(msg.content)) return msg.content.flatMap((c: any) => (c.type === "text" ? [c.text] : []))
+    return []
+  }
+
+  // T-4.1: without sealAfter, all parts are included
+  test("without sealAfter all parts are serialized", async () => {
+    const msg = makeAssistant("m1", [
+      { text: "A", endTime: 100 },
+      { text: "B", endTime: 200 },
+    ])
+    const result = await MessageV2.toModelMessages([msg], model)
+    const t = texts(result)
+    expect(t.join("")).toContain("A")
+    expect(t.join("")).toContain("B")
+  })
+
+  // T-4.2: sealAfter=150 keeps only parts with time.end > 150
+  test("sealAfter excludes parts ending before the boundary", async () => {
+    const msg = makeAssistant("m2", [
+      { text: "old-part", endTime: 100 }, // before seal → excluded
+      { text: "new-part", endTime: 200 }, // after seal → included
+    ])
+    const result = await MessageV2.toModelMessages([msg], model, { sealAfter: 150 })
+    const t = texts(result)
+    expect(t.join("")).not.toContain("old-part")
+    expect(t.join("")).toContain("new-part")
+  })
+
+  // T-4.3: sealAfter=0 → no filtering, all parts included
+  test("sealAfter=0 includes all parts (no filtering)", async () => {
+    const msg = makeAssistant("m3", [
+      { text: "A", endTime: 100 },
+      { text: "B", endTime: 200 },
+    ])
+    const result = await MessageV2.toModelMessages([msg], model, { sealAfter: 0 })
+    const t = texts(result)
+    expect(t.join("")).toContain("A")
+    expect(t.join("")).toContain("B")
+  })
+
+  // T-4.4: message with all parts before seal → message omitted entirely
+  test("message with all parts sealed is omitted", async () => {
+    const msg = makeAssistant("m4", [{ text: "old", endTime: 50 }])
+    const result = await MessageV2.toModelMessages([msg], model, { sealAfter: 100 })
+    expect(result).toHaveLength(0)
+  })
+})

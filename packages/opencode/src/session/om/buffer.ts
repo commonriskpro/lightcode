@@ -7,12 +7,46 @@ type State = { tok: number; pending: boolean; lastInterval: number }
 const state = new Map<SessionID, State>()
 const inFlight = new Map<SessionID, Promise<void>>()
 
+// Per-session mutex — serializes activate() and reflect() cycles so two concurrent
+// turns cannot both read isObserving=false and fire duplicate LLM calls.
+// Matches Mastra's withLock pattern. Works within a single process (no distributed locking).
+const locks = new Map<SessionID, Promise<void>>()
+
+export async function withSessionLock<T>(sid: SessionID, fn: () => Promise<T>): Promise<T> {
+  const existing = locks.get(sid)
+  if (existing) await existing.catch(() => {})
+
+  let release!: () => void
+  const lock = new Promise<void>((r) => (release = r))
+  locks.set(sid, lock)
+
+  try {
+    return await fn()
+  } finally {
+    release()
+    if (locks.get(sid) === lock) locks.delete(sid)
+  }
+}
+
 // Per-session observing/reflecting status for TUI feedback.
 // Using Maps instead of globals so concurrent sessions don't bleed state.
 const observingSet = new Set<SessionID>()
 const reflectingSet = new Set<SessionID>()
 
 export type ThresholdRange = { min: number; max: number }
+
+// Fraction of the observed window to keep visible in the message tail after activation.
+// Matches Mastra's bufferActivation=0.8 → retain 20% (1 - 0.8) of the window.
+// Prevents "cold start" after activation where the LLM had no recent messages to anchor on.
+export const RETENTION_FLOOR = 0.2
+
+// Calculate the timestamp boundary that retains RETENTION_FLOOR of the observed window.
+// endsAt: timestamp of the last observed message
+// windowMs: duration of the observed window (endsAt - startsAt)
+// Returns: timestamp such that messages after this point are kept in the LLM context
+export function retentionFloorAt(endsAt: number, windowMs: number): number {
+  return Math.floor(endsAt - windowMs * RETENTION_FLOOR)
+}
 
 // Calculate dynamic TRIGGER threshold — shrinks as observations grow.
 // When threshold is a plain number, returns it unchanged (no adaptive behavior).

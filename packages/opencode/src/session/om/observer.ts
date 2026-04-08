@@ -29,23 +29,43 @@ export function detectDegenerateRepetition(text: string): boolean {
   return similar >= 8
 }
 
+// Guard against single-line degeneration (e.g. an LLM that writes one enormous line).
+// Mastra uses 10_000 chars as the cap — we match that.
+const MAX_OBS_LINE = 10_000
+
+export function sanitizeObservationLines(obs: string): string {
+  if (!obs) return obs
+  const lines = obs.split("\n")
+  let changed = false
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.length > MAX_OBS_LINE) {
+      lines[i] = lines[i]!.slice(0, MAX_OBS_LINE) + " … [truncated]"
+      changed = true
+    }
+  }
+  return changed ? lines.join("\n") : obs
+}
+
 // Parse structured XML output from the Observer LLM.
 // Extracts <observations>, <current-task>, <suggested-response> sections.
 // Falls back to treating the full text as observations when tags are absent.
 export function parseObserverOutput(raw: string): ObserverResult {
   const obsMatch = raw.match(/<observations>([\s\S]*?)<\/observations>/i)
-  const observations = obsMatch ? obsMatch[1]!.trim() : raw.trim()
+  const observations = sanitizeObservationLines(obsMatch ? obsMatch[1]!.trim() : raw.trim())
   const taskMatch = raw.match(/<current-task>([\s\S]*?)<\/current-task>/i)
   const currentTask = taskMatch ? taskMatch[1]!.trim() : undefined
   const contMatch = raw.match(/<suggested-response>([\s\S]*?)<\/suggested-response>/i)
   const suggestedContinuation = contMatch ? contMatch[1]!.trim() : undefined
-  return { observations, currentTask, suggestedContinuation }
+  const titleMatch = raw.match(/<thread-title>([\s\S]*?)<\/thread-title>/i)
+  const threadTitle = titleMatch ? titleMatch[1]!.trim() : undefined
+  return { observations, currentTask, suggestedContinuation, threadTitle }
 }
 
 export interface ObserverResult {
   observations: string
   currentTask?: string
   suggestedContinuation?: string
+  threadTitle?: string
 }
 
 const CONDENSE_PROMPT = `You are a memory consolidation agent. You receive multiple observation chunks and must produce a single, coherent observation log.
@@ -104,6 +124,64 @@ Replace vague verbs with specific ones:
   - BAD: "User uses some libraries" → GOOD: "User uses Effect, Drizzle, and Vercel AI SDK"
 - Preserve unusual phrasing or specific terminology the user employs — it may carry domain meaning
 
+## AVOIDING REPETITIVE OBSERVATIONS
+
+Do NOT repeat the same observation across multiple turns if there is no new information.
+When the agent performs repeated similar actions (file reads, tool calls, searches), group them into a single parent observation with sub-bullets for each new result.
+
+Example — BAD (repetitive):
+* 🟡 HH:MM Agent read src/auth.ts
+* 🟡 HH:MM Agent read src/users.ts
+* 🟡 HH:MM Agent read src/routes.ts
+
+Example — GOOD (grouped with sub-bullets):
+* 🟡 HH:MM Agent explored auth flow source files
+  * -> read src/auth.ts — found token validation logic
+  * -> read src/users.ts — found user lookup by email
+  * -> read src/routes.ts — found middleware chain
+
+Only add a new observation for a repeated action if the NEW result changes the picture.
+
+## ASSISTANT-GENERATED CONTENT
+
+When the assistant provides lists, recommendations, or detailed responses the user explicitly requested, preserve the DISTINGUISHING DETAILS that make each item unique and queryable later:
+
+- Recommendation lists → preserve key attribute per item: "Hotel A (near station, €180/night), Hotel B (budget-friendly, €90/night)"
+- Names, @handles, identifiers → always preserve specific values: "@photographer_one (portraits), @photographer_two (landscapes)"
+- Technical/numerical results → preserve specific values: "optimization achieved 43.7% faster load times, memory reduced from 2.8GB to 940MB"
+- Quantities and counts → always include how many: "Item A (4 units, size large), Item B (2 units, size small)"
+- Role/participation → capture specific role: "User was a presenter at the event" not "User attended the event"
+
+## ACTIONABLE INSIGHTS
+
+Capture what needs follow-up or is still pending:
+- User's stated goals or next steps
+- If the user says NOT to do something, mark it explicitly
+- Tasks waiting on the user → mark as "waiting for user"
+- What worked well in explanations (so the assistant can repeat it)
+- What needs clarification
+
+## COMPLETION TRACKING
+
+When the assistant has clearly completed a task requested by the user in this conversation, prefix the observation with ✅ (before any role marker):
+- ✅ 🔴 HH:MM Built JWT authentication middleware (express, jsonwebtoken)
+- ✅ HH:MM Fixed TypeScript error in UserService (incorrect return type)
+
+Only emit ✅ when completion is unambiguous — the assistant produced the result, wrote the code, or explicitly confirmed the task is done. NEVER emit ✅ speculatively for work still in progress.
+
+## CONVERSATION CONTEXT
+
+Capture as 🔴 user assertions when they appear:
+- Code snippets or file contents the user provides as current system state → note language, key identifiers, constraints
+- Multi-step sequences (migration steps, install sequences) → record each step as a separate bullet
+- Explicit constraints ("must use PostgreSQL", "never do Y") → preserve verbatim, never paraphrase
+
+## USER MESSAGE FIDELITY
+
+Distinguish between messages to capture near-verbatim vs. summarize:
+- **Near-verbatim** (MUST preserve exact values): names, numbers, identifiers, URLs, file paths, API keys, constraints — if a value could matter later, keep it exact
+- **Summarize or omit**: conversational filler, repeated acknowledgements ("yeah, thanks", "makes sense"), messages that restate prior context without adding new facts
+
 ## General Rules
 
 - Skip: routine tool calls, file reads, assistant acknowledgements, filler
@@ -124,7 +202,11 @@ State what the agent is currently working on (1-2 sentences).
 
 <suggested-response>
 Hint for the agent's next message to continue naturally (1 sentence).
-</suggested-response>`
+</suggested-response>
+
+<thread-title>
+2-5 words capturing the session's current focus (e.g. "Fix JWT Auth Bug", "Migrate to Drizzle")
+</thread-title>`
 
 export function truncateObsToBudget(obs: string, budget: number): string {
   if (budget === 0) return ""

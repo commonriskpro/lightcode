@@ -576,7 +576,7 @@ export namespace MessageV2 {
   export const toModelMessagesEffect = Effect.fnUntraced(function* (
     input: WithParts[],
     model: Provider.Model,
-    options?: { stripMedia?: boolean },
+    options?: { stripMedia?: boolean; sealAfter?: number },
   ) {
     const result: UIMessage[] = []
     const toolNames = new Set<string>()
@@ -696,12 +696,27 @@ export namespace MessageV2 {
         ) {
           continue
         }
+        // Part-level filtering: when sealAfter > 0, skip parts whose time.end
+        // falls at or before the seal boundary. This implements Mastra-style
+        // observation-marker filtering without embedding markers in message parts.
+        const seal = options?.sealAfter ?? 0
+        const visibleParts =
+          seal > 0
+            ? msg.parts.filter((p) => {
+                const end = (p as any).time?.end
+                return end === undefined || end > seal
+              })
+            : msg.parts
+
+        // If all parts are sealed, skip the message entirely
+        if (seal > 0 && visibleParts.length === 0) continue
+
         const assistantMessage: UIMessage = {
           id: msg.info.id,
           role: "assistant",
           parts: [],
         }
-        for (const part of msg.parts) {
+        for (const part of visibleParts) {
           if (part.type === "text")
             assistantMessage.parts.push({
               type: "text",
@@ -814,7 +829,7 @@ export namespace MessageV2 {
   export function toModelMessages(
     input: WithParts[],
     model: Provider.Model,
-    options?: { stripMedia?: boolean },
+    options?: { stripMedia?: boolean; sealAfter?: number },
   ): Promise<ModelMessage[]> {
     return Effect.runPromise(toModelMessagesEffect(input, model, options))
   }

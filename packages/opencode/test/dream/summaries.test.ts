@@ -59,6 +59,7 @@ function seedOM(
     current_task: opts.current_task ?? null,
     suggested_continuation: null,
     last_observed_at: Date.now(),
+            retention_floor_at: null,
     generation_count: 1,
     observation_tokens: opts.observation_tokens ?? Token.estimate(opts.observations ?? opts.reflections ?? ""),
     observed_message_ids: null,

@@ -115,6 +115,7 @@ export const ObservationTable = sqliteTable(
     current_task: text(),
     suggested_continuation: text(),
     last_observed_at: integer(),
+    retention_floor_at: integer(),
     observed_message_ids: text(),
     generation_count: integer()
       .notNull()

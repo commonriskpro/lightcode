@@ -1824,11 +1824,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 // in the system prompt (system[1]). When boundary=0 (OM has never fired), use
                 // the full msgs array — but cap it with lastMessages as a safety net for the
                 // window before OM fires (first ~30k tokens of a new session).
+                //
+                // Retention floor: use retention_floor_at when available so the 20% most recent
+                // of the previously-observed window stays visible to the LLM post-activation.
+                // Matches Mastra's bufferActivation=0.8 retention behavior — prevents cold-start
+                // continuity loss immediately after the first condensation.
                 const omBoundary = obsRec?.last_observed_at ?? 0
+                const effectiveBoundary = obsRec?.retention_floor_at ?? omBoundary
                 const lastMessages = omCfg.experimental?.last_messages ?? 80
                 const tail =
                   omBoundary > 0
-                    ? msgs.filter((m) => (m.info.time?.created ?? 0) > omBoundary)
+                    ? msgs.filter((m) => (m.info.time?.created ?? 0) > effectiveBoundary)
                     : msgs.slice(-lastMessages)
 
                 // Continuation hint: when the tail starts mid-conversation (OM has observed
@@ -1859,11 +1865,18 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                       }
                     : undefined
 
+                // Part-level seal: exclude parts of assistant messages that were
+                // already captured by the Observer at the seal boundary.
+                // sealedAt=0 means no seal active — toModelMessages includes all parts.
+                const sealAfter = OMBuf.sealedAt(sessionID)
+
                 const [skills, env, instructions, modelMsgs] = yield* Effect.all([
                   Effect.promise(() => SystemPrompt.skills(agent)),
                   Effect.promise(() => SystemPrompt.environment(model)),
                   instruction.system().pipe(Effect.orDie),
-                  Effect.promise(() => MessageV2.toModelMessages(hintMsg ? [hintMsg, ...tail] : tail, model)),
+                  Effect.promise(() =>
+                    MessageV2.toModelMessages(hintMsg ? [hintMsg, ...tail] : tail, model, { sealAfter }),
+                  ),
                 ])
                 const deferredSection = deferredIndex.length ? ToolSearch.fmt(deferredIndex) : ""
                 const system = [

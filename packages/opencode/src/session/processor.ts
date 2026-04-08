@@ -454,6 +454,11 @@ export namespace SessionProcessor {
                           result.suggestedContinuation,
                         )
                         if (sealAt > 0) OMBuf.seal(ctx.sessionID, sealAt)
+                        if (result.threadTitle) {
+                          const sess = await Session.get(ctx.sessionID).catch(() => undefined)
+                          if (sess && Session.isDefaultTitle(sess.title))
+                            Session.setTitle({ sessionID: ctx.sessionID, title: result.threadTitle }).catch(() => {})
+                        }
                       }
                     } catch (err) {
                       log.error("mid-turn observer failed", { err })

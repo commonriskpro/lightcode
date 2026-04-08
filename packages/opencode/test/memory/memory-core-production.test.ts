@@ -579,6 +579,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
       current_task: null,
       suggested_continuation: "Continue the stable flow",
       last_observed_at: null,
+            retention_floor_at: null,
       generation_count: 1,
       observation_tokens: 100,
       observed_message_ids: null,

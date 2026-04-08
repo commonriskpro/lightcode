@@ -12,6 +12,7 @@ import { Reflector, startLevel } from "../../src/session/om/reflector"
 import {
   detectDegenerateRepetition,
   parseObserverOutput,
+  sanitizeObservationLines,
   PROMPT,
   truncateObsToBudget,
   sanitizeToolResult,
@@ -248,6 +249,7 @@ describe("session.system.observations", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 10,
             observed_message_ids: null,
@@ -301,6 +303,7 @@ describe("session.om.record", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: 12345,
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 5,
             observed_message_ids: null,
@@ -505,6 +508,7 @@ describe("session.om.reflector", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 50_000,
             observed_message_ids: null,
@@ -624,6 +628,37 @@ some trailing text`
     expect(result.observations).toBe("")
     expect(result.currentTask).toBeUndefined()
   })
+
+  // T-1.1: thread-title extraction
+  test("extracts <thread-title> into threadTitle field", () => {
+    const raw = `
+<observations>
+* 🔴 10:00 user is a TypeScript developer
+</observations>
+<current-task>
+Building auth middleware
+</current-task>
+<suggested-response>
+Continue with the middleware.
+</suggested-response>
+<thread-title>
+Fix TypeScript Auth
+</thread-title>
+`.trim()
+    const result = parseObserverOutput(raw)
+    expect(result.threadTitle).toBe("Fix TypeScript Auth")
+  })
+
+  // T-1.2: missing thread-title tag → undefined
+  test("threadTitle is undefined when <thread-title> tag is absent", () => {
+    const raw = `
+<observations>
+* 🔴 10:00 user prefers Bun
+</observations>
+`.trim()
+    const result = parseObserverOutput(raw)
+    expect(result.threadTitle).toBeUndefined()
+  })
 })
 
 // ─── calculateDynamicThreshold ──────────────────────────────────────────────
@@ -657,12 +692,15 @@ describe("session.om.buffer.calculateDynamicThreshold", () => {
 // ─── wrapObservations with hint ─────────────────────────────────────────────
 
 describe("session.system.wrapObservations hint", () => {
-  test("without hint — no system-reminder in output", () => {
+  test("without hint — no injected system-reminder block after instructions", () => {
     const result = SystemPrompt.wrapObservations("some facts")
     expect(result).toContain("<local-observations>")
     expect(result).toContain("</local-observations>")
     expect(result).toContain(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS)
-    expect(result).not.toContain("<system-reminder>")
+    // The invariant: without a hint, the output must end with OBSERVATION_CONTEXT_INSTRUCTIONS
+    // — no injected <system-reminder> block appended after it.
+    // (The instructions text itself may mention the tag as an example — that's fine.)
+    expect(result.endsWith(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS)).toBe(true)
   })
 
   test("with hint — injects system-reminder after instructions", () => {
@@ -700,6 +738,7 @@ describe("session.om.record currentTask round-trip", () => {
             current_task: "Implementing JWT middleware",
             suggested_continuation: "Continue with token validation.",
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 100,
             observed_message_ids: null,
@@ -730,6 +769,7 @@ describe("session.om.record currentTask round-trip", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 10,
             observed_message_ids: null,
@@ -847,6 +887,47 @@ describe("session.om.observer.PROMPT", () => {
     expect(PROMPT).toContain("</current-task>")
     expect(PROMPT).toContain("<suggested-response>")
     expect(PROMPT).toContain("</suggested-response>")
+  })
+
+  // T-1.3: completion tracking section
+  test("PROMPT contains COMPLETION TRACKING section", () => {
+    expect(PROMPT).toContain("COMPLETION TRACKING")
+  })
+
+  // T-1.4: conversation context section
+  test("PROMPT contains CONVERSATION CONTEXT section", () => {
+    expect(PROMPT).toContain("CONVERSATION CONTEXT")
+  })
+
+  // T-1.5: user message fidelity section
+  test("PROMPT contains USER MESSAGE FIDELITY section", () => {
+    expect(PROMPT).toContain("USER MESSAGE FIDELITY")
+  })
+
+  // T-1.6: thread-title in output format
+  test("PROMPT contains <thread-title> in output format", () => {
+    expect(PROMPT).toContain("<thread-title>")
+    expect(PROMPT).toContain("</thread-title>")
+  })
+
+  // Gap 1: tool call grouping with sub-bullets
+  test("PROMPT instructs to group repeated tool calls into sub-bullets", () => {
+    expect(PROMPT).toContain("AVOIDING REPETITIVE OBSERVATIONS")
+  })
+
+  // Gap 2: assistant-generated content preservation
+  test("PROMPT instructs to preserve details in assistant-generated content", () => {
+    expect(PROMPT).toContain("ASSISTANT-GENERATED CONTENT")
+  })
+
+  // Gap 3: actionable insights section
+  test("PROMPT contains ACTIONABLE INSIGHTS section", () => {
+    expect(PROMPT).toContain("ACTIONABLE INSIGHTS")
+  })
+
+  // Gap 4: sanitizeObservationLines — per-line safety net
+  test("PROMPT output format example uses sub-bullet -> notation for tool grouping", () => {
+    expect(PROMPT).toContain("->")
   })
 })
 
@@ -1239,6 +1320,49 @@ describe("session.om.groups", () => {
   })
 })
 
+// ─── sanitizeObservationLines ────────────────────────────────────────────────
+
+describe("session.om.observer.sanitizeObservationLines", () => {
+  test("short lines pass through unchanged", () => {
+    const obs = "* 🔴 user is a TypeScript developer\n* 🟡 asked about auth"
+    expect(sanitizeObservationLines(obs)).toBe(obs)
+  })
+
+  test("line exceeding 10k chars is truncated with marker", () => {
+    const long = "x".repeat(10_001)
+    const result = sanitizeObservationLines(long)
+    expect(result.length).toBeLessThan(10_050)
+    expect(result).toContain("[truncated]")
+  })
+
+  test("line at exactly 10k chars passes through unchanged", () => {
+    const exact = "y".repeat(10_000)
+    const result = sanitizeObservationLines(exact)
+    expect(result).toBe(exact)
+    expect(result).not.toContain("[truncated]")
+  })
+
+  test("only the oversized line is truncated — others preserved", () => {
+    const normal = "* 🔴 normal observation"
+    const long = "z".repeat(10_001)
+    const result = sanitizeObservationLines(`${normal}\n${long}`)
+    expect(result).toContain(normal)
+    expect(result).toContain("[truncated]")
+  })
+
+  test("empty string returns empty string", () => {
+    expect(sanitizeObservationLines("")).toBe("")
+  })
+
+  test("parseObserverOutput applies sanitizeObservationLines to extracted observations", () => {
+    const longLine = "x".repeat(10_001)
+    const raw = `<observations>\n${longLine}\n</observations>`
+    const result = parseObserverOutput(raw)
+    expect(result.observations).toContain("[truncated]")
+    expect(result.observations.length).toBeLessThan(10_050)
+  })
+})
+
 // ─── sanitizeToolResult ──────────────────────────────────────────────────────
 
 describe("sanitizeToolResult", () => {
@@ -1295,6 +1419,7 @@ describe("OM.trackObserved", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 10,
             observed_message_ids: null,
@@ -1328,6 +1453,7 @@ describe("OM.trackObserved", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 10,
             observed_message_ids: null,
@@ -1387,6 +1513,7 @@ describe("OM.trackObserved", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 10,
             observed_message_ids: null,

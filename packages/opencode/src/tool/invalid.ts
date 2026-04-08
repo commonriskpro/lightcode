@@ -10,7 +10,7 @@ export const InvalidTool = Tool.define("invalid", {
   async execute(params) {
     return {
       title: "Invalid Tool",
-      output: `The arguments provided to the tool are invalid: ${params.error}`,
+      output: `Tool "${params.tool}" is not available or was called with invalid arguments: ${params.error}. Do not retry this tool call — use one of the available tools instead.`,
       metadata: {},
     }
   },

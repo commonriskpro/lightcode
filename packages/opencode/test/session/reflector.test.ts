@@ -1,4 +1,5 @@
 import { describe, expect, test, mock, beforeEach, afterEach, beforeAll, afterAll } from "bun:test"
+import { REFLECTOR_PROMPT } from "../../src/session/om/reflector"
 import path from "path"
 import os from "os"
 import { rm } from "fs/promises"
@@ -38,6 +39,20 @@ afterAll(async () => {
   await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
   await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
   delete process.env["OPENCODE_DB"]
+})
+
+// ─── REFLECTOR_PROMPT content ────────────────────────────────────────────────
+
+describe("session.om.reflector.REFLECTOR_PROMPT", () => {
+  // T-1: thread attribution — el Reflector debe saber que el input tiene secciones estructuradas
+  test("PROMPT mentions observation groups / thread sections", () => {
+    expect(REFLECTOR_PROMPT).toContain("observation group")
+  })
+
+  // T-2: user assertions framing fuerte — autoridad del usuario sobre su propio contexto
+  test("PROMPT states user is authority on their own context", () => {
+    expect(REFLECTOR_PROMPT).toContain("authority")
+  })
 })
 
 // ─── validateCompression ────────────────────────────────────────────────────
@@ -103,6 +118,7 @@ describe("session.om.reflector retry loop", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 121_000,
             observed_message_ids: null,
@@ -150,6 +166,7 @@ describe("session.om.reflector retry loop", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 0,
             observation_tokens: 50_000,
             observed_message_ids: null,
@@ -184,6 +201,7 @@ describe("session.om.reflector retry loop", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 39_999,
             observed_message_ids: null,
@@ -218,6 +236,7 @@ describe("session.om.reflector retry loop", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 41_000,
             observed_message_ids: null,

@@ -105,6 +105,20 @@ description: ${description}
   })
 })
 
+// ─── OBSERVATION_CONTEXT_INSTRUCTIONS completeness ───────────────────────────
+
+describe("SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS", () => {
+  // Gap 3a: PLANNED ACTIONS — asumir completado si fecha pasó
+  test("contains PLANNED ACTIONS instruction", () => {
+    expect(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS).toContain("PLANNED ACTIONS")
+  })
+
+  // Gap 3b: SYSTEM REMINDERS — no tratar como contenido del usuario
+  test("contains SYSTEM REMINDERS instruction", () => {
+    expect(SystemPrompt.OBSERVATION_CONTEXT_INSTRUCTIONS).toContain("SYSTEM REMINDERS")
+  })
+})
+
 // ─── SystemPrompt.splitObsChunks ──────────────────────────────────────────────
 
 describe("SystemPrompt.splitObsChunks", () => {
@@ -182,6 +196,7 @@ describe("SystemPrompt.observations — reflections priority", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 50_000,
             observed_message_ids: null,
@@ -214,6 +229,7 @@ describe("SystemPrompt.observations — reflections priority", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 1,
             observation_tokens: 10,
             observed_message_ids: null,
@@ -245,6 +261,7 @@ describe("SystemPrompt.observations — reflections priority", () => {
             current_task: null,
             suggested_continuation: null,
             last_observed_at: Date.now(),
+            retention_floor_at: null,
             generation_count: 0,
             observation_tokens: 0,
             observed_message_ids: null,

@@ -183,13 +183,27 @@ export namespace LLM {
     const anthropic = ProviderTransform.isAnthropicLike(input.model) && input.model.api.npm !== "@ai-sdk/gateway"
     const core = [input.workingMemory, stableObs].filter(Boolean).join("\n\n") || undefined
     const obsChunks = anthropic ? [] : SystemPrompt.splitObsChunks(stableObs)
+
+    // Mastra-style block construction:
+    // Stable blocks come first — the LAST stable block receives the cache breakpoint (1h TTL).
+    // Volatile blocks (recall, observationsLive, volatile) come AFTER the breakpoint
+    // so they never bust the cache. This mirrors Mastra's promptCacheMiddleware which puts
+    // a single breakpoint on the last system message and one on the last conversation message.
+    //
+    // Anthropic path: [head+rest, core, recall, observationsLive, volatile]
+    //   └─ cache BP on: core (last stable block) — everything after is volatile
+    //
+    // Non-Anthropic path: [head, rest, wm, ...obsChunks, volatile, recall, observationsLive]
+    //   └─ no explicit BP — providers use their own caching
     const blocks = anthropic
       ? [
-          [head, rest].filter(Boolean).join("\n"),
-          core,
-          input.recall,
-          input.observationsLive,
-          SystemPrompt.volatile(input.model),
+          [head, rest].filter(Boolean).join("\n"), // stable: agent prompt + env + skills
+          core, // stable: working_memory + observations_stable
+          // ── cache breakpoint goes on `core` (last stable block) ──
+          // everything below is volatile — do NOT cache
+          input.recall, // volatile: changes every turn (semantic query)
+          input.observationsLive, // volatile: system-reminder (continuation hint)
+          SystemPrompt.volatile(input.model), // volatile: date + model ID
         ].filter((x): x is string => Boolean(x))
       : [
           head,
@@ -253,15 +267,50 @@ export namespace LLM {
       ? input.messages
       : isWorkflow
         ? input.messages
-        : [
-            ...blocks.map(
-              (x): ModelMessage => ({
-                role: "system",
-                content: x,
-              }),
-            ),
-            ...input.messages,
-          ]
+        : (() => {
+            // Mastra-style cache breakpoints — applied at construction time, not post-hoc.
+            // BP-system: last stable system message gets 1h cache (mirrors Mastra's promptCacheMiddleware)
+            // BP-tools:  last non-deferred tool gets 1h cache (handled later in transformParams)
+            //
+            // For Anthropic: stable blocks = [head+rest, core]. Volatile = [recall, live, volatile].
+            // The breakpoint goes on the last stable block (core when present, head+rest otherwise).
+            // When core is absent (new session), head+rest gets the breakpoint if >= MIN_CACHE_TOKENS.
+            const cacheOpts = ProviderTransform.cacheOptsPublic(input.model, true) // 1h TTL
+            const MIN = 1024
+
+            const sysMsgs: ModelMessage[] = blocks.map((x) => ({ role: "system", content: x }))
+
+            if (anthropic) {
+              // Find the last stable block index — everything before recall/live/volatile.
+              // Stable = blocks that don't change turn-to-turn.
+              // In the Anthropic blocks array: [head+rest, core?, recall?, liveObs?, volatile]
+              // Volatile markers: recall contains <memory-recall>, live contains <system-reminder>,
+              // volatile contains "Today's date:" or model identity.
+              const isVolatile = (s: string) =>
+                s.includes("<memory-recall>") ||
+                (s.includes("<system-reminder>") && !s.includes("<local-observations>")) ||
+                s.includes("Today's date:") ||
+                s.includes("You are powered by the model named")
+
+              let lastStableIdx = -1
+              for (let i = sysMsgs.length - 1; i >= 0; i--) {
+                const content = sysMsgs[i]!.content as string
+                if (!isVolatile(content) && Token.estimate(content) >= MIN) {
+                  lastStableIdx = i
+                  break
+                }
+              }
+
+              if (lastStableIdx >= 0) {
+                sysMsgs[lastStableIdx] = {
+                  ...sysMsgs[lastStableIdx]!,
+                  providerOptions: mergeDeep((sysMsgs[lastStableIdx] as any).providerOptions ?? {}, cacheOpts),
+                }
+              }
+            }
+
+            return [...sysMsgs, ...input.messages]
+          })()
 
     const params = await Plugin.trigger(
       "chat.params",
@@ -509,22 +558,12 @@ export namespace LLM {
                 }
               }
 
-              // BP1: Cache breakpoint on last tool definition (1hr TTL for Anthropic)
-              // Done here — after deferLoading is injected — so we can safely skip
-              // deferred tools. Anthropic rejects cache_control + defer_loading on the same tool.
-              if (ProviderTransform.isAnthropicLike(input.model) && args.params.tools) {
-                const hasDefer = (t: any) =>
-                  t?.providerOptions?.anthropic?.deferLoading || t?.providerOptions?.bedrock?.deferLoading
-                const last = [...args.params.tools].reverse().find((t) => !hasDefer(t)) as any
-                if (last) {
-                  last.providerOptions = {
-                    ...(last.providerOptions ?? {}),
-                    anthropic: {
-                      ...(last.providerOptions as any)?.anthropic,
-                      cacheControl: { type: "ephemeral", ttl: "1h" },
-                    },
-                  }
-                }
+              // BP4: Cache breakpoint on last eligible tool definition (1h TTL for Anthropic).
+              // Done here — after deferLoading is injected — so we can safely skip deferred tools.
+              // Anthropic rejects cache_control + defer_loading on the same tool.
+              // applyToolCachingPublic selects the last non-deferred tool to maximize cached tokens.
+              if (args.params.tools) {
+                ProviderTransform.applyToolCachingPublic(args.params.tools as any[], input.model)
               }
 
               if (args.params.tools) {

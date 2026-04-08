@@ -153,6 +153,7 @@ describe("F-1: addBufferSafe() — canonical OM write path", () => {
       current_task: null,
       suggested_continuation: null,
       last_observed_at: null,
+            retention_floor_at: null,
       generation_count: 0,
       observation_tokens: 0,
       observed_message_ids: JSON.stringify(["m1"]),

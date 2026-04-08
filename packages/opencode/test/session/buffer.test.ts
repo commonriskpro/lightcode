@@ -74,3 +74,82 @@ describe("OMBuf.check plain-number configThreshold", () => {
     expect(OMBuf.check(s, 1, 40_000, 30_000)).toBe("activate")
   })
 })
+
+// ─── Fase 2: retention floor ─────────────────────────────────────────────────
+
+import { RETENTION_FLOOR, retentionFloorAt, withSessionLock } from "../../src/session/om/buffer"
+
+describe("retention floor — RETENTION_FLOOR constant", () => {
+  test("RETENTION_FLOOR is between 0 and 1 exclusive", () => {
+    expect(RETENTION_FLOOR).toBeGreaterThan(0)
+    expect(RETENTION_FLOOR).toBeLessThan(1)
+  })
+
+  test("RETENTION_FLOOR is 0.2 (retain 20% of observed window)", () => {
+    expect(RETENTION_FLOOR).toBe(0.2)
+  })
+})
+
+describe("retentionFloorAt — boundary timestamp calculation", () => {
+  test("returns endsAt when windowMs is 0", () => {
+    expect(retentionFloorAt(1000, 0)).toBe(1000)
+  })
+
+  test("retains 20% of the window before endsAt", () => {
+    // window = 1000ms, retention = 20% → floor = endsAt - 200
+    expect(retentionFloorAt(2000, 1000)).toBe(2000 - 200)
+  })
+
+  test("retention floor is always <= endsAt", () => {
+    expect(retentionFloorAt(500, 10_000)).toBeLessThanOrEqual(500)
+  })
+
+  test("result is integer (Math.floor applied)", () => {
+    const result = retentionFloorAt(1000, 333)
+    expect(Number.isInteger(result)).toBe(true)
+  })
+})
+
+// ─── Fase 3: per-session mutex ────────────────────────────────────────────────
+
+describe("withSessionLock — serializes concurrent async ops", () => {
+  test("executes fn and returns result", async () => {
+    const result = await withSessionLock("test-s1" as any, async () => 42)
+    expect(result).toBe(42)
+  })
+
+  test("serializes two concurrent calls — second waits for first", async () => {
+    const order: number[] = []
+    const p1 = withSessionLock("test-s2" as any, async () => {
+      await new Promise((r) => setTimeout(r, 20))
+      order.push(1)
+    })
+    const p2 = withSessionLock("test-s2" as any, async () => {
+      order.push(2)
+    })
+    await Promise.all([p1, p2])
+    expect(order).toEqual([1, 2])
+  })
+
+  test("releases lock on fn throw — subsequent calls succeed", async () => {
+    await withSessionLock("test-s3" as any, async () => {
+      throw new Error("boom")
+    }).catch(() => {})
+    const result = await withSessionLock("test-s3" as any, async () => "ok")
+    expect(result).toBe("ok")
+  })
+
+  test("different sessions do not block each other", async () => {
+    const order: string[] = []
+    const p1 = withSessionLock("test-sa" as any, async () => {
+      await new Promise((r) => setTimeout(r, 20))
+      order.push("a")
+    })
+    const p2 = withSessionLock("test-sb" as any, async () => {
+      order.push("b")
+    })
+    await Promise.all([p1, p2])
+    // b completes before a because they're independent sessions
+    expect(order).toEqual(["b", "a"])
+  })
+})
