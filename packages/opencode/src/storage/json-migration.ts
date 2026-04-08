@@ -1,5 +1,5 @@
-import type { Database } from "bun:sqlite"
-import { drizzle } from "drizzle-orm/bun-sqlite"
+import type { Client } from "@libsql/client"
+import { drizzle } from "drizzle-orm/libsql"
 import { Global } from "../global"
 import { Log } from "../util/log"
 import { ProjectTable } from "../project/project.sql"
@@ -23,13 +23,7 @@ export namespace JsonMigration {
     progress?: (event: Progress) => void
   }
 
-  // TODO(libsql): full runtime migration to @libsql/client is tracked in
-  // Phase 3E of the migrate-storage-to-libsql-async change. For now we widen
-  // the parameter type so both the legacy BunDatabase CLI command and the new
-  // libSQL client call site in src/index.ts typecheck. The implementation
-  // still assumes the sync bun:sqlite API and will be rewritten in the
-  // dedicated json-migration phase.
-  export async function run(sqlite: Database | any, options?: Options) {
+  export async function run(sqlite: Client, options?: Options) {
     const storageDir = path.join(Global.Path.data, "storage")
 
     if (!existsSync(storageDir)) {
@@ -51,11 +45,11 @@ export namespace JsonMigration {
 
     const db = drizzle({ client: sqlite })
 
-    // Optimize SQLite for bulk inserts
-    sqlite.exec("PRAGMA journal_mode = WAL")
-    sqlite.exec("PRAGMA synchronous = OFF")
-    sqlite.exec("PRAGMA cache_size = 10000")
-    sqlite.exec("PRAGMA temp_store = MEMORY")
+    // Optimize SQLite/libSQL for bulk inserts
+    await sqlite.execute("PRAGMA journal_mode = WAL")
+    await sqlite.execute("PRAGMA synchronous = OFF")
+    await sqlite.execute("PRAGMA cache_size = 10000")
+    await sqlite.execute("PRAGMA temp_store = MEMORY")
     const stats = {
       projects: 0,
       sessions: 0,
@@ -100,10 +94,10 @@ export namespace JsonMigration {
       return items
     }
 
-    function insert(values: any[], table: any, label: string) {
+    async function insert(values: any[], table: any, label: string) {
       if (values.length === 0) return 0
       try {
-        db.insert(table).values(values).onConflictDoNothing().run()
+        await db.insert(table).values(values).onConflictDoNothing().run()
         return values.length
       } catch (e) {
         errs.push(`failed to migrate ${label} batch: ${e}`)
@@ -152,7 +146,7 @@ export namespace JsonMigration {
 
     progress?.({ current, total, label: "starting" })
 
-    sqlite.exec("BEGIN TRANSACTION")
+    await sqlite.execute("BEGIN TRANSACTION")
 
     // Migrate projects first (no FK deps)
     // Derive all IDs from file paths, not JSON content
@@ -181,7 +175,7 @@ export namespace JsonMigration {
           commands: data.commands,
         })
       }
-      stats.projects += insert(projectValues, ProjectTable, "project")
+      stats.projects += await insert(projectValues, ProjectTable, "project")
       step("projects", end - i)
     }
     log.info("migrated projects", { count: stats.projects, duration: Math.round(performance.now() - start) })
@@ -227,7 +221,7 @@ export namespace JsonMigration {
           time_archived: data.time?.archived ?? null,
         })
       }
-      stats.sessions += insert(sessionValues, SessionTable, "session")
+      stats.sessions += await insert(sessionValues, SessionTable, "session")
       step("sessions", end - i)
     }
     log.info("migrated sessions", { count: stats.sessions })
@@ -270,7 +264,7 @@ export namespace JsonMigration {
         }
       }
       values.length = count
-      stats.messages += insert(values, MessageTable, "message")
+      stats.messages += await insert(values, MessageTable, "message")
       step("messages", end - i)
     }
     log.info("migrated messages", { count: stats.messages })
@@ -307,7 +301,7 @@ export namespace JsonMigration {
         }
       }
       values.length = count
-      stats.parts += insert(values, PartTable, "part")
+      stats.parts += await insert(values, PartTable, "part")
       step("parts", end - i)
     }
     log.info("migrated parts", { count: stats.parts })
@@ -344,7 +338,7 @@ export namespace JsonMigration {
           })
         }
       }
-      stats.todos += insert(values, TodoTable, "todo")
+      stats.todos += await insert(values, TodoTable, "todo")
       step("todos", end - i)
     }
     log.info("migrated todos", { count: stats.todos })
@@ -369,7 +363,7 @@ export namespace JsonMigration {
         }
         permValues.push({ project_id: projectID, data })
       }
-      stats.permissions += insert(permValues, PermissionTable, "permission")
+      stats.permissions += await insert(permValues, PermissionTable, "permission")
       step("permissions", end - i)
     }
     log.info("migrated permissions", { count: stats.permissions })
@@ -398,7 +392,7 @@ export namespace JsonMigration {
         }
         shareValues.push({ session_id: sessionID, id: data.id, secret: data.secret, url: data.url })
       }
-      stats.shares += insert(shareValues, SessionShareTable, "session_share")
+      stats.shares += await insert(shareValues, SessionShareTable, "session_share")
       step("shares", end - i)
     }
     log.info("migrated session shares", { count: stats.shares })
@@ -406,7 +400,7 @@ export namespace JsonMigration {
       log.warn("skipped orphaned session shares", { count: orphans.shares })
     }
 
-    sqlite.exec("COMMIT")
+    await sqlite.execute("COMMIT")
 
     log.info("json migration complete", {
       projects: stats.projects,

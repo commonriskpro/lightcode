@@ -27,8 +27,8 @@ LightCode is an AI coding agent built on top of [OpenCode](https://github.com/an
 | **Deferred tools**       | Client-side only                    | Native Anthropic/OpenAI support + hybrid fallback                 |
 | **System prompt**        | 8 provider-specific prompts         | 1 compact prompt (~40% fewer tokens)                              |
 | **Intra-session memory** | None (context grows until overflow) | Proactive Observer — compresses every 30k tokens                  |
-| **Cross-session memory** | None (each session starts blind)    | Native recall: SQLite FTS5 + working memory at session start      |
-| **Memory consolidation** | None                                | AutoDream — native background consolidation into SQLite artifacts |
+| **Cross-session memory** | None (each session starts blind)    | Native recall: libSQL FTS5 + vector search + working memory       |
+| **Memory consolidation** | None                                | AutoDream — native background consolidation into libSQL artifacts |
 | **Reactive compaction**  | Error flash + no loop guard         | Silent recovery + guard against infinite loops                    |
 | **Filesystem**           | `~/.opencode/`                      | `~/.lightcode/`                                                   |
 
@@ -54,6 +54,8 @@ bun dev
 ./packages/opencode/script/build.ts --single
 ./packages/opencode/dist/opencode-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)/bin/opencode
 ```
+
+The compiled binary depends on an adjacent `node_modules/` sidecar with the libSQL native bindings. Move or extract the whole `bin/` directory together, not just the executable.
 
 ---
 
@@ -123,11 +125,11 @@ Models that support native tool deferral (Anthropic sonnet-4+, OpenAI gpt-5+) ge
 
 ## Memory System
 
-LightCode has a **native SQLite-backed memory system** that gives the agent continuous context across and within sessions.
+LightCode has a **native libSQL-backed memory system** that gives the agent continuous context across and within sessions.
 
 ### Layer 1 — Cross-Session Recall (Native)
 
-At the start of each session (step 1), `Memory.buildContext()` loads cross-session context from LightCode's native memory store (`lightcode.db`). It runs semantic recall against `memory_artifacts` using the first user message as the query, then loads working memory across `thread`, `agent`, and `project` scopes.
+At the start of each session (step 1), `Memory.buildContext()` loads cross-session context from LightCode's native memory store (`lightcode.db`). It runs hybrid recall against `memory_artifacts` using the first user message as the query, combining FTS5 with libSQL native vector search, then loads working memory across `thread`, `agent`, and `project` scopes.
 
 The result is injected as:
 
@@ -138,7 +140,7 @@ No external process is required.
 
 ### Layer 2 — Intra-Session Observer
 
-A background Observer LLM fires at a **30k unobserved token threshold** during active sessions. It compresses message history into a dense observation log stored in a local `ObservationTable` (SQLite). This prevents context rot without blocking the user.
+A background Observer LLM fires at a **30k unobserved token threshold** during active sessions. It compresses message history into a dense observation log stored in a local `ObservationTable` inside the same libSQL database. This prevents context rot without blocking the user.
 
 ```
 Turn N (< 6k tokens):   idle — nothing happens

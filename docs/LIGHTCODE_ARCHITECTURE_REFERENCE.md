@@ -36,7 +36,7 @@
 │  ├── agent/      │ Definición de agentes                            │
 │  ├── tool/       │ Registro y ejecución de herramientas             │
 │  ├── provider/   │ Modelos LLM (Anthropic, OpenAI, Google, etc.)   │
-│  ├── storage/    │ SQLite + Drizzle ORM                             │
+│  ├── storage/    │ libSQL + Drizzle ORM                             │
 │  └── effect/     │ Effect.ts para composición funcional             │
 └────────────────────────────┬────────────────────────────────────────┘
                              │
@@ -44,7 +44,7 @@
 │                      STORAGE LAYER                                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  packages/opencode/src/storage/db.ts                                │
-│  - SQLite con WAL mode                                              │
+│  - libSQL local con WAL mode                                        │
 │  - Drizzle ORM                                                      │
 │  - Migraciones en packages/opencode/migration/                      │
 └─────────────────────────────────────────────────────────────────────┘
@@ -669,7 +669,7 @@ export const UpdateUserMemoryTool = Tool.define("update_user_memory", {
 **Archivos:**
 
 - `packages/opencode/src/memory/fts5-backend.ts` — FTS5 lexical backend
-- `packages/opencode/src/memory/embedding-backend.ts` — sqlite-vec embedding backend
+- `packages/opencode/src/memory/embedding-backend.ts` — libSQL native vector backend
 - `packages/opencode/src/memory/hybrid-backend.ts` — RRF composition (k=60)
 
 ```typescript
@@ -683,7 +683,7 @@ export const UpdateUserMemoryTool = Tool.define("update_user_memory", {
  * 3. Insert new artifact if no match
  *
  * When routed through HybridBackend.index(), the EmbeddingBackend
- * additionally writes the embedding vector to memory_artifacts_vec.
+ * additionally persists the embedding on `memory_artifacts.embedding`.
  */
 async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string> {
   const content =

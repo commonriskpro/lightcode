@@ -35,9 +35,10 @@
  *   bun bench/report.ts --compare /tmp/before.json --compare /tmp/after.json
  */
 
-import { Database } from "bun:sqlite"
+import { createClient, type Client } from "@libsql/client"
 import os from "os"
 import path from "path"
+import { readFileSync } from "fs"
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -128,75 +129,83 @@ type Report = {
 
 // ─── DB queries ───────────────────────────────────────────────────────────────
 
-function openDb(): Database {
+function openDb(): Client {
   if (!Bun.file(args.db).size) {
     console.error(`✗ DB not found: ${args.db}`)
     console.error(`  Use --db to specify a path, or check your XDG_DATA_HOME`)
     process.exit(1)
   }
-  return new Database(args.db, { readonly: true })
+  return createClient({ url: `file:${args.db}`, intMode: "number" })
 }
 
-function querySessions(db: Database, ids?: string[]): string[] {
+async function get<T extends Record<string, unknown>>(db: Client, sql: string, args: any[] = []) {
+  const res = await db.execute(sql, args)
+  const row = res.rows[0]
+  if (!row) return null
+  return row as unknown as T
+}
+
+async function all<T extends Record<string, unknown>>(db: Client, sql: string, args: any[] = []) {
+  const res = await db.execute(sql, args)
+  return res.rows as unknown as T[]
+}
+
+async function querySessions(db: Client, ids?: string[]): Promise<string[]> {
   if (ids?.length) return ids
 
   const where = args.all ? "" : `AND s.directory = ?`
-  const rows = db
-    .query<{ id: string }, string[]>(
-      `SELECT s.id FROM session s
+  const rows = await all<{ id: string }>(
+    db,
+    `SELECT s.id FROM session s
        WHERE s.time_archived IS NULL ${where}
        ORDER BY s.time_created DESC
        LIMIT ?`,
-    )
-    .all(...(args.all ? [String(args.last)] : [args.dir, String(args.last)]))
+    args.all ? [String(args.last)] : [args.dir, String(args.last)],
+  )
 
   return rows.map((r) => r.id)
 }
 
-function loadSession(db: Database, sid: string): SessionData | null {
+async function loadSession(db: Client, sid: string): Promise<SessionData | null> {
   // Session info
-  const sess = db
-    .query<
-      { id: string; title: string; directory: string; time_created: number },
-      string
-    >(`SELECT id, title, directory, time_created FROM session WHERE id = ?`)
-    .get(sid)
+  const sess = await get<{ id: string; title: string; directory: string; time_created: number }>(
+    db,
+    `SELECT id, title, directory, time_created FROM session WHERE id = ?`,
+    [sid],
+  )
   if (!sess) return null
 
   // OM record
-  const om = db
-    .query<
-      {
-        obs_tokens: number
-        gen_count: number
-        has_obs: number
-        has_refl: number
-        last_observed_at: number | null
-      },
-      string
-    >(
-      `SELECT
+  const om = await get<{
+    obs_tokens: number
+    gen_count: number
+    has_obs: number
+    has_refl: number
+    last_observed_at: number | null
+  }>(
+    db,
+    `SELECT
          observation_tokens as obs_tokens,
          generation_count   as gen_count,
          observations IS NOT NULL as has_obs,
          reflections  IS NOT NULL as has_refl,
          last_observed_at
        FROM session_observation WHERE session_id = ?`,
-    )
-    .get(sid)
+    [sid],
+  )
 
   // Buffer chunks
-  const buf = db
-    .query<{ count: number; msg_tokens: number }, string>(
-      `SELECT COUNT(*) as count, COALESCE(SUM(message_tokens),0) as msg_tokens
+  const buf = await get<{ count: number; msg_tokens: number }>(
+    db,
+    `SELECT COUNT(*) as count, COALESCE(SUM(message_tokens),0) as msg_tokens
        FROM session_observation_buffer WHERE session_id = ?`,
-    )
-    .get(sid)
+    [sid],
+  )
 
   // Per-assistant-message cache tokens (aggregated from step-finish parts)
-  const turns = db
-    .query<MsgRow, string>(
-      `SELECT
+  const turns = await all<MsgRow>(
+    db,
+    `SELECT
          m.id,
          m.time_created,
          COALESCE(SUM(CASE WHEN json_extract(p.data,'$.type')='step-finish'
@@ -224,26 +233,28 @@ function loadSession(db: Database, sid: string): SessionData | null {
          AND json_extract(m.data,'$.metadata.assistant.summary') IS NOT 1
        GROUP BY m.id
        ORDER BY m.time_created`,
-    )
-    .all(sid)
+    [sid],
+  )
 
   // Total messages and tail count
-  const allMsgs = db
-    .query<{ count: number }, string>(
-      `SELECT COUNT(*) as count FROM message
+  const allMsgs = await get<{ count: number }>(
+    db,
+    `SELECT COUNT(*) as count FROM message
        WHERE session_id = ? AND json_extract(data,'$.role') IN ('user','assistant')`,
-    )
-    .get(sid)
+    [sid],
+  )
 
   const lastObservedAt = om?.last_observed_at ?? null
   const tailMsgs = lastObservedAt
-    ? (db
-        .query<{ count: number }, [string, number]>(
+    ? ((
+        await get<{ count: number }>(
+          db,
           `SELECT COUNT(*) as count FROM message
-           WHERE session_id = ? AND time_created > ?
-             AND json_extract(data,'$.role') IN ('user','assistant')`,
+            WHERE session_id = ? AND time_created > ?
+              AND json_extract(data,'$.role') IN ('user','assistant')`,
+          [sid, lastObservedAt],
         )
-        .get(sid, lastObservedAt)?.count ?? 0)
+      )?.count ?? 0)
     : (allMsgs?.count ?? 0)
 
   return {
@@ -403,7 +414,7 @@ function printReport(r: Report) {
 
 function printCompare(files: string[]) {
   const reports: Report[] = files.map((f) => {
-    const raw = JSON.parse(require("fs").readFileSync(f, "utf8"))
+    const raw = JSON.parse(readFileSync(f, "utf8"))
     // Support both single report and array
     return Array.isArray(raw) ? raw[raw.length - 1] : raw
   })
@@ -449,14 +460,14 @@ function printCompare(files: string[]) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-function main() {
+async function main() {
   if (args.compare.length > 0) {
     printCompare(args.compare)
     return
   }
 
   const db = openDb()
-  const ids = querySessions(db, args.sessions.length ? args.sessions : undefined)
+  const ids = await querySessions(db, args.sessions.length ? args.sessions : undefined)
 
   if (ids.length === 0) {
     console.error("✗ No sessions found.")
@@ -466,7 +477,7 @@ function main() {
 
   const reports: Report[] = []
   for (const id of ids) {
-    const s = loadSession(db, id)
+    const s = await loadSession(db, id)
     if (!s) {
       console.warn(`  ⚠ Session ${id} not found in DB`)
       continue
@@ -474,7 +485,7 @@ function main() {
     reports.push(buildReport(s))
   }
 
-  db.close()
+  await db.close()
 
   if (args.json) {
     console.log(JSON.stringify(reports.length === 1 ? reports[0] : reports, null, 2))
@@ -484,4 +495,4 @@ function main() {
   for (const r of reports) printReport(r)
 }
 
-main()
+await main()

@@ -21,13 +21,13 @@
 
 ## 1. Memory System
 
-LightCode has a native SQLite-backed memory system that persists context across and within sessions.
+LightCode has a native libSQL-backed memory system that persists context across and within sessions.
 
 ### Layer 1 — Cross-Session Recall
 
 At session start (step 1 only), `Memory.buildContext()` loads native cross-session context from `lightcode.db`:
 
-- **Semantic recall**: `HybridBackend.search()` against `memory_artifacts` (FTS5 + embeddings via RRF) using the first user message as the query, with `FTS5Backend.recent()` fallback when both FTS and embedding search return nothing
+- **Semantic recall**: `HybridBackend.search()` against `memory_artifacts` (FTS5 + libSQL native vectors via RRF) using the first user message as the query, with `FTS5Backend.recent()` fallback when both FTS and embedding search return nothing
 - **Working memory**: `WorkingMemory.getForScopes()` across `thread > agent > project`
 
 Injected as:

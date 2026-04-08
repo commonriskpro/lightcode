@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { Database } from "bun:sqlite"
-import { drizzle } from "drizzle-orm/bun-sqlite"
-import { migrate } from "drizzle-orm/bun-sqlite/migrator"
+import { createClient, type Client } from "@libsql/client"
+import { drizzle } from "drizzle-orm/libsql"
 import path from "path"
 import fs from "fs/promises"
 import { readFileSync, readdirSync } from "fs"
@@ -73,12 +72,10 @@ async function writeSession(storageDir: string, projectID: string, session: Reco
   await Bun.write(path.join(storageDir, "session", projectID, `${session.id}.json`), JSON.stringify(session))
 }
 
-// Helper to create in-memory test database with schema
-function createTestDb() {
-  const sqlite = new Database(":memory:")
-  sqlite.exec("PRAGMA foreign_keys = ON")
+async function createTestDb() {
+  const sqlite = createClient({ url: ":memory:", intMode: "number" })
+  await sqlite.execute("PRAGMA foreign_keys = ON")
 
-  // Apply schema migrations using drizzle migrate
   const dir = path.join(import.meta.dirname, "../../migration")
   const entries = readdirSync(dir, { withFileTypes: true })
   const migrations = entries
@@ -89,22 +86,42 @@ function createTestDb() {
       name: entry.name,
     }))
     .sort((a, b) => a.timestamp - b.timestamp)
-  migrate(drizzle({ client: sqlite }), migrations)
+
+  await sqlite.execute(`
+    CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hash TEXT NOT NULL,
+      created_at NUMERIC,
+      name TEXT,
+      applied_at TEXT
+    )
+  `)
+  for (const item of migrations) {
+    const parts = item.sql
+      .split("--> statement-breakpoint")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+    for (const part of parts) await sqlite.execute(part)
+    await sqlite.execute({
+      sql: 'INSERT INTO __drizzle_migrations ("hash", "created_at", "name", "applied_at") VALUES (?, ?, ?, ?)',
+      args: ["", item.timestamp, item.name, new Date().toISOString()],
+    })
+  }
 
   return sqlite
 }
 
 describe("JSON to SQLite migration", () => {
   let storageDir: string
-  let sqlite: Database
+  let sqlite: Client
 
   beforeEach(async () => {
     storageDir = await setupStorageDir()
-    sqlite = createTestDb()
+    sqlite = await createTestDb()
   })
 
   afterEach(async () => {
-    sqlite.close()
+    await sqlite.close()
     await fs.rm(storageDir, { recursive: true, force: true })
   })
 
@@ -123,7 +140,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.projects).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const projects = db.select().from(ProjectTable).all()
+    const projects = await db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1)
     expect(projects[0].id).toBe(ProjectID.make("proj_test123abc"))
     expect(projects[0].worktree).toBe("/test/path")
@@ -148,7 +165,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.projects).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const projects = db.select().from(ProjectTable).all()
+    const projects = await db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1)
     expect(projects[0].id).toBe(ProjectID.make("proj_filename")) // Uses filename, not JSON id
   })
@@ -169,7 +186,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.projects).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const projects = db.select().from(ProjectTable).all()
+    const projects = await db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1)
     expect(projects[0].id).toBe(ProjectID.make("proj_with_commands"))
     expect(projects[0].commands).toEqual({ start: "npm run dev" })
@@ -190,7 +207,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.projects).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const projects = db.select().from(ProjectTable).all()
+    const projects = await db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1)
     expect(projects[0].id).toBe(ProjectID.make("proj_no_commands"))
     expect(projects[0].commands).toBeNull()
@@ -219,7 +236,7 @@ describe("JSON to SQLite migration", () => {
     await JsonMigration.run(sqlite)
 
     const db = drizzle({ client: sqlite })
-    const sessions = db.select().from(SessionTable).all()
+    const sessions = await db.select().from(SessionTable).all()
     expect(sessions.length).toBe(1)
     expect(sessions[0].id).toBe(SessionID.make("ses_test456def"))
     expect(sessions[0].project_id).toBe(ProjectID.make("proj_test123abc"))
@@ -253,11 +270,11 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.parts).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const messages = db.select().from(MessageTable).all()
+    const messages = await db.select().from(MessageTable).all()
     expect(messages.length).toBe(1)
     expect(messages[0].id).toBe(MessageID.make("msg_test789ghi"))
 
-    const parts = db.select().from(PartTable).all()
+    const parts = await db.select().from(PartTable).all()
     expect(parts.length).toBe(1)
     expect(parts[0].id).toBe(PartID.make("prt_testabc123"))
   })
@@ -293,14 +310,14 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.parts).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const messages = db.select().from(MessageTable).all()
+    const messages = await db.select().from(MessageTable).all()
     expect(messages.length).toBe(1)
     expect(messages[0].id).toBe(MessageID.make("msg_test789ghi"))
     expect(messages[0].session_id).toBe(SessionID.make("ses_test456def"))
     expect(messages[0].data).not.toHaveProperty("id")
     expect(messages[0].data).not.toHaveProperty("sessionID")
 
-    const parts = db.select().from(PartTable).all()
+    const parts = await db.select().from(PartTable).all()
     expect(parts.length).toBe(1)
     expect(parts[0].id).toBe(PartID.make("prt_testabc123"))
     expect(parts[0].message_id).toBe(MessageID.make("msg_test789ghi"))
@@ -334,7 +351,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.messages).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const messages = db.select().from(MessageTable).all()
+    const messages = await db.select().from(MessageTable).all()
     expect(messages.length).toBe(1)
     expect(messages[0].id).toBe(MessageID.make("msg_from_filename")) // Uses filename, not JSON id
     expect(messages[0].session_id).toBe(SessionID.make("ses_test456def"))
@@ -372,7 +389,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.parts).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const parts = db.select().from(PartTable).all()
+    const parts = await db.select().from(PartTable).all()
     expect(parts.length).toBe(1)
     expect(parts[0].id).toBe(PartID.make("prt_from_filename")) // Uses filename, not JSON id
     expect(parts[0].message_id).toBe(MessageID.make("msg_realmsgid")) // Uses parent dir, not JSON messageID
@@ -425,7 +442,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.sessions).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const sessions = db.select().from(SessionTable).all()
+    const sessions = await db.select().from(SessionTable).all()
     expect(sessions.length).toBe(1)
     expect(sessions[0].id).toBe(SessionID.make("ses_migrated"))
     expect(sessions[0].project_id).toBe(ProjectID.make(gitBasedProjectID)) // Uses directory, not stale JSON
@@ -457,7 +474,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.sessions).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const sessions = db.select().from(SessionTable).all()
+    const sessions = await db.select().from(SessionTable).all()
     expect(sessions.length).toBe(1)
     expect(sessions[0].id).toBe(SessionID.make("ses_from_filename")) // Uses filename, not JSON id
     expect(sessions[0].project_id).toBe(ProjectID.make("proj_test123abc"))
@@ -475,7 +492,7 @@ describe("JSON to SQLite migration", () => {
     await JsonMigration.run(sqlite)
 
     const db = drizzle({ client: sqlite })
-    const projects = db.select().from(ProjectTable).all()
+    const projects = await db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1) // Still only 1 due to onConflictDoNothing
   })
 
@@ -512,7 +529,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.todos).toBe(2)
 
     const db = drizzle({ client: sqlite })
-    const todos = db.select().from(TodoTable).orderBy(TodoTable.position).all()
+    const todos = await db.select().from(TodoTable).orderBy(TodoTable.position).all()
     expect(todos.length).toBe(2)
     expect(todos[0].content).toBe("First todo")
     expect(todos[0].status).toBe("pending")
@@ -543,7 +560,7 @@ describe("JSON to SQLite migration", () => {
     await JsonMigration.run(sqlite)
 
     const db = drizzle({ client: sqlite })
-    const todos = db.select().from(TodoTable).orderBy(TodoTable.position).all()
+    const todos = await db.select().from(TodoTable).orderBy(TodoTable.position).all()
 
     expect(todos.length).toBe(3)
     expect(todos[0].content).toBe("Third")
@@ -575,7 +592,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.permissions).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const permissions = db.select().from(PermissionTable).all()
+    const permissions = await db.select().from(PermissionTable).all()
     expect(permissions.length).toBe(1)
     expect(permissions[0].project_id).toBe("proj_test123abc")
     expect(permissions[0].data).toEqual(permissionData)
@@ -605,7 +622,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats?.shares).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    const shares = db.select().from(SessionShareTable).all()
+    const shares = await db.select().from(SessionShareTable).all()
     expect(shares.length).toBe(1)
     expect(shares[0].session_id).toBe("ses_test456def")
     expect(shares[0].id).toBe("share_123")
@@ -643,7 +660,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats.errors.some((x) => x.includes("failed to read") && x.includes("broken.json"))).toBe(true)
 
     const db = drizzle({ client: sqlite })
-    const projects = db.select().from(ProjectTable).all()
+    const projects = await db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1)
     expect(projects[0].id).toBe(ProjectID.make("proj_test123abc"))
   })
@@ -670,7 +687,7 @@ describe("JSON to SQLite migration", () => {
     expect(stats.todos).toBe(2)
 
     const db = drizzle({ client: sqlite })
-    const todos = db.select().from(TodoTable).orderBy(TodoTable.position).all()
+    const todos = await db.select().from(TodoTable).orderBy(TodoTable.position).all()
     expect(todos.length).toBe(2)
     expect(todos[0].content).toBe("keep-0")
     expect(todos[0].position).toBe(0)
@@ -721,9 +738,9 @@ describe("JSON to SQLite migration", () => {
     expect(stats.shares).toBe(1)
 
     const db = drizzle({ client: sqlite })
-    expect(db.select().from(TodoTable).all().length).toBe(1)
-    expect(db.select().from(PermissionTable).all().length).toBe(1)
-    expect(db.select().from(SessionShareTable).all().length).toBe(1)
+    expect((await db.select().from(TodoTable).all()).length).toBe(1)
+    expect((await db.select().from(PermissionTable).all()).length).toBe(1)
+    expect((await db.select().from(SessionShareTable).all()).length).toBe(1)
   })
 
   test("handles mixed corruption and partial validity in one migration run", async () => {
@@ -838,12 +855,12 @@ describe("JSON to SQLite migration", () => {
     expect(stats.errors.length).toBeGreaterThanOrEqual(6)
 
     const db = drizzle({ client: sqlite })
-    expect(db.select().from(ProjectTable).all().length).toBe(2)
-    expect(db.select().from(SessionTable).all().length).toBe(3)
-    expect(db.select().from(MessageTable).all().length).toBe(1)
-    expect(db.select().from(PartTable).all().length).toBe(1)
-    expect(db.select().from(TodoTable).all().length).toBe(1)
-    expect(db.select().from(PermissionTable).all().length).toBe(1)
-    expect(db.select().from(SessionShareTable).all().length).toBe(1)
+    expect((await db.select().from(ProjectTable).all()).length).toBe(2)
+    expect((await db.select().from(SessionTable).all()).length).toBe(3)
+    expect((await db.select().from(MessageTable).all()).length).toBe(1)
+    expect((await db.select().from(PartTable).all()).length).toBe(1)
+    expect((await db.select().from(TodoTable).all()).length).toBe(1)
+    expect((await db.select().from(PermissionTable).all()).length).toBe(1)
+    expect((await db.select().from(SessionShareTable).all()).length).toBe(1)
   })
 })

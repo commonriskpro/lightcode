@@ -264,7 +264,7 @@ LightCode's AutoDream was implemented with a native approach instead of Engram i
 
 ```
 Session idle → AutoDream idle() → Dream agent reads ObservationTable + summaries
-→ Consolidates knowledge → Memory.indexArtifact() (async, via HybridBackend) → memory_artifacts + memory_artifacts_vec (SQLite)
+→ Consolidates knowledge → Memory.indexArtifact() (async, via HybridBackend) → memory_artifacts (libSQL + native vectors)
 → HybridBackend.search() (FTS5 + embeddings via RRF) picks up artifacts in next session
 ```
 
@@ -272,7 +272,7 @@ Session idle → AutoDream idle() → Dream agent reads ObservationTable + summa
 
 | Aspect                | Claude Code + Engram       | LightCode (native)                        |
 | --------------------- | -------------------------- | ----------------------------------------- |
-| Storage               | `.md` files or Engram MCP  | `lightcode.db` (SQLite + sqlite-vec)      |
+| Storage               | `.md` files or Engram MCP  | `lightcode.db` (libSQL + native vectors)  |
 | Search                | `mem_search` (Engram FTS5) | FTS5 + embeddings via RRF (HybridBackend) |
 | Deduplication         | `topic_key` upserts        | `topic_key` upserts + hash dedupe in FTS5 |
 | Dependencies          | Engram binary required     | None (self-contained)                     |

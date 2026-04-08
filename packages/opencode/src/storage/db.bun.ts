@@ -9,8 +9,8 @@ import { drizzle } from "drizzle-orm/libsql"
  * replacing the previous Bun SQLite + extension-based vector stack.
  *
  * Supports both file-backed (`file:/path/to/db.sqlite`) and in-memory
- * (`:memory:`) databases. `intMode: "number"` is required to match the
- * numeric `INTEGER` return type behavior of `bun:sqlite` — without it,
+ * (`:memory:`) databases. `intMode: "number"` is required to preserve the
+ * expected numeric `INTEGER` behavior across the existing schema — without it,
  * libSQL returns `bigint` for every `INTEGER` column and breaks the
  * schema typing throughout the codebase.
  *

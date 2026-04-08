@@ -126,7 +126,7 @@ export namespace Database {
    * with a `migrationsFolder` path, but lightcode has always fed migrations as
    * an in-memory `MigrationsJournal` (either bundled at build time via
    * `OPENCODE_MIGRATIONS` or read from disk in dev). We reproduce the same
-   * behavior as the previous `drizzle-orm/bun-sqlite/migrator.migrate` journal
+   * behavior as the previous sync drizzle migrator journal
    * overload: create `__drizzle_migrations`, skip already-applied entries (by
    * `created_at` timestamp, same convention), and run the rest.
    */

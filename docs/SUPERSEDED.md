@@ -37,7 +37,7 @@ Deprecated files are retained only when they still serve a clear compatibility o
 ### 4. AutoDream + Engram MCP consolidation path
 
 **Status**: REPLACED (default behavior)  
-**Superseded by**: `AutoDream.persistConsolidation()` (async) in `packages/opencode/src/dream/index.ts` → awaited call to `Memory.indexArtifact()` → `HybridBackend.index()` → `memory_artifacts` + `memory_artifacts_vec`  
+**Superseded by**: `AutoDream.persistConsolidation()` (async) in `packages/opencode/src/dream/index.ts` → awaited call to `Memory.indexArtifact()` → `HybridBackend.index()` → `memory_artifacts` with native libSQL vectors  
 **Reason**: AutoDream called Engram MCP `mem_save` / `mem_update` to persist cross-session consolidations. Required Engram daemon. Now writes directly to `lightcode.db`.  
 **Feature flag**: `OPENCODE_DREAM_USE_NATIVE_MEMORY=false` preserves the legacy consolidation path temporarily.
 
@@ -101,6 +101,16 @@ Deprecated files are retained only when they still serve a clear compatibility o
 | Flag                               | Default | Effect when set to rollback value                           |
 | ---------------------------------- | ------- | ----------------------------------------------------------- |
 | `OPENCODE_DREAM_USE_NATIVE_MEMORY` | `true`  | Set to `false` → use Engram MCP for AutoDream consolidation |
+
+---
+
+## Additional storage components superseded by libSQL migration
+
+### 8. `sqlite-vec`
+
+**Status**: REPLACED  
+**Superseded by**: libSQL native vectors (`F32_BLOB(384)`, `vector_distance_cos`, `libsql_vector_idx`)  
+**Reason**: The old extension-based vector path blocked compiled binaries and forced separate virtual tables. The native libSQL vector path keeps vectors in real tables and works with the async storage migration.
 
 ---
 

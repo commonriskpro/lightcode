@@ -8,6 +8,15 @@
 - **Command**: `bun run db generate --name <slug>`.
 - **Output**: creates `migration/<timestamp>_<slug>/migration.sql` and `snapshot.json`.
 - **Tests**: migration tests should read the per-folder layout (no `_journal.json`).
+- **Runtime DB**: storage uses `@libsql/client` + `drizzle-orm/libsql`.
+- **Client lifecycle**: `Database.Client()`, `Database.use(...)`, `Database.transaction(...)`, and `Database.close()` are async.
+- **Vectors**: semantic recall uses libSQL native vectors (`F32_BLOB(384)` + `vector_distance_cos`).
+
+## Sidecar native deps
+
+- Compiled binaries resolve libSQL from an adjacent `node_modules/` sidecar.
+- Keep the extracted binary and its sidecar together.
+- Future native deps should follow the same externalize + copy-sidecar pattern.
 
 # opencode Effect rules
 
