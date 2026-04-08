@@ -894,13 +894,15 @@ export namespace Provider {
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Provider") {}
 
-  // Providers that expose a single gateway endpoint with a fixed protocol.
-  // Per-model npm overrides must be ignored for these — the gateway always
-  // speaks the same protocol regardless of the underlying model vendor.
-  const SINGLE_GATEWAY_PROVIDERS = new Set(["opencode", "opencode-go"])
+  // Providers that proxy all models through a single OpenAI-compatible gateway.
+  // For these, per-model npm overrides must be ignored — the gateway always
+  // speaks OpenAI-compatible protocol regardless of the underlying vendor.
+  // e.g. opencode gateway routes minimax/claude/gemini/gpt through the same
+  // /zen/v1 endpoint which only accepts OpenAI-compatible format.
+  const OPENAI_COMPAT_GATEWAY_PROVIDERS = new Set(["opencode", "opencode-go"])
 
   function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
-    const isSingleGateway = SINGLE_GATEWAY_PROVIDERS.has(provider.id)
+    const isCompatGateway = OPENAI_COMPAT_GATEWAY_PROVIDERS.has(provider.id)
     const m: Model = {
       id: ModelID.make(model.id),
       providerID: ProviderID.make(provider.id),
@@ -909,10 +911,7 @@ export namespace Provider {
       api: {
         id: model.id,
         url: model.provider?.api ?? provider.api!,
-        // For single-gateway providers, always use the provider's npm — the
-        // gateway speaks one protocol. Per-model npm overrides only apply to
-        // multi-endpoint providers (e.g. Anthropic, Google, etc.).
-        npm: isSingleGateway
+        npm: isCompatGateway
           ? (provider.npm ?? "@ai-sdk/openai-compatible")
           : (model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible"),
       },
