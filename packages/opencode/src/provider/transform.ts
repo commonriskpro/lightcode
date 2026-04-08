@@ -1017,11 +1017,10 @@ export namespace ProviderTransform {
   export function supportsNativeDeferred(model: Provider.Model): false | "anthropic" | "openai" {
     const npm = model.api.npm
     const id = model.api.id
-    // Native deferred for Anthropic requires the AI SDK to own the full serialization
-    // pipeline. Auth plugins that intercept fetch (e.g. opencode-anthropic-login-via-cli)
-    // re-serialize the body themselves, which exposes `defer_loading` as a raw field that
-    // Anthropic rejects. Only enable for gateway (which proxies without re-serializing).
-    if (npm === "@ai-sdk/google-vertex/anthropic") {
+    // Anthropic native deferLoading — supported for both direct SDK and Vertex gateway.
+    // Both preserve the full AI SDK serialization pipeline so defer_loading is
+    // correctly encoded as a providerOptions field (not a raw body field).
+    if (npm === "@ai-sdk/anthropic" || npm === "@ai-sdk/google-vertex/anthropic") {
       if (["sonnet-4", "opus-4"].some((v) => id.includes(v))) return "anthropic"
     }
     // OpenAI native tool_search requires Responses API + gpt-5.4 or later.
