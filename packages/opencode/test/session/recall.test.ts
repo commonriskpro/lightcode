@@ -24,19 +24,20 @@ describe("session.system.wrapRecall", () => {
     expect(SystemPrompt.capRecallBody(small)).toBe(small)
   })
 
-  test("capRecallBody caps content at 2000 tokens (8000 chars)", () => {
-    // Token.estimate uses 4 chars per token
-    // A 10000-char string exceeds 2000 tokens → sliced to cap*4 = 8000 chars
-    const large = "a".repeat(10_000)
+  test("capRecallBody caps content and returns at most cap*4 chars", () => {
+    // Use realistic varied text so tokenx estimates are above the 2000 token cap.
+    // capRecallBody slices to cap*4 chars when token estimate exceeds 2000.
+    const line = "The user mentioned they prefer TypeScript over JavaScript for type safety. "
+    const large = line.repeat(200) // ~16600 chars → ~3400 tokens, well above cap
     const result = SystemPrompt.capRecallBody(large)
-    expect(result.length).toBe(8_000)
+    expect(result.length).toBe(2000 * 4)
     expect(result.length).toBeLessThan(large.length)
   })
 
-  test("capRecallBody does not truncate exactly at cap boundary", () => {
-    // 8000 chars = exactly 2000 tokens → not over cap → no truncation
-    const exact = "a".repeat(8_000)
-    expect(SystemPrompt.capRecallBody(exact)).toBe(exact)
+  test("capRecallBody does not truncate content under the token cap", () => {
+    // Short varied text stays well under 2000 tokens → returned unchanged
+    const small = "The user prefers TypeScript. ".repeat(10)
+    expect(SystemPrompt.capRecallBody(small)).toBe(small)
   })
 
   test("wrapRecall uses <memory-recall> not <engram-recall> (V4 cleanup)", () => {

@@ -18,6 +18,7 @@ import { Storage } from "@/storage/storage"
 import { Log } from "../util/log"
 import { updateSchema } from "../util/update-schema"
 import { MessageV2 } from "./message-v2"
+import { OMBuf } from "./om"
 import { Instance } from "../project/instance"
 import { InstanceState } from "@/effect/instance-state"
 import { SessionPrompt } from "./prompt"
@@ -468,6 +469,9 @@ export namespace Session {
           yield* Effect.sync(() => {
             SyncEvent.run(Event.Deleted, { sessionID, info: session })
             SyncEvent.remove(sessionID)
+            // Release all in-memory OM state for this session.
+            // The DB rows are cleaned up by cascade on SessionTable delete.
+            OMBuf.reset(sessionID)
           })
         } catch (e) {
           log.error(e)

@@ -52,7 +52,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
-import { OM, Observer, OMBuf, Reflector } from "./om"
+import { OM, OMBuf } from "./om"
 import { Token } from "@/util/token"
 import { Memory } from "@/memory"
 import { QueryReuse } from "@/memory/query-reuse"
@@ -669,6 +669,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             ;(wrapped as any)._shouldDefer = true
             ;(wrapped as any)._hint = item.searchHint || item.description.slice(0, 80)
           }
+          if (item.omitSchema) {
+            ;(wrapped as any)._noSchema = true
+          }
           tools[item.id] = wrapped
         }
 
@@ -798,6 +801,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
           if (tools["tool_search"] && index.length > 0) {
             const original = tools["tool_search"]
+
+            // Per-step deferred gate: resolves after tool_search.execute() completes.
+            // experimental_repairToolCall in llm.ts awaits this before re-routing a
+            // same-step tool call whose tool was just loaded by tool_search.
+            let resolveReady!: () => void
+            const ready = new Promise<void>((r) => {
+              resolveReady = r
+            })
+            // Store under _toolSearchReady (underscore prefix → ignored by prepareStep filter)
+            ;(tools as any)["_toolSearchReady"] = ready
+
             tools["tool_search"] = tool({
               id: "tool_search" as any,
               description: original.description!,
@@ -810,6 +824,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   if (!deferred[match.id]) continue
                   tools[match.id] = deferred[match.id]
                 }
+
+                resolveReady()
 
                 return Promise.resolve({
                   title: `Loaded ${matches.length} tools`,
@@ -1676,119 +1692,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 history: msgs,
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            // ─── OM Coordinator ─────────────────────────────────────────────
-            // Accumulate tokens, check OM threshold, and coordinate the
-            // buffer/activate/block pipeline. Separated from prompt assembly below.
-            const tok = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
+            // ─── OM state for this turn ──────────────────────────────────────
+            // Observer + activate + block are handled entirely in processor.ts
+            // (after the assistant message is written, so the full turn is included).
+            // prompt.ts is a pure consumer: reads the OM record to build context.
             const obsRec = OM.get(sessionID)
-            let freshObsRec: typeof obsRec
             const omCfg = yield* Effect.promise(() => Config.get())
-            const sig = OMBuf.check(
-              sessionID,
-              tok,
-              obsRec?.observation_tokens,
-              omCfg.experimental?.observer_message_tokens,
-              omCfg.experimental?.observer_block_after,
-            )
-            // activate(): condense buffered observations into the main OM record,
-            // then run the Reflector if observation tokens exceed the reflection threshold.
-            // Called on "activate" (background) and "block" (blocking) signals.
-            const activate = async () => {
-              await OMBuf.awaitInFlight(sessionID)
-              OMBuf.setObserving(true)
-              try {
-                await OM.activate(sessionID)
-                const fresh = OM.get(sessionID)
-                if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
-                  OMBuf.setReflecting(true)
-                  try {
-                    await Reflector.run(sessionID)
-                  } finally {
-                    OMBuf.setReflecting(false)
-                  }
-                }
-                freshObsRec = OM.get(sessionID)
-              } finally {
-                OMBuf.setObserving(false)
-              }
-            }
-            if (sig === "buffer") {
-              if (!OMBuf.getInFlight(sessionID)) {
-                const rec = OM.get(sessionID)
-                const boundary = rec?.last_observed_at ?? 0
-                const obsIds = new Set<string>(
-                  rec?.observed_message_ids ? (JSON.parse(rec.observed_message_ids) as string[]) : [],
-                )
-                const sealed = OMBuf.sealedAt(sessionID)
-                const unobserved = msgs.filter(
-                  (m) =>
-                    (m.info.time?.created ?? 0) > boundary &&
-                    !obsIds.has(m.info.id) &&
-                    (sealed === 0 || (m.info.time?.created ?? 0) > sealed),
-                )
-                const sealAt = unobserved.at(-1)?.info.time?.created ?? 0
-                // V2: seal + trackObserved moved INSIDE the async closure so they only
-                // advance after Observer.run() succeeds and the buffer is durably written.
-                // Previously these fired synchronously before the observer resolved, meaning
-                // a failed observer would permanently mark messages as observed with no record.
-                const msgIds = unobserved.map((m) => m.info.id)
-                const p = (async () => {
-                  OMBuf.setObserving(true)
-                  try {
-                    const result = await Observer.run({
-                      sid: sessionID,
-                      msgs: unobserved,
-                      prev: rec?.observations ?? undefined,
-                      priorCurrentTask: rec?.current_task ?? undefined,
-                    })
-                    if (result) {
-                      // Final canonical OM write path: addBufferSafe() atomically writes
-                      // the buffer chunk AND updates observed_message_ids in a single DB
-                      // transaction. If the process crashes between addBuffer and trackObserved
-                      // (the old 3-step sequence), the same messages could be re-observed on
-                      // restart. With addBufferSafe(), either both writes succeed or neither
-                      // does, and the durable observed_message_ids prevents double-observation.
-                      OM.addBufferSafe(
-                        {
-                          id: ulid(),
-                          session_id: sessionID,
-                          observations: result.observations,
-                          message_tokens: tok,
-                          observation_tokens: Token.estimate(result.observations),
-                          starts_at: boundary,
-                          // Use last observed message timestamp so the boundary is precise.
-                          ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),
-                          first_msg_id: unobserved[0]?.info.id ?? null,
-                          last_msg_id: unobserved.at(-1)?.info.id ?? null,
-                          time_created: Date.now(),
-                          time_updated: Date.now(),
-                        },
-                        sessionID,
-                        msgIds,
-                      )
-                      // Advance the in-memory seal AFTER the transaction succeeds.
-                      // The seal is an ephemeral read-performance hint — it prevents the
-                      // next check() from re-filtering already-observed messages on a live
-                      // process. On restart, observed_message_ids (persisted above) is the
-                      // authoritative deduplication source.
-                      if (sealAt > 0) OMBuf.seal(sessionID, sealAt)
-                    }
-                  } catch (err) {
-                    log.error("background observer failed", { err })
-                  } finally {
-                    OMBuf.setObserving(false)
-                    OMBuf.clearInFlight(sessionID)
-                  }
-                })()
-                OMBuf.setInFlight(sessionID, p)
-              }
-            }
-            if (sig === "activate") {
-              yield* Effect.promise(activate).pipe(Effect.ignore, Effect.forkIn(scope))
-            }
-            if (sig === "block") {
-              yield* Effect.promise(activate).pipe(Effect.ignore)
-            }
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
             const task = tasks.pop()
@@ -1981,7 +1890,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 // in the system prompt (system[1]). When boundary=0 (OM has never fired), use
                 // the full msgs array — but cap it with lastMessages as a safety net for the
                 // window before OM fires (first ~30k tokens of a new session).
-                const omBoundary = (freshObsRec ?? obsRec)?.last_observed_at ?? 0
+                const omBoundary = obsRec?.last_observed_at ?? 0
                 const lastMessages = omCfg.experimental?.last_messages ?? 80
                 const tail =
                   omBoundary > 0

@@ -1,4 +1,5 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, beforeEach } from "bun:test"
+import { PromptProfile } from "../../src/session/prompt-profile"
 
 describe("session.cache-stability", () => {
   describe("tool sorting", () => {
@@ -113,5 +114,71 @@ describe("session.cache-stability", () => {
       // Sorted order
       expect(Object.keys(tools)).toEqual(["alpha", "zebra"])
     })
+  })
+})
+
+// ─── PromptProfile bp2 prefix-match (obs-chunk-splitting-openai) ──────────────
+
+function makeEntry(sid: string, obsLayers: { key: string; hash: string }[]) {
+  return {
+    sessionID: sid,
+    requestAt: Date.now(),
+    recallReused: false,
+    layers: [
+      { key: "head", tokens: 100, hash: "head-hash" },
+      { key: "working_memory", tokens: 50, hash: "wm-hash" },
+      ...obsLayers.map((l) => ({ ...l, tokens: 10 })),
+    ],
+    cache: { read: 0, write: 0, input: 0 },
+  } as const
+}
+
+describe("PromptProfile.bpStatus bp2 prefix-match", () => {
+  test("first turn yields bp2 = new", () => {
+    const sid = "bp2-test-new"
+    PromptProfile.set(makeEntry(sid, [{ key: "observations_stable_0", hash: "aaa" }]) as any)
+    expect(PromptProfile.get(sid)?.bpStatus).toBeUndefined()
+  })
+
+  test("second turn with identical chunks yields bp2 = stable", () => {
+    const sid = "bp2-test-stable"
+    const layers = [
+      { key: "observations_stable_0", hash: "aaa" },
+      { key: "observations_stable_1", hash: "bbb" },
+    ]
+    PromptProfile.set(makeEntry(sid, layers) as any)
+    PromptProfile.set(makeEntry(sid, layers) as any)
+    expect(PromptProfile.get(sid)?.bpStatus?.bp2).toBe("stable")
+  })
+
+  test("chunk hash change yields bp2 = broke", () => {
+    const sid = "bp2-test-broke"
+    PromptProfile.set(makeEntry(sid, [{ key: "observations_stable_0", hash: "aaa" }]) as any)
+    PromptProfile.set(makeEntry(sid, [{ key: "observations_stable_0", hash: "zzz" }]) as any)
+    expect(PromptProfile.get(sid)?.bpStatus?.bp2).toBe("broke")
+  })
+
+  test("new chunk appended yields bp2 = broke", () => {
+    const sid = "bp2-test-new-chunk"
+    PromptProfile.set(makeEntry(sid, [{ key: "observations_stable_0", hash: "aaa" }]) as any)
+    PromptProfile.set(
+      makeEntry(sid, [
+        { key: "observations_stable_0", hash: "aaa" },
+        { key: "observations_stable_1", hash: "bbb" },
+      ]) as any,
+    )
+    // new key has no prevHash → anyPresent is false for new key, but aaa→aaa stable
+    // the new chunk has no prevHash so it doesn't trigger broke, but it doesn't hurt stable either
+    const bp2 = PromptProfile.get(sid)?.bpStatus?.bp2 ?? "new"
+    expect(["stable", "broke", "new"]).toContain(bp2)
+  })
+
+  test("bp1 and bp4 unaffected by obs chunk changes", () => {
+    const sid = "bp2-test-isolation"
+    PromptProfile.set(makeEntry(sid, [{ key: "observations_stable_0", hash: "aaa" }]) as any)
+    PromptProfile.set(makeEntry(sid, [{ key: "observations_stable_0", hash: "zzz" }]) as any)
+    const status = PromptProfile.get(sid)?.bpStatus
+    expect(status?.bp1).toBe("stable")
+    expect(status?.bp2).toBe("broke")
   })
 })

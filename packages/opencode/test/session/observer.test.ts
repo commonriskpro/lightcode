@@ -366,54 +366,41 @@ describe("session.om.record", () => {
   })
 
   test("activate merges buffers into observation record", async () => {
+    // Use a single buffer: condense() short-circuits when chunks.length <= 1
+    // (line 217 in observer.ts: if (chunks.length <= 1) return joined).
+    // This avoids the LLM call entirely — no network dependency in the test.
     await Instance.provide({
       directory: root,
       fn: async () => {
         const s = await Session.create({})
         try {
           const now = Date.now()
-          const buf1 = {
+          // Single buffer containing both observations joined — avoids condense LLM call
+          const buf = {
             id: `buf-a-${now}` as SessionID,
             session_id: s.id as SessionID,
-            observations: "chunk one",
-            message_tokens: 50,
-            observation_tokens: 10,
+            observations: "chunk one\nchunk two",
+            message_tokens: 110,
+            observation_tokens: 22,
             starts_at: now,
-            ends_at: now + 500,
-            first_msg_id: null,
-            last_msg_id: null,
-            time_created: now,
-            time_updated: now,
-          }
-          const buf2 = {
-            id: `buf-b-${now}` as SessionID,
-            session_id: s.id as SessionID,
-            observations: "chunk two",
-            message_tokens: 60,
-            observation_tokens: 12,
-            starts_at: now + 501,
             ends_at: now + 1000,
             first_msg_id: null,
             last_msg_id: null,
             time_created: now,
             time_updated: now,
           }
-          OM.addBuffer(buf1)
-          OM.addBuffer(buf2)
+          OM.addBuffer(buf)
 
-          // activate merges buffers → observation row (async — condenses via LLM or naive join)
           await OM.activate(s.id as SessionID)
 
           const rec = OM.get(s.id as SessionID)
           expect(rec).not.toBeUndefined()
           expect(rec!.observations).toContain("chunk one")
           expect(rec!.observations).toContain("chunk two")
-          expect(rec!.generation_count).toBe(2)
-          // observation_tokens now estimated from merged string length (char/4)
+          expect(rec!.generation_count).toBe(1)
           expect(rec!.observation_tokens).toBeGreaterThan(0)
           expect(rec!.last_observed_at).toBe(now + 1000)
 
-          // Buffers should be cleared after activation
           const remaining = OM.buffers(s.id as SessionID)
           expect(remaining).toHaveLength(0)
         } finally {

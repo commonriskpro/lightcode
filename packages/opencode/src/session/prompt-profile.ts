@@ -34,6 +34,19 @@ export type ToolProfile = {
   tokens: number
 }
 
+export type BPStatus = "stable" | "broke" | "new"
+
+export type BreakpointStatus = {
+  /** BP1: system[0] = head + rest (1h TTL) */
+  bp1: BPStatus
+  /** BP2: memory core = working_memory + observations_stable */
+  bp2: BPStatus
+  /** BP3: conversation penultimate message — always breaks (grows each turn) */
+  bp3: "always"
+  /** BP4: last tool definition */
+  bp4: BPStatus
+}
+
 export type PromptProfileEntry = {
   sessionID: string
   requestAt: number
@@ -50,13 +63,42 @@ export type PromptProfileEntry = {
   tools?: ToolProfile
   /** Breakpoint placement audit — only set for Anthropic-like providers */
   alignment?: CacheAlignment
+  /** Hashes from the previous turn — used to detect cache breaks per layer */
+  prevHashes?: Record<string, string>
+  /** Per-breakpoint stability status — only set when prevHashes exists */
+  bpStatus?: BreakpointStatus
 }
 
 const store = new Map<string, PromptProfileEntry>()
 
 export namespace PromptProfile {
   export function set(entry: PromptProfileEntry) {
-    store.set(entry.sessionID, entry)
+    const prev = store.get(entry.sessionID)
+    const prevHashes = prev
+      ? Object.fromEntries(prev.layers.filter((l) => l.hash).map((l) => [l.key, l.hash!]))
+      : undefined
+
+    const cur = Object.fromEntries(entry.layers.filter((l) => l.hash).map((l) => [l.key, l.hash!]))
+
+    function bpStat(keys: string[], prefix?: string): BPStatus {
+      if (!prevHashes) return "new"
+      const all = prefix ? [...keys, ...Object.keys(cur).filter((k) => k.startsWith(prefix))] : keys
+      const changed = all.some((k) => cur[k] && prevHashes[k] && cur[k] !== prevHashes[k])
+      if (changed) return "broke"
+      const anyPresent = all.some((k) => cur[k] && prevHashes[k])
+      return anyPresent ? "stable" : "new"
+    }
+
+    const bpStatus: BreakpointStatus | undefined = prevHashes
+      ? {
+          bp1: bpStat(["head", "rest"]),
+          bp2: bpStat(["working_memory"], "observations_stable"),
+          bp3: "always",
+          bp4: bpStat(["tools"]),
+        }
+      : undefined
+
+    store.set(entry.sessionID, { ...entry, prevHashes, bpStatus })
   }
 
   export function get(sessionID: string): PromptProfileEntry | undefined {

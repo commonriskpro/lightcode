@@ -689,6 +689,27 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
         const req = yield* HttpServerRequest.HttpServerRequest
         const body = yield* req.json.pipe(Effect.orElseSucceed(() => ({})))
         const current = hit(req.originalUrl, body)
+        // Non-streaming request (generateText uses doGenerate — no "stream" field in body).
+        // Respond with JSON completion so the AI SDK can parse it correctly.
+        const streaming =
+          body && typeof body === "object" && "stream" in body && (body as Record<string, unknown>).stream !== false
+        if (!streaming) {
+          hits = [...hits, current]
+          yield* notify()
+          const next = pull(current)
+          const extracted = next?.type === "sse" ? flow(next).find((f) => f.type === "text")?.text : undefined
+          const textContent = extracted ?? "ok"
+          return HttpServerResponse.text(
+            JSON.stringify({
+              id: "chatcmpl-test",
+              object: "chat.completion",
+              choices: [{ index: 0, message: { role: "assistant", content: textContent }, finish_reason: "stop" }],
+              model: modelFrom(body),
+              usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+            }),
+            { contentType: "application/json" },
+          )
+        }
         if (isTitleRequest(body)) {
           hits = [...hits, current]
           yield* notify()

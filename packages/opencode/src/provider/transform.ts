@@ -844,7 +844,16 @@ export namespace ProviderTransform {
       }
     }
 
-    if (input.model.providerID === "openai" || input.providerOptions?.setCacheKey) {
+    // Send promptCacheKey for all OpenAI-like providers so the server routes
+    // requests from the same session to the same machine → better cache hit rate.
+    // Providers that don't support it will silently ignore the parameter.
+    if (
+      input.model.providerID === "openai" ||
+      input.model.api.npm === "@ai-sdk/openai" ||
+      input.model.api.npm === "@ai-sdk/azure" ||
+      input.model.api.npm === "@ai-sdk/openai-compatible" ||
+      input.providerOptions?.setCacheKey
+    ) {
       result["promptCacheKey"] = input.sessionID
     }
 

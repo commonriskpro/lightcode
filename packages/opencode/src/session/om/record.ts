@@ -46,57 +46,49 @@ export namespace OM {
   }
 
   /**
-   * Final canonical OM write path.
+   * Canonical OM write path — fully atomic.
    *
-   * Wraps addBuffer + trackObserved in a single DB transaction so neither
-   * write is visible unless BOTH succeed. This eliminates the crash window
-   * where addBuffer writes to ObservationBufferTable but the process dies
-   * before trackObserved updates observed_message_ids — which would cause
-   * those same messages to be re-observed on restart.
+   * Persists the buffer chunk, observed_message_ids, current_task, and
+   * suggested_continuation in a single DB transaction. All four writes
+   * succeed or none do — no crash window where partial state is visible.
    *
-   * The in-memory seal (OMBuf.seal) remains ephemeral by design: it is a
-   * read-performance hint that avoids redundant DB queries on a live process.
-   * On restart, the durable observed_message_ids (updated here inside the
-   * transaction) are the authoritative deduplication source.
-   *
-   * Replace the three-step sequence in the hot path:
-   *   OM.addBuffer({...}) + OMBuf.seal(sid, sealAt) + OM.trackObserved(sid, ids)
-   * With:
-   *   OM.addBufferSafe(buf, sid, ids) then OMBuf.seal(sid, sealAt)
-   *
-   * If the transaction fails, neither write succeeds. The messages will be
-   * re-offered at the next Observer threshold crossing.
+   * current_task and suggested_continuation live on ObservationRecord, not
+   * on ObservationBufferTable (no schema change needed). They are written
+   * here so activate() sees them via ...rec spread when it condenses buffers.
+   * With multiple buffers, the last writer wins — which is correct because
+   * the most recent Observer run has the freshest task context.
    */
-  export function addBufferSafe(buf: ObservationBuffer, sid: SessionID, msgIds: string[]): void {
+  export function addBufferSafe(
+    buf: ObservationBuffer,
+    sid: SessionID,
+    msgIds: string[],
+    task?: string | null,
+    continuation?: string | null,
+  ): void {
     Database.transaction(() => {
-      // Step 1: persist the observation buffer chunk
       Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
 
-      // Step 2: atomically merge msgIds into observed_message_ids
-      // If a row exists in ObservationTable for this session, update it.
-      // If not (very first observation for this session), insert a placeholder row.
       const rec = Database.use((db) =>
         db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get(),
       )
       if (rec) {
-        const merged = mergeIds(rec.observed_message_ids ?? null, msgIds)
-        Database.use((db) =>
-          db
-            .update(ObservationTable)
-            .set({ observed_message_ids: merged, time_updated: Date.now() })
-            .where(eq(ObservationTable.session_id, sid))
-            .run(),
-        )
+        const patch: Partial<ObservationRecord> = {
+          observed_message_ids: mergeIds(rec.observed_message_ids ?? null, msgIds),
+          time_updated: Date.now(),
+        }
+        if (task != null) patch.current_task = task
+        if (continuation != null) patch.suggested_continuation = continuation
+        Database.use((db) => db.update(ObservationTable).set(patch).where(eq(ObservationTable.session_id, sid)).run())
       } else {
-        // No observation record yet — insert a minimal one with observed IDs set.
-        // This will be overwritten by activate() when the first full observation fires.
+        // First observation for this session — insert placeholder.
+        // activate() will overwrite observations/tokens; current_task persists via ...rec spread.
         const placeholder: ObservationRecord = {
           id: Identifier.ascending("session") as SessionID,
           session_id: sid,
           observations: null,
           reflections: null,
-          current_task: null,
-          suggested_continuation: null,
+          current_task: task ?? null,
+          suggested_continuation: continuation ?? null,
           last_observed_at: null,
           generation_count: 0,
           observation_tokens: 0,

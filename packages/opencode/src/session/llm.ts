@@ -181,6 +181,7 @@ export namespace LLM {
     const stableObs = input.observationsStable ?? input.observations ?? "<!-- ctx -->"
     const anthropic = ProviderTransform.isAnthropicLike(input.model) && input.model.api.npm !== "@ai-sdk/gateway"
     const core = [input.workingMemory, stableObs].filter(Boolean).join("\n\n") || undefined
+    const obsChunks = anthropic ? [] : SystemPrompt.splitObsChunks(stableObs)
     const blocks = anthropic
       ? [
           [head, rest].filter(Boolean).join("\n"),
@@ -193,15 +194,24 @@ export namespace LLM {
           head,
           rest || undefined,
           input.workingMemory,
-          stableObs,
+          ...obsChunks,
+          // volatile (date + model ID) goes before recall so the stable prefix
+          // [head..stableObs+volatile] can be cached within the same day/model.
+          // recall and observationsLive change every turn → nothing after them is cached.
+          SystemPrompt.volatile(input.model),
           input.recall,
           input.observationsLive,
-          SystemPrompt.volatile(input.model),
         ].filter((x): x is string => Boolean(x))
     l.info("prompt profile", {
       blocks: promptProfile,
       memoryBlocks: input.memoryBlocks?.map((x) => ({ key: x.key, hash: x.hash, tokens: x.tokens, stable: x.stable })),
     })
+    const chunkLayers = obsChunks.map((c, i) => ({
+      key: `observations_stable_${i}`,
+      tokens: Token.estimate(c.trim()),
+      hash: createHash("sha1").update(c.trim()).digest("hex"),
+    }))
+
     PromptProfile.set({
       sessionID: input.sessionID,
       requestAt: Date.now(),
@@ -210,7 +220,7 @@ export namespace LLM {
         promptProfile.head,
         promptProfile.rest,
         promptProfile.working_memory,
-        promptProfile.observations_stable,
+        ...chunkLayers,
         promptProfile.observations_live,
         promptProfile.semantic_recall,
         { key: "tail", tokens: promptProfile.tail.tokens, hash: undefined },
@@ -391,6 +401,21 @@ export namespace LLM {
             toolName: lower,
           }
         }
+        // Same-step deferred tool: if tool_search ran in the same step and loaded
+        // this tool, _toolSearchReady will resolve once tool_search.execute() finishes.
+        // Race with a short timeout — if tool_search didn't run in this step the
+        // promise never resolves and we fall through to the invalid path normally.
+        const ready = (tools as any)["_toolSearchReady"]
+        if (ready instanceof Promise) {
+          const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 5_000))
+          const result = await Promise.race([ready.then(() => "ready" as const), timeout])
+          if (result === "ready" && tools[failed.toolCall.toolName]) {
+            l.info("deferred tool available after tool_search", {
+              tool: failed.toolCall.toolName,
+            })
+            return failed.toolCall
+          }
+        }
         return {
           ...failed.toolCall,
           input: JSON.stringify({
@@ -470,6 +495,19 @@ export namespace LLM {
                 const alignment = { total, limit: 4, ok: total <= 4, systemBP, messageBP, toolBP }
                 l.info("cache alignment", alignment)
                 PromptProfile.updateAlignment(input.sessionID, alignment)
+              }
+
+              // Strip inputSchema for built-in tools marked with _noSchema.
+              // The model knows these tools from training — sending the full schema
+              // wastes tokens and busts cache. Internal SDK validation still runs
+              // because the schema lives in `tools[name].inputSchema`, not here.
+              if (args.params.tools) {
+                for (const t of args.params.tools) {
+                  if (t.type !== "function") continue
+                  if ((input.tools[t.name] as any)?._noSchema) {
+                    t.inputSchema = { type: "object", properties: {} }
+                  }
+                }
               }
 
               // Native deferred: inject providerOptions.{provider}.deferLoading

@@ -159,6 +159,38 @@ How: extract the \`range\` attribute from the relevant \`<observation-group>\` t
     return (await observationBlocks(sid)).combined
   }
 
+  /**
+   * Split a rendered observationsStable string into per-group chunks for
+   * OpenAI-compatible providers (non-Anthropic path only).
+   *
+   * The input format is:
+   *   <local-observations>
+   *     <observation-group ...>...</observation-group>
+   *     ...
+   *   </local-observations>
+   *
+   *   OBSERVATION_CONTEXT_INSTRUCTIONS
+   *   OBSERVATION_RETRIEVAL_INSTRUCTIONS (optional)
+   *
+   * Output:
+   * - Each <observation-group> becomes its own system message (stable across turns).
+   * - The suffix (instructions after </local-observations>) is appended only to the
+   *   LAST chunk so the model always sees them adjacent to the observations.
+   * - Old chunks never change → automatic OpenAI prefix cache hits.
+   * - Falls back to [text] when no groups are present (zero-boundary case).
+   */
+  export function splitObsChunks(text: string): string[] {
+    const TAG = /<observation-group\s[^>]*>[\s\S]*?<\/observation-group>/g
+    const groups = text.match(TAG)
+    if (!groups) return [text]
+
+    // Everything after </local-observations> — the static instructions
+    const suffixMatch = text.match(/<\/local-observations>([\s\S]*)$/)
+    const suffix = suffixMatch?.[1]?.trimEnd() ?? ""
+
+    return groups.map((g, i) => (i === groups.length - 1 && suffix ? `${g}${suffix}` : g))
+  }
+
   // Production cleanup: the old Engram recall bridge was removed.
   // The canonical recall path is Memory.buildContext({ semanticQuery }) in prompt.ts at step===1.
 }

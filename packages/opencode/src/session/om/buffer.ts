@@ -7,9 +7,10 @@ type State = { tok: number; pending: boolean; lastInterval: number }
 const state = new Map<SessionID, State>()
 const inFlight = new Map<SessionID, Promise<void>>()
 
-// Observable status for TUI feedback — polled by sidebar footer
-let _observing = false
-let _reflecting = false
+// Per-session observing/reflecting status for TUI feedback.
+// Using Maps instead of globals so concurrent sessions don't bleed state.
+const observingSet = new Set<SessionID>()
+const reflectingSet = new Set<SessionID>()
 
 export type ThresholdRange = { min: number; max: number }
 
@@ -69,10 +70,23 @@ export namespace OMBuf {
     return "idle"
   }
 
+  // Reset tok and lastInterval after activate() so each observation cycle
+  // starts fresh. Without this, s.tok grows unbounded and the system stays
+  // permanently in "activate" or "block" after the first condensation.
+  export function resetCycle(sid: SessionID): void {
+    const s = state.get(sid)
+    if (!s) return
+    s.tok = 0
+    s.lastInterval = 0
+  }
+
+  // Full reset — called when a session is fully closed (onIdle) to free memory.
   export function reset(sid: SessionID): void {
     state.delete(sid)
     inFlight.delete(sid)
-    // state.delete removes the entry entirely — lastInterval resets on next ensure()
+    seals.delete(sid)
+    observingSet.delete(sid)
+    reflectingSet.delete(sid)
   }
 
   export function setInFlight(sid: SessionID, p: Promise<void>): void {
@@ -102,18 +116,21 @@ export namespace OMBuf {
     ensure(sid).tok += tok
   }
 
-  // Status flags for TUI feedback
+  // Per-session status flags for TUI feedback.
+  // observing()/reflecting() return true if ANY session is currently active.
   export function observing(): boolean {
-    return _observing
+    return observingSet.size > 0
   }
   export function reflecting(): boolean {
-    return _reflecting
+    return reflectingSet.size > 0
   }
-  export function setObserving(v: boolean): void {
-    _observing = v
+  export function setObserving(sid: SessionID, v: boolean): void {
+    if (v) observingSet.add(sid)
+    else observingSet.delete(sid)
   }
-  export function setReflecting(v: boolean): void {
-    _reflecting = v
+  export function setReflecting(sid: SessionID, v: boolean): void {
+    if (v) reflectingSet.add(sid)
+    else reflectingSet.delete(sid)
   }
 
   // In-memory seal map: session → sealed_at timestamp

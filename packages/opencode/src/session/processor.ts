@@ -7,10 +7,13 @@ import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
 import { Snapshot } from "@/snapshot"
 import { Log } from "@/util/log"
+import { Token } from "@/util/token"
 import { Session } from "."
 import { LLM } from "./llm"
 import { PromptProfile } from "./prompt-profile"
 import { MessageV2 } from "./message-v2"
+import { OM, OMBuf, Observer, Reflector } from "./om"
+import { ulid } from "ulid"
 
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
@@ -359,6 +362,107 @@ export namespace SessionProcessor {
                     type: "text",
                     text: `\n\nLSP errors detected after edits, please fix:\n${lines.join("\n\n")}`,
                   })
+                }
+              }
+
+              // Mid-turn OM check — fire background Observer when INTERVAL budget crossed.
+              // Only handles "buffer"; "activate" and "block" remain end-of-turn only.
+              const stepTok = usage.tokens.input + usage.tokens.output
+              const cfg = yield* Effect.promise(() => Config.get())
+              const obsRec = OM.get(ctx.sessionID)
+              const sig = OMBuf.check(
+                ctx.sessionID,
+                stepTok,
+                obsRec?.observation_tokens,
+                cfg.experimental?.observer_message_tokens,
+                cfg.experimental?.observer_block_after,
+              )
+              // activate(): condense buffered observations → main OM record, then run Reflector.
+              // Called on "activate" (background fork) and "block" (blocking — backpressure).
+              // Runs after the assistant message is written so the full turn is included.
+              const activate = async () => {
+                await OMBuf.awaitInFlight(ctx.sessionID)
+                OMBuf.setObserving(ctx.sessionID, true)
+                try {
+                  await OM.activate(ctx.sessionID)
+                  // Reset the token counter so the next observation cycle starts fresh.
+                  // Without this, s.tok grows unbounded and the system stays permanently
+                  // in "activate"/"block" after the first condensation.
+                  OMBuf.resetCycle(ctx.sessionID)
+                  const fresh = OM.get(ctx.sessionID)
+                  if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
+                    OMBuf.setReflecting(ctx.sessionID, true)
+                    try {
+                      await Reflector.run(ctx.sessionID)
+                    } finally {
+                      OMBuf.setReflecting(ctx.sessionID, false)
+                    }
+                  }
+                } finally {
+                  OMBuf.setObserving(ctx.sessionID, false)
+                }
+              }
+              if (sig === "activate" || sig === "block") {
+                // Both signals condense buffered observations. "block" applies backpressure;
+                // "activate" is the normal path. Both run blocking in the finish-step so
+                // the updated OM record is visible before the next turn begins.
+                yield* Effect.promise(activate).pipe(Effect.ignore)
+              }
+
+              if (sig === "buffer" && !OMBuf.getInFlight(ctx.sessionID)) {
+                const boundary = obsRec?.last_observed_at ?? 0
+                const obsIds = new Set<string>(
+                  obsRec?.observed_message_ids ? (JSON.parse(obsRec.observed_message_ids) as string[]) : [],
+                )
+                const sealed = OMBuf.sealedAt(ctx.sessionID)
+                const unobserved = [...MessageV2.stream(ctx.sessionID)].filter(
+                  (m) =>
+                    (m.info.time?.created ?? 0) > boundary &&
+                    !obsIds.has(m.info.id) &&
+                    (sealed === 0 || (m.info.time?.created ?? 0) > sealed),
+                )
+                if (unobserved.length > 0) {
+                  const sealAt = unobserved.at(-1)?.info.time?.created ?? 0
+                  const msgIds = unobserved.map((m) => m.info.id)
+                  const p = (async () => {
+                    OMBuf.setObserving(ctx.sessionID, true)
+                    try {
+                      const result = await Observer.run({
+                        sid: ctx.sessionID,
+                        msgs: unobserved,
+                        prev: obsRec?.observations ?? undefined,
+                        priorCurrentTask: obsRec?.current_task ?? undefined,
+                      })
+                      if (result) {
+                        OM.addBufferSafe(
+                          {
+                            id: ulid(),
+                            session_id: ctx.sessionID,
+                            observations: result.observations,
+                            message_tokens: stepTok,
+                            observation_tokens: Token.estimate(result.observations),
+                            starts_at: boundary,
+                            ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),
+                            first_msg_id: unobserved[0]?.info.id ?? null,
+                            last_msg_id: unobserved.at(-1)?.info.id ?? null,
+                            time_created: Date.now(),
+                            time_updated: Date.now(),
+                          },
+                          ctx.sessionID,
+                          msgIds,
+                          result.currentTask,
+                          result.suggestedContinuation,
+                        )
+                        if (sealAt > 0) OMBuf.seal(ctx.sessionID, sealAt)
+                      }
+                    } catch (err) {
+                      log.error("mid-turn observer failed", { err })
+                    } finally {
+                      OMBuf.setObserving(ctx.sessionID, false)
+                      OMBuf.clearInFlight(ctx.sessionID)
+                    }
+                  })()
+                  OMBuf.setInFlight(ctx.sessionID, p)
                 }
               }
 

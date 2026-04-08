@@ -105,6 +105,66 @@ description: ${description}
   })
 })
 
+// ─── SystemPrompt.splitObsChunks ──────────────────────────────────────────────
+
+describe("SystemPrompt.splitObsChunks", () => {
+  // Helper: build a realistic observationsStable string
+  function obs(groups: string[], suffix = "INSTRUCTIONS") {
+    const body = groups.join("\n\n")
+    return `<local-observations>\n${body}\n</local-observations>\n\n${suffix}`
+  }
+
+  test("splits two groups — instructions only on last chunk", () => {
+    const text = obs([
+      `<observation-group id="a1" range="m1:m5">\nfoo\n</observation-group>`,
+      `<observation-group id="b2" range="m6:m10">\nbar\n</observation-group>`,
+    ])
+    const chunks = SystemPrompt.splitObsChunks(text)
+    expect(chunks).toHaveLength(2)
+    expect(chunks[0]).toContain("foo")
+    expect(chunks[0]).not.toContain("INSTRUCTIONS")
+    expect(chunks[1]).toContain("bar")
+    expect(chunks[1]).toContain("INSTRUCTIONS")
+  })
+
+  test("old chunks are stable — do not contain instructions", () => {
+    const text = obs([
+      `<observation-group id="a1" range="m1:m5">\nfoo\n</observation-group>`,
+      `<observation-group id="b2" range="m6:m10">\nbar\n</observation-group>`,
+      `<observation-group id="c3" range="m11:m15">\nbaz\n</observation-group>`,
+    ])
+    const chunks = SystemPrompt.splitObsChunks(text)
+    expect(chunks).toHaveLength(3)
+    expect(chunks[0]).not.toContain("INSTRUCTIONS")
+    expect(chunks[1]).not.toContain("INSTRUCTIONS")
+    expect(chunks[2]).toContain("INSTRUCTIONS")
+  })
+
+  test("returns [text] when no observation-group tags present", () => {
+    const text = "plain observations without any group tags"
+    expect(SystemPrompt.splitObsChunks(text)).toEqual([text])
+  })
+
+  test("returns [text] for empty string", () => {
+    expect(SystemPrompt.splitObsChunks("")).toEqual([""])
+  })
+
+  test("single group carries instructions", () => {
+    const text = obs([`<observation-group id="x1" range="m1:m3">\ncontent\n</observation-group>`])
+    const chunks = SystemPrompt.splitObsChunks(text)
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toContain("content")
+    expect(chunks[0]).toContain("INSTRUCTIONS")
+  })
+
+  test("does not mutate input string", () => {
+    const text = obs([`<observation-group id="a" range="m1:m1">\ndata\n</observation-group>`])
+    const original = text
+    SystemPrompt.splitObsChunks(text)
+    expect(text).toBe(original)
+  })
+})
+
 // ─── SystemPrompt.observations — reflections priority ─────────────────────────
 
 describe("SystemPrompt.observations — reflections priority", () => {

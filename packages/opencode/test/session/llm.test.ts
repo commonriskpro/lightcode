@@ -485,12 +485,13 @@ describe("session.llm.stream", () => {
 
         expect(sys[0]).toContain("ENV")
         expect(sys[0]).toContain("SKILLS")
-        expect(sys.slice(1, 5)).toEqual([
-          "<working-memory>WM</working-memory>",
-          "<local-observations>OBS</local-observations>",
-          "<memory-recall>RECALL</memory-recall>",
-          "<system-reminder>LIVE</system-reminder>",
-        ])
+        expect(sys[1]).toBe("<working-memory>WM</working-memory>")
+        expect(sys[2]).toBe("<local-observations>OBS</local-observations>")
+        // sys[3] = volatile (model name + date) — dynamic content, check structure only
+        expect(sys[3]).toContain("You are powered by the model named")
+        expect(sys[3]).toContain("Today's date:")
+        expect(sys[4]).toBe("<memory-recall>RECALL</memory-recall>")
+        expect(sys[5]).toBe("<system-reminder>LIVE</system-reminder>")
       },
     })
   })
@@ -1296,6 +1297,107 @@ describe("session.llm.stream", () => {
         expect(config?.temperature).toBe(0.3)
         expect(config?.topP).toBe(0.8)
         expect(config?.maxOutputTokens).toBe(ProviderTransform.maxOutputTokens(resolved))
+      },
+    })
+  })
+
+  test("strips inputSchema for tools marked with _noSchema", async () => {
+    const server = state.server
+    if (!server) throw new Error("Server not initialized")
+
+    const providerID = "alibaba"
+    const modelID = "qwen-plus"
+    const fixture = await loadFixture(providerID, modelID)
+
+    const request = waitRequest(
+      "/chat/completions",
+      new Response(createChatStream("ok"), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "lightcode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: [providerID],
+            provider: {
+              [providerID]: {
+                options: { apiKey: "test-key", baseURL: `${server.url.origin}/v1` },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await Provider.getModel(ProviderID.make(providerID), ModelID.make(fixture.model.id))
+        const sessionID = SessionID.make("session-noschema")
+        const agent = {
+          name: "test",
+          mode: "primary" as const,
+          options: {},
+          permission: [],
+        } satisfies Agent.Info
+
+        const user = {
+          id: MessageID.make("user-noschema"),
+          sessionID,
+          role: "user" as const,
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(providerID), modelID: resolved.id },
+        } satisfies MessageV2.User
+
+        // Tool with full schema
+        const withSchema = tool({
+          description: "A tool with schema",
+          inputSchema: z.object({ cmd: z.string(), timeout: z.number().optional() }),
+          execute: async () => ({ output: "" }),
+        })
+
+        // Tool marked _noSchema — schema should be stripped in the outgoing request
+        const noSchemaT = tool({
+          description: "A tool without schema",
+          inputSchema: z.object({ cmd: z.string(), timeout: z.number().optional() }),
+          execute: async () => ({ output: "" }),
+        })
+        ;(noSchemaT as any)._noSchema = true
+
+        const stream = await LLM.stream({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: [],
+          abort: new AbortController().signal,
+          messages: [{ role: "user", content: "Hello" }],
+          tools: { with_schema: withSchema, no_schema: noSchemaT },
+        })
+
+        for await (const _ of stream.fullStream) {
+        }
+
+        const capture = await request
+        type LLMTool = { function?: { name?: string; parameters?: Record<string, unknown> } }
+        const tools = capture.body.tools as LLMTool[] | undefined
+
+        const full = tools?.find((t) => t.function?.name === "with_schema")
+        const stripped = tools?.find((t) => t.function?.name === "no_schema")
+
+        // with_schema: should have real parameters
+        expect(full?.function?.parameters).toBeDefined()
+        expect(Object.keys((full?.function?.parameters as any)?.properties ?? {})).not.toHaveLength(0)
+
+        // no_schema: parameters should be stripped to empty object schema
+        expect(stripped?.function?.parameters).toBeDefined()
+        expect((stripped?.function?.parameters as any)?.properties).toEqual({})
       },
     })
   })

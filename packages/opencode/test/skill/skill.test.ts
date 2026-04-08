@@ -159,7 +159,8 @@ Just some content without YAML frontmatter.
   })
 })
 
-test("discovers skills from .claude/skills/ directory", async () => {
+// External skill dirs (.claude, .agents) are disabled by default — requires OPENCODE_ENABLE_EXTERNAL_SKILLS=true
+test.skip("discovers skills from .claude/skills/ directory", async () => {
   await using tmp = await tmpdir({
     git: true,
     init: async (dir) => {
@@ -189,7 +190,7 @@ description: A skill in the .claude/skills directory.
   })
 })
 
-test("discovers global skills from ~/.claude/skills/ directory", async () => {
+test.skip("discovers global skills from ~/.claude/skills/ directory", async () => {
   await using tmp = await tmpdir({ git: true })
 
   const originalHome = process.env.OPENCODE_TEST_HOME
@@ -224,7 +225,7 @@ test("returns empty array when no skills exist", async () => {
   })
 })
 
-test("discovers skills from .agents/skills/ directory", async () => {
+test.skip("discovers skills from .agents/skills/ directory", async () => {
   await using tmp = await tmpdir({
     git: true,
     init: async (dir) => {
@@ -254,7 +255,7 @@ description: A skill in the .agents/skills directory.
   })
 })
 
-test("discovers global skills from ~/.agents/skills/ directory", async () => {
+test.skip("discovers global skills from ~/.agents/skills/ directory", async () => {
   await using tmp = await tmpdir({ git: true })
 
   const originalHome = process.env.OPENCODE_TEST_HOME
@@ -291,7 +292,7 @@ This skill is loaded from the global home directory.
   }
 })
 
-test("discovers skills from both .claude/skills/ and .agents/skills/", async () => {
+test.skip("discovers skills from both .claude/skills/ and .agents/skills/", async () => {
   await using tmp = await tmpdir({
     git: true,
     init: async (dir) => {
@@ -331,7 +332,7 @@ description: A skill in the .agents/skills directory.
   })
 })
 
-test("properly resolves directories that skills live in", async () => {
+test.skip("properly resolves directories that skills live in", async () => {
   await using tmp = await tmpdir({
     git: true,
     init: async (dir) => {
