@@ -116,34 +116,63 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      // Resolve relative --project paths from the user's invocation cwd
-      // (recovered via userCwd(), which prefers PWD and falls back to
-      // LIGHTCODE_USER_CWD). We MUST NOT use process.cwd() here because the
-      // entry shim (`src/entry.ts`) chdir'd the process into the binary
-      // directory at startup so the sidecar node_modules/ resolves.
-      // After this block runs, `process.chdir(next)` switches the process to
-      // the resolved project directory so the worker inherits the right cwd.
+      // Resolve the effective project directory:
+      //   - userCwd() returns the user's invocation cwd (recovered from
+      //     LIGHTCODE_USER_CWD which the launcher script set before exec).
+      //   - --project, if given, is resolved relative to that.
       const root = Filesystem.resolve(userCwd())
       const next = args.project
         ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
         : root
-      const file = await target()
-      try {
-        process.chdir(next)
-      } catch {
-        UI.error("Failed to change directory to " + next)
+
+      // Validate the directory exists before going any further. Without
+      // this we'd fail later with a confusing error from filesystem code
+      // deep inside the bootstrap chain.
+      if (!(await Filesystem.isDir(next))) {
+        UI.error("Project directory does not exist: " + next)
         return
       }
-      const cwd = Filesystem.resolve(process.cwd())
 
-      // Update LIGHTCODE_USER_CWD so the worker — which inherits the env
-      // from this process — recovers the effective project directory via
-      // userCwd(). Without this, `--project foo` would be lost on the
-      // worker side: LIGHTCODE_USER_CWD would still hold the value the
-      // launcher script set at startup (the user's original invocation
-      // cwd), not the resolved project directory.
+      // CRITICAL: do NOT do `process.chdir(next)` here.
+      //
+      // The TUI spawns a Bun Worker (below) that statically imports
+      // `Server` -> `Database` -> `@libsql/client`. `@libsql/client` is
+      // marked external in `script/build.ts` and ships as a sidecar
+      // `node_modules/` next to the binary. Bun's runtime resolver finds
+      // that sidecar by looking at `process.cwd()` AT THE MOMENT THE WORKER
+      // IS SPAWNED, because the new Worker JS runtime inherits the parent
+      // process's cwd. The launcher script (`script/launcher.sh`) cd'd into
+      // the binary directory before exec'ing the binary, so the cwd is
+      // currently correct — if we chdir to `next` (the user's project)
+      // here, the Worker's @libsql/client import will fail with
+      //     Cannot find module '@libsql/client' from '/$bunfs/root/...'
+      // and the Worker silently dies before answering the RPC `server`
+      // call below, leaving the TUI hanging forever on a black screen.
+      //
+      // Background: this is the same Bun 1.3.4+ external resolution
+      // regression as oven-sh/bun#27058 (closed Not planned). It does NOT
+      // matter that the main thread already imported @libsql/client
+      // successfully — Bun Workers are isolated runtimes with their own
+      // module graph, so they re-resolve externals from scratch with the
+      // current cwd.
+      //
+      // The project directory is communicated to the worker via:
+      //   - LIGHTCODE_USER_CWD env var (read by userCwd() in the worker)
+      //   - The `cwd` variable passed to TuiConfig.get(), tui(), and
+      //     server.routing via Instance.provide({ directory: cwd })
+      // No call site inside the TUI or worker reads `process.cwd()`
+      // expecting the project directory; everything goes through
+      // `Instance.directory` (the AsyncLocalStorage) or this `cwd` string.
+      const cwd = next
+
+      // Set LIGHTCODE_USER_CWD to the resolved project directory so the
+      // worker (which inherits the parent's env) recovers it via userCwd().
+      // If the user passed --project foo, this overrides whatever the
+      // launcher script originally set, so the worker sees the resolved
+      // project, not the user's original invocation cwd.
       process.env.LIGHTCODE_USER_CWD = cwd
 
+      const file = await target()
       const worker = new Worker(file, {
         env: Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
