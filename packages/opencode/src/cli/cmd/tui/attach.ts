@@ -4,7 +4,9 @@ import { tui } from "./app"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
+import { userCwd } from "@/cli/bootstrap"
 import { existsSync } from "fs"
+import path from "path"
 
 export const AttachCommand = cmd({
   command: "attach <url>",
@@ -52,8 +54,13 @@ export const AttachCommand = cmd({
 
       const directory = (() => {
         if (!args.dir) return undefined
+        // Resolve --dir relative to the user's invocation cwd, NOT the
+        // process cwd (which is the binary's sidecar dir after the entry
+        // shim's chdir). Otherwise `lightcode attach --dir ./foo` would
+        // look for `dist/.../bin/foo` instead of `<user-cwd>/foo`.
+        const resolved = path.isAbsolute(args.dir) ? args.dir : path.resolve(userCwd(), args.dir)
         try {
-          process.chdir(args.dir)
+          process.chdir(resolved)
           return process.cwd()
         } catch {
           // If the directory doesn't exist locally (remote attach), pass it through.
@@ -67,7 +74,7 @@ export const AttachCommand = cmd({
         return { Authorization: auth }
       })()
       const config = await Instance.provide({
-        directory: directory && existsSync(directory) ? directory : process.cwd(),
+        directory: directory && existsSync(directory) ? directory : userCwd(),
         fn: () => TuiConfig.get(),
       })
       await tui({

@@ -14,6 +14,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { writeHeapSnapshot } from "node:v8"
 import { WorkspaceID } from "@/control-plane/schema"
 import { Heap } from "@/cli/heap"
+import { userCwd } from "@/cli/bootstrap"
 
 await Log.init({
   print: process.argv.includes("--print-logs"),
@@ -111,7 +112,7 @@ const startEventStream = (input: { directory: string; workspaceID?: string }) =>
   })
 }
 
-startEventStream({ directory: process.cwd() })
+startEventStream({ directory: userCwd() })
 
 export const rpc = {
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {
@@ -155,7 +156,7 @@ export const rpc = {
     await Config.invalidate(true)
   },
   async setWorkspace(input: { workspaceID?: string }) {
-    startEventStream({ directory: process.cwd(), workspaceID: input.workspaceID })
+    startEventStream({ directory: userCwd(), workspaceID: input.workspaceID })
   },
   async shutdown() {
     Log.Default.info("worker shutting down")

@@ -19,6 +19,7 @@ import { Log } from "@/util/log"
 import { errorData, errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
 import { Instance } from "@/project/instance"
+import { userCwd } from "@/cli/bootstrap"
 import {
   readPackageThemes,
   readPluginId,
@@ -143,7 +144,7 @@ function resolveRoot(root: string) {
     return path.dirname(file)
   }
   if (path.isAbsolute(root)) return root
-  return path.resolve(process.cwd(), root)
+  return path.resolve(userCwd(), root)
 }
 
 function createThemeInstaller(
@@ -279,7 +280,7 @@ function loadInternalPlugin(item: InternalTuiPlugin): PluginLoad {
       scope: "global",
       source: target,
     },
-    theme_root: process.cwd(),
+    theme_root: userCwd(),
     theme_files: [],
   }
 }
@@ -929,7 +930,7 @@ export namespace TuiPluginRuntime {
   export const Slot = View
 
   export async function init(api: HostPluginApi) {
-    const cwd = process.cwd()
+    const cwd = userCwd()
     if (loaded) {
       if (dir !== cwd) {
         throw new Error(`TuiPluginRuntime.init() called with a different working directory. expected=${dir} got=${cwd}`)
@@ -978,7 +979,7 @@ export namespace TuiPluginRuntime {
   }
 
   async function load(api: Api) {
-    const cwd = process.cwd()
+    const cwd = userCwd()
     const slots = setupSlots(api)
     const next: RuntimeState = {
       directory: cwd,

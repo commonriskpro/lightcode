@@ -16,6 +16,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { writeHeapSnapshot } from "v8"
+import { userCwd } from "@/cli/bootstrap"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -115,12 +116,17 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      // Resolve relative --project paths from PWD, then use the real cwd after
-      // chdir so the thread and worker share the same directory key.
-      const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
+      // Resolve relative --project paths from the user's invocation cwd
+      // (recovered via userCwd(), which prefers PWD and falls back to
+      // LIGHTCODE_USER_CWD). We MUST NOT use process.cwd() here because the
+      // entry shim (`src/entry.ts`) chdir'd the process into the binary
+      // directory at startup so the sidecar node_modules/ resolves.
+      // After this block runs, `process.chdir(next)` switches the process to
+      // the resolved project directory so the worker inherits the right cwd.
+      const root = Filesystem.resolve(userCwd())
       const next = args.project
         ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
-        : Filesystem.resolve(process.cwd())
+        : root
       const file = await target()
       try {
         process.chdir(next)
@@ -129,6 +135,15 @@ export const TuiThreadCommand = cmd({
         return
       }
       const cwd = Filesystem.resolve(process.cwd())
+
+      // Update PWD and LIGHTCODE_USER_CWD so the worker — which will chdir
+      // back to the binary directory in its entry shim to resolve the
+      // sidecar — can still recover the effective project directory via
+      // userCwd(). Without this, `--project foo` would be lost on the
+      // worker side (PWD would still point at the original invocation cwd,
+      // not the resolved project directory).
+      process.env.PWD = cwd
+      process.env.LIGHTCODE_USER_CWD = cwd
 
       const worker = new Worker(file, {
         env: Object.fromEntries(
