@@ -131,6 +131,9 @@ export function DialogObserverThresholds() {
       await sdk.client.global.config.update({
         config: { experimental: { [key]: parsed } },
       })
+      // Force refetch global config to update the UI
+      const newConfig = await sdk.client.config.get({}, { throwOnError: true })
+      sync.set("config", newConfig.data!)
       const t = THRESHOLDS.find((x) => x.key === key)!
       toast.show({
         title: t.title,
