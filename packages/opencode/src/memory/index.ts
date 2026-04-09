@@ -17,6 +17,7 @@ export { SessionMemory } from "./session-memory"
 export { Embedder } from "./embedder"
 export { EmbeddingCache } from "./embedding-cache"
 export { Handoff } from "./handoff"
+export { HandoffFallback } from "./handoff-fallback"
 
 export type {
   MemoryScope,

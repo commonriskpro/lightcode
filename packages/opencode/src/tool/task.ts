@@ -13,10 +13,24 @@ import { Config } from "../config/config"
 import { Permission } from "@/permission"
 import { Log } from "@/util/log"
 import { Memory } from "@/memory"
+import { HandoffFallback } from "@/memory/handoff-fallback"
 import { Instance } from "@/project/instance"
 import { OM } from "@/session/om"
 
 const log = Log.create({ service: "task" })
+
+async function retry(run: () => Promise<void>) {
+  for (const wait of [0, 25, 100]) {
+    if (wait > 0) await Bun.sleep(wait)
+    try {
+      await run()
+      return
+    } catch {
+      // retry
+    }
+  }
+  await run()
+}
 
 const parameters = z.object({
   description: z.string().describe("A short (3-5 words) description of the task"),
@@ -46,6 +60,7 @@ export const TaskTool = Tool.define("task", async (ctx) => {
     description,
     parameters,
     async execute(params: z.infer<typeof parameters>, ctx) {
+      await HandoffFallback.ensure()
       const config = await Config.get()
 
       // Skip permission check when user explicitly invoked via @ or command subtask
@@ -106,6 +121,18 @@ export const TaskTool = Tool.define("task", async (ctx) => {
       const msg = await MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID })
       if (msg.info.role !== "assistant") throw new Error("Not an assistant message")
 
+      let stop = false
+      function cancel() {
+        stop = true
+        void SessionPrompt.cancel(session.id)
+      }
+      ctx.abort.addEventListener("abort", cancel)
+      using _ = defer(() => ctx.abort.removeEventListener("abort", cancel))
+      const check = () => {
+        if (stop || ctx.abort.aborted) throw new DOMException("Aborted", "AbortError")
+      }
+      check()
+
       const model = agent.model ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
@@ -124,6 +151,7 @@ export const TaskTool = Tool.define("task", async (ctx) => {
           // Final: enriched snapshot includes OM continuation metadata and project WM keys
           // so a restarted process can reconstruct useful child context without fresh LLM calls.
           try {
+            check()
             const parentOm = await OM.get(ctx.sessionID as SessionID)
             const wmSnapshot = (await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })).map(
               (r) => ({
@@ -131,19 +159,27 @@ export const TaskTool = Tool.define("task", async (ctx) => {
                 value: r.value,
               }),
             )
-            await Memory.writeForkContext({
+            const data = {
+              parentAgent: ctx.agent,
+              projectId: Instance.project.id,
+              taskDescription: params.description,
+              currentTask: parentOm?.current_task ?? null,
+              suggestedContinuation: parentOm?.suggested_continuation ?? null,
+              workingMemorySnapshot: wmSnapshot,
+            }
+            const payload = {
               session_id: session.id,
               parent_session_id: ctx.sessionID,
-              context: JSON.stringify({
-                parentAgent: ctx.agent,
-                projectId: Instance.project.id,
-                taskDescription: params.description,
-                currentTask: parentOm?.current_task ?? null,
-                suggestedContinuation: parentOm?.suggested_continuation ?? null,
-                workingMemorySnapshot: wmSnapshot,
-              }),
-            })
-          } catch {
+              context: JSON.stringify(data),
+            }
+            await retry(() => Memory.writeForkContext(payload))
+          } catch (err) {
+            const payload = {
+              session_id: session.id,
+              parent_session_id: ctx.sessionID,
+              context: JSON.stringify({ taskDescription: params.description }),
+            }
+            await HandoffFallback.append("fork", payload, err)
             // Non-fatal — in-memory fork context still works for this process lifetime
           }
         }
@@ -162,31 +198,45 @@ export const TaskTool = Tool.define("task", async (ctx) => {
       // and project WM snapshot — providing a durable handoff record that survives restart.
       if (!isFork) {
         try {
+          check()
           const parentOm = await OM.get(ctx.sessionID as SessionID)
           const wmRecords = await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })
-          await Memory.writeHandoff({
+          const data = {
+            context: params.description,
+            workingMemory: wmRecords.map((r) => ({ key: r.key, value: r.value })),
+            observation: parentOm?.current_task ?? parentOm?.suggested_continuation ?? null,
+            metadata: { parentAgent: ctx.agent, projectId: Instance.project.id },
+          }
+          const payload = {
             parent_session_id: ctx.sessionID,
             child_session_id: session.id,
-            context: params.description,
-            working_memory_snap: wmRecords.length
-              ? JSON.stringify(wmRecords.map((r) => ({ key: r.key, value: r.value })))
-              : null,
-            observation_snap: parentOm?.current_task ?? parentOm?.suggested_continuation ?? null,
-            metadata: JSON.stringify({ parentAgent: ctx.agent, projectId: Instance.project.id }),
-          })
-        } catch {
+            context: data.context,
+            working_memory_snap: data.workingMemory.length ? JSON.stringify(data.workingMemory) : null,
+            observation_snap: data.observation,
+            metadata: JSON.stringify(data.metadata),
+          }
+          await retry(() => Memory.writeHandoff(payload).then(() => {}))
+        } catch (err) {
+          await HandoffFallback.append(
+            "handoff",
+            {
+              parent_session_id: ctx.sessionID,
+              child_session_id: session.id,
+              context: params.description,
+              working_memory_snap: null,
+              observation_snap: null,
+              metadata: JSON.stringify({ parentAgent: ctx.agent, projectId: Instance.project.id }),
+            },
+            err,
+          )
           // Non-fatal — task still runs without handoff record
         }
       }
 
       const messageID = MessageID.ascending()
-
-      function cancel() {
-        SessionPrompt.cancel(session.id)
-      }
-      ctx.abort.addEventListener("abort", cancel)
-      using _ = defer(() => ctx.abort.removeEventListener("abort", cancel))
+      check()
       const promptParts = await SessionPrompt.resolvePromptParts(params.prompt)
+      check()
 
       const result = await SessionPrompt.prompt({
         messageID,

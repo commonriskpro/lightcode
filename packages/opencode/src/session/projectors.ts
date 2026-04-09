@@ -1,4 +1,4 @@
-import { NotFoundError, eq, and } from "../storage/db"
+import { Database, NotFoundError, eq, and } from "../storage/db"
 import { SyncEvent } from "@/sync"
 import { Session } from "./index"
 import { MessageV2 } from "./message-v2"
@@ -147,8 +147,9 @@ export default [
       if (!row) return
       if (row.data.role === "assistant" && !data.part.time?.end) return
       if (row.data.role !== "user" && row.data.role !== "assistant") return
+      const txt = data.part.text
 
-      void SessionMemory.append(data.part.sessionID, data.part.messageID, data.part.text)
+      Database.effect(() => SessionMemory.append(data.part.sessionID, data.part.messageID, txt))
     } catch (err) {
       if (!foreign(err)) throw err
       log.warn("ignored late part update", { partID: id, messageID, sessionID })
