@@ -182,7 +182,8 @@ handler: async (args) => {
 │  └── cors.ts         → CORS config                       │
 ├────────────────────────────────────────────────────────────┤
 │  Routes principales:                                      │
-│  POST /session/:id/prompt_async  → prompt.ts:1551         │
+│  POST /session/:id/prompt_async → async queue enqueue    │
+│  POST /session/:id/steer_async  → active turn steering   │
 │  POST /session/:id/message      → message-v2.ts          │
 │  GET  /session/:id/events       → WebSocket /event       │
 │  GET  /global/sessions          → session/index.ts       │
@@ -211,7 +212,7 @@ export interface Interface {
   // ... más métodos
 }
 
-// session/prompt.ts:1571 - Run loop principal
+// session/prompt.ts - Run loop principal
 const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.prompt")(function* (
   input: PromptInput,
 ) {
@@ -223,6 +224,13 @@ const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts> = Effec
   return yield* loop({ sessionID: input.sessionID })
 })
 ```
+
+### Cola async y steer del turno activo
+
+- `prompt_async` ya no intenta resolver la respuesta en la misma request: encola el turno y devuelve `204`
+- `steer_async` representa una intervención sobre el turno activo; si no hay runner activo, cae a enqueue normal
+- la cola FIFO se calcula por consumo real del turno (`assistant.parentID`), no por timestamps ni por ids
+- la TUI representa esto con badges `QUEUED` y `STEERED`
 
 ### 2.4 Agent Layer
 

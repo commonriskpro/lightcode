@@ -1712,9 +1712,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const lastAssistantMsg = msgs.findLast(
               (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
             )
-            // Some providers return "stop" even when the assistant message contains tool calls.
-            // Keep the loop running so tool results can be sent back to the model.
-            const hasToolCalls = lastAssistantMsg?.parts.some((part) => part.type === "tool") ?? false
+            // Some providers return "stop" even when the assistant message still has
+            // unfinished tool calls. Only keep the loop alive for pending/running tools.
+            // Completed/error tool parts are just history and must not trigger a second reply.
+            const hasToolCalls =
+              lastAssistantMsg?.parts.some(
+                (part) => part.type === "tool" && ["pending", "running"].includes(part.state.status),
+              ) ?? false
 
             if (
               lastAssistant?.finish &&

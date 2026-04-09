@@ -19,6 +19,16 @@ The storage API is async now:
 
 `drizzle-orm/libsql` is async-only, so callers must respect the boundary.
 
+## 3.1 Migration gotchas that were fixed in code
+
+The tricky part was not just the DB client — it was every caller that still behaved as if storage-side effects were synchronous.
+
+- `SyncEvent` had to await async projectors
+- session callers like `session/index.ts` and `session/revert.ts` had to stop treating event/projector work as fire-and-forget
+- async DB code inside transaction helpers had to stop leaking unresolved promises
+
+If you migrate another path to libSQL, verify the whole call chain. Half-async code is how you get phantom state, missing projections, and race bugs.
+
 ## 4. Vector queries
 
 LightCode now uses libSQL native vectors:

@@ -16,7 +16,7 @@ export function DialogObserverModel() {
 
   const current = createMemo(() => {
     const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
-    return (exp?.observer_model as string) ?? "google/gemini-2.5-flash"
+    return (exp?.observer_model as string) ?? "opencode/qwen3.6-plus-free"
   })
 
   const options = createMemo(() => {
@@ -74,7 +74,7 @@ export function DialogObserverModel() {
         duration: 3000,
       })
     }
-    dialog.clear()
+    // Don't close the dialog — let user keep selecting other models
   }
 
   return (

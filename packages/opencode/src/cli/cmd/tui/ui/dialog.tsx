@@ -119,6 +119,19 @@ function init() {
       })
       refocus()
     },
+    // Pop the topmost dialog off the stack, returning to the previous dialog
+    pop() {
+      if (store.stack.length <= 1) {
+        // If only one dialog or empty, behave like clear
+        return this.clear()
+      }
+      const top = store.stack.at(-1)
+      if (top?.onClose) top.onClose()
+      batch(() => {
+        setStore("stack", store.stack.slice(0, -1))
+      })
+      refocus()
+    },
     replace(input: any, onClose?: () => void) {
       if (store.stack.length === 0) {
         focus = renderer.currentFocusedRenderable

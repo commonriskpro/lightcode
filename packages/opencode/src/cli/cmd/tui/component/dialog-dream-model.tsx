@@ -74,7 +74,7 @@ export function DialogDreamModel() {
         duration: 3000,
       })
     }
-    dialog.clear()
+    // Don't close the dialog — let user keep selecting other models
   }
 
   return (

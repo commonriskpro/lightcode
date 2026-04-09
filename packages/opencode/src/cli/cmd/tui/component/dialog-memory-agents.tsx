@@ -12,12 +12,12 @@ export function DialogMemoryAgents() {
 
   const observer = createMemo(() => {
     const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
-    return (exp?.observer_model as string) ?? "google/gemini-2.5-flash"
+    return (exp?.observer_model as string) ?? "opencode/qwen3.6-plus-free"
   })
 
   const autodream = createMemo(() => {
     const exp = sync.data.config?.experimental as Record<string, unknown> | undefined
-    return (exp?.autodream_model as string) ?? "google/gemini-2.5-flash"
+    return (exp?.autodream_model as string) ?? "opencode/qwen3.6-plus-free"
   })
 
   return (

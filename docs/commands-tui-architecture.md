@@ -130,7 +130,13 @@ command.register(() => [
 
 ### How Dispatch Works
 
-In `prompt/index.tsx` `submit()` (lines 670-699): when user types `/commandname`, checks if it matches a server-side command (`sync.data.command`). If it does, calls `sdk.client.session.command()`. If it starts with `/` and autocomplete was showing TUI slash commands, the autocomplete `onSelect` fires directly.
+In `prompt/index.tsx` `submit()`, dispatch now splits into three paths:
+
+1. `/commandname` matching a server-side command → `sdk.client.session.command()`
+2. normal prompt submit → `sdk.client.session.promptAsync()`
+3. explicit steer while a turn is busy → `POST /session/:sessionID/steer_async`
+
+If input starts with `/` and autocomplete was showing TUI slash commands, the autocomplete `onSelect` fires directly.
 
 The autocomplete (`prompt/autocomplete.tsx`, line 359-386) merges both:
 
@@ -268,19 +274,54 @@ experimental: z.object({
 
 The `/features` dialog (`dialog-feature.tsx`) exposes config-toggleable features using `sdk.client.global.config.update()`. Features with only an `env` field are shown as read-only (env only) and cannot be toggled.
 
-| Feature ID              | Toggle via Space | Model picker via Enter | Notes                         |
-| ----------------------- | :--------------: | :--------------------: | ----------------------------- |
-| `deferred_tools`        |        ✅        |           —            | also toggleable via env var   |
-| `batch_tool`            |        ✅        |           —            |                               |
-| `continue_loop_on_deny` |        ✅        |           —            |                               |
-| `markdown`              |  ❌ (env only)   |           —            | read-only in UI               |
-| `open_telemetry`        |        ✅        |           —            |                               |
-| `autodream`             |        ✅        |  ✅ (AutoDream model)  | requires Engram MCP connected |
-| `observer`              |        ✅        |  ✅ (Observer model)   | requires Engram MCP connected |
+| Feature ID              | Toggle via Space | Model picker via Enter | Notes                       |
+| ----------------------- | :--------------: | :--------------------: | --------------------------- |
+| `deferred_tools`        |        ✅        |           —            | also toggleable via env var |
+| `batch_tool`            |        ✅        |           —            |                             |
+| `continue_loop_on_deny` |        ✅        |           —            |                             |
+| `markdown`              |  ❌ (env only)   |           —            | read-only in UI             |
+| `open_telemetry`        |        ✅        |           —            |                             |
+| `autodream`             |        ✅        |  ✅ (AutoDream model)  | native libSQL-backed flow   |
+| `observer`              |        ✅        |  ✅ (Observer model)   | native OM pipeline          |
 
 ---
 
-## 4. Runtime Flag Toggling
+## 4. Submit vs Steer Semantics
+
+This was one of the biggest TUI behavior changes and the old docs were wrong.
+
+### Normal submit
+
+- Prompt input submits through `promptAsync()`
+- Server route: `POST /session/:sessionID/prompt_async`
+- Behavior: create a user message, return immediately, let the session loop drain it later
+
+### Steer current turn
+
+- Command palette action: `Steer current turn`
+- Inline transcript action on queued prompts: `⎈ STEER`
+- Server route: `POST /session/:sessionID/steer_async`
+- Behavior when busy:
+  - capture steer text
+  - mark the chosen queued prompt as `STEERED` in UI via a synthetic hidden assistant marker
+  - cancel the active runner
+  - restart the loop with the steer injected into the current turn
+- Behavior when idle:
+  - degrade to normal enqueue behavior instead of failing
+
+### Why queue detection changed
+
+Queued prompts are not inferred from timestamps anymore. The session loop computes pending work from user messages that have not yet been consumed by a finished assistant reply. That boundary is determined by `assistant.parentID`.
+
+This fixed three classes of bugs at once:
+
+- wrong queued badge removal order
+- wrong visual ordering of pending prompts
+- steer accidentally behaving like just another queued turn
+
+---
+
+## 5. Runtime Flag Toggling
 
 **There is NO existing mechanism for runtime flag toggling.**
 
@@ -293,7 +334,7 @@ The `/features` dialog (`dialog-feature.tsx`) exposes config-toggleable features
 
 ---
 
-## 5. File Paths
+## 6. File Paths
 
 ### Command system (server-side templates)
 
@@ -305,8 +346,8 @@ The `/features` dialog (`dialog-feature.tsx`) exposes config-toggleable features
 
 - `packages/opencode/src/cli/cmd/tui/component/dialog-command.tsx` — `CommandProvider`, `useCommandDialog()`, `CommandOption` type
 - `packages/opencode/src/cli/cmd/tui/app.tsx` — Main app, registers `/sessions`, `/new`, `/models`, `/agents`, `/mcps`, `/connect`, `/status`, `/themes`, `/help`, `/exit`, `/workspaces`
-- `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` — Session route, registers `/share`, `/rename`, `/timeline`, `/fork`, `/compact`, `/unshare`, `/undo`, `/redo`, `/timestamps`, `/thinking`
-- `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` — Prompt component, registers commands, handles dispatch in `submit()`
+- `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` — Session route, transcript rendering, `QUEUED` / `STEERED` badges, inline `⎈ STEER`, session commands
+- `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` — Prompt component, registers commands, handles `promptAsync()` vs `steer_async` dispatch in `submit()`
 - `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx` — Autocomplete, merges TUI slashes + server commands
 
 ### Dialog/picker UI primitives
@@ -348,3 +389,4 @@ The `/features` dialog (`dialog-feature.tsx`) exposes config-toggleable features
 ### Server routes
 
 - `packages/opencode/src/server/routes/tui.ts` — TUI HTTP endpoints
+- `packages/opencode/src/server/routes/session.ts` — sync prompt route, `prompt_async`, `steer_async`

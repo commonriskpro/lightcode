@@ -1,6 +1,6 @@
 # LightCode Feature Catalog
 
-> Code-verified. Every claim is tied to a source file. Last updated: 2026-04-05.
+> Code-verified. Every claim is tied to a source file. Last updated: 2026-04-09.
 
 ---
 
@@ -39,22 +39,36 @@ Injected as:
 
 ### Layer 2 — Intra-Session Observer
 
-Background LLM extracts structured facts from the conversation every **6k tokens** (buffered) and activates asynchronously once the message threshold is reached. If OM falls behind, the main loop applies **backpressure** instead of running a duplicate synchronous observer path.
+Background LLM extraction is driven by **pending / unobserved message tokens**, not by total provider usage. The processor recomputes the unobserved slice with `OMPending.messages()` and derives thresholds from that pending set. If OM falls behind, the main loop applies **backpressure** instead of running a duplicate synchronous observer path.
 
 **OMBuf thresholds:**
 
 | Signal     | Condition           | Action                  |
 | ---------- | ------------------- | ----------------------- |
-| `idle`     | < 6k new tokens     | no-op                   |
+| `idle`     | < 6k pending tokens | no-op                   |
 | `buffer`   | crossed 6k boundary | fork observer pipeline  |
-| `activate` | ≥ 30k cumulative    | fork observer pipeline  |
+| `activate` | ≥ 30k pending       | fork observer pipeline  |
 | `block`    | ≥ `blockAfter`      | wait for OM to catch up |
 
 Observations stored in `ObservationTable` (SQLite, session-scoped). Injected at `system[1]` each turn as `<local-observations>...</local-observations>`.
 
+UI consumers no longer need aggressive polling for OM state; the runtime emits `session.om.updated`, `session.observer.updated`, and `session.reflector.updated` events.
+
 - Default model: `opencode/qwen3.6-plus-free`
 - Opt-out: `experimental.observer: false`
 - Source: `src/session/om/buffer.ts`, `src/session/om/observer.ts`, `src/session/prompt.ts:1515-1569`
+
+### Async Turn Queue + Steering
+
+LightCode now distinguishes between **queueing a future turn** and **steering the active turn**.
+
+- `POST /session/:sessionID/prompt_async` enqueues a user message and returns `204`
+- `POST /session/:sessionID/steer_async` steers the current run, or falls back to enqueue when the session is idle
+- pending turns are derived from user messages that do **not** yet have a finished assistant reply pointing at them via `assistant.parentID`
+- FIFO order is therefore based on actual parent/child consumption, not timestamps or message ids
+- queued prompts render with `QUEUED`; steered queued prompts get a synthetic hidden assistant marker with `finish: "steered"`
+
+Sources: `src/server/routes/session.ts`, `src/session/prompt.ts`, `src/cli/cmd/tui/component/prompt/index.tsx`, `src/cli/cmd/tui/routes/session/index.tsx`
 
 ### Layer 3 — Reflector
 
@@ -311,6 +325,13 @@ All accessible via the command palette (`/` prefix) or keybinds.
 | `/export`     |                        | Export session transcript to a file       |
 | `/timestamps` | `/toggle-timestamps`   | Toggle message timestamps                 |
 | `/thinking`   | `/toggle-thinking`     | Toggle model thinking visibility          |
+
+### Turn Control
+
+- normal prompt submit uses `sdk.client.session.promptAsync()`
+- command palette exposes `Steer current turn` when the session is busy
+- queued user messages expose an inline `⎈ STEER` action in the transcript
+- if steer is used while idle, it degrades safely to normal enqueue behavior
 
 ### Agent / Model
 

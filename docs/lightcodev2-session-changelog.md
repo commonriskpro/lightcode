@@ -75,7 +75,7 @@ Each tool definition is ~200-400 tokens in the schema. 3 tools = ~600-1200 fewer
 | `src/flag/flag.ts`                                   | `OPENCODE_EXPERIMENTAL_AUTODREAM`, `OPENCODE_AUTODREAM_MIN_HOURS` (24), `OPENCODE_AUTODREAM_MIN_SESSIONS` (5) |
 | `src/project/bootstrap.ts`                           | `AutoDream.init()` called at startup                                                                          |
 | `src/cli/cmd/tui/component/dialog-feature.tsx`       | AutoDream toggle in /features                                                                                 |
-| `src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx` | Animated ☁ dream indicator (12-frame, 400ms)                                                                 |
+| `src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx` | Animated ☁ dream indicator (12-frame, 400ms)                                                                  |
 | `packages/sdk/js/src/v2/gen/types.gen.ts`            | Regenerated with autodream + autodream_model fields                                                           |
 
 ### How `/dream` Works
@@ -243,7 +243,85 @@ createEffect(() => {
 
 ---
 
-## 8. Known Issues / Next Steps
+## 6. Async libSQL migration cleanup + session queue rewrite
+
+### What changed
+
+The session runtime was finished as a real async system instead of a half-sync shell around an async DB.
+
+- `SyncEvent` now awaits async projectors
+- `session/index.ts` and `session/revert.ts` were fixed to stop treating event/projector work as synchronous
+- `session/todo.ts`, `project/project.ts`, `config/config.ts`, `server/routes/session.ts`, `cli/cmd/import.ts`, `memory/session-memory.ts`, and `control-plane/workspace.ts` were corrected where async libSQL boundaries had been crossed incorrectly
+
+### Why
+
+The original failures looked like “streaming broke”, but the root problem was deeper: callers were violating the async boundary after the libSQL migration.
+
+### Result
+
+- projections land reliably
+- queue state no longer races the UI
+- session loop behavior matches the async runtime model
+
+---
+
+## 7. Async queue vs steer semantics landed in code
+
+### New behavior
+
+- `prompt_async` is now a true enqueue path via `SessionPrompt.enqueue()`
+- `steer_async` is a separate API for influencing the currently running turn
+- if no run is active, steer safely degrades to enqueue
+
+### TUI changes
+
+- normal submit uses `promptAsync()`
+- queued prompts render with `QUEUED`
+- queued prompts expose inline `⎈ STEER`
+- command palette now includes `Steer current turn`
+- synthetic `finish="steered"` assistant markers are hidden from transcript rendering and used only for state/UI
+
+### Queue model fix
+
+Queue detection now uses the only boundary that actually matters: whether a user turn has already been consumed by a finished assistant message via `assistant.parentID`.
+
+This replaced earlier broken heuristics based on timestamps or message ids.
+
+---
+
+## 8. OM buffering aligned with pending-token model
+
+### What changed
+
+Observer buffering was aligned with the Mastra-style pending-token model.
+
+- `OMPending` computes unobserved message slices
+- `OMBuf` now reacts to pending/unobserved tokens instead of naive provider usage totals
+- new events were added for UI consumers: `session.om.updated`, `session.observer.updated`, `session.reflector.updated`
+
+### Why
+
+The previous shape could drift from real conversation growth and made UI/state sync harder.
+
+### Result
+
+- more accurate observer triggering
+- cleaner sidebar/event integration
+- no need for aggressive polling for observer/reflector state
+
+---
+
+## 9. Commits added after the original changelog
+
+| Hash      | Message                                                    |
+| --------- | ---------------------------------------------------------- |
+| `c9c9e73` | fix(core): complete async migration and align OM buffering |
+| `8e33df9` | fix(tui): preserve queued prompts and reply ordering       |
+| `b048e2d` | feat(tui): add steer controls for active turns             |
+
+---
+
+## 10. Known Issues / Next Steps
 
 ### Engram MCP not available to main agent
 

@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">LightCode</h1>
-  <p align="center"><strong>A performance-focused, memory-augmented AI coding agent.</strong></p>
+  <p align="center"><strong>A performance-focused, memory-augmented AI coding agent with async turn queueing.</strong></p>
 </p>
 
 <p align="center">
@@ -26,6 +26,7 @@ LightCode is an AI coding agent built on top of [OpenCode](https://github.com/an
 | **LSP diagnostics**      | Per-tool blocking (150ms–3s each)   | Batched at end-of-step (single pass)                              |
 | **Deferred tools**       | Client-side only                    | Native Anthropic/OpenAI support + hybrid fallback                 |
 | **System prompt**        | 8 provider-specific prompts         | 1 compact prompt (~40% fewer tokens)                              |
+| **Async turn control**   | Immediate prompt/response only      | FIFO queued turns via `prompt_async` + explicit `steer_async`     |
 | **Intra-session memory** | None (context grows until overflow) | Proactive Observer — compresses every 30k tokens                  |
 | **Cross-session memory** | None (each session starts blind)    | Native recall: libSQL FTS5 + vector search + working memory       |
 | **Memory consolidation** | None                                | AutoDream — native background consolidation into libSQL artifacts |
@@ -121,6 +122,18 @@ An 8-file refactor: **~24s → ~3s** of diagnostic time.
 
 Models that support native tool deferral (Anthropic sonnet-4+, OpenAI gpt-5+) get all tools sent with `defer_loading: true`. The provider handles tool search natively — no client-side `tool_search` roundtrip needed.
 
+### Async Turn Queue + Steering
+
+LightCode now separates **queueing a new turn** from **steering the current turn**.
+
+- `prompt_async` creates a user message and returns immediately
+- the session loop drains pending user turns in FIFO order
+- queued state is derived from whether a finished assistant already consumed a given user turn via `assistant.parentID`
+- `steer_async` injects new guidance into the currently running turn; if nothing is running, it falls back to normal queueing
+- the TUI exposes both the command palette action **Steer current turn** and an inline `⎈ STEER` action on queued prompts
+
+This keeps backlog handling deterministic while still allowing mid-turn correction without turning every intervention into another queued prompt.
+
 ---
 
 ## Memory System
@@ -140,14 +153,20 @@ No external process is required.
 
 ### Layer 2 — Intra-Session Observer
 
-A background Observer LLM fires at a **30k unobserved token threshold** during active sessions. It compresses message history into a dense observation log stored in a local `ObservationTable` inside the same libSQL database. This prevents context rot without blocking the user.
+Observer triggering is based on **pending / unobserved message tokens**, not raw provider usage totals. LightCode buffers OM work in 6k-token boundaries, activates condensation around 30k pending tokens, and can apply blocking backpressure around 36k if OM falls behind. This matches the pending-token model used by Mastra-style OM pipelines and avoids misleading totals from cache accounting.
 
 ```
-Turn N (< 6k tokens):   idle — nothing happens
-Turn N (6k intervals):  background buffer pre-compute (non-blocking fiber)
-Turn N (30k tokens):    activate buffer → Observer LLM → ObservationTable
-Turn N (> 36k tokens):  force-sync (blocking — prevents runaway growth)
+Turn N (< 6k pending):    idle — nothing happens
+Turn N (6k boundary):     background observer buffer (non-blocking fiber)
+Turn N (~30k pending):    activate buffer → Observer LLM → ObservationTable
+Turn N (> blockAfter):    block until OM catches up
 ```
+
+The runtime also emits explicit OM lifecycle events for UI consumers:
+
+- `session.om.updated`
+- `session.observer.updated`
+- `session.reflector.updated`
 
 Observations use a priority system:
 
@@ -313,6 +332,9 @@ Switch between `build` and `plan` with the `Tab` key.
 - **[Native Deferred Tools](docs/native-deferred-tools-spec.md)** — Provider-native tool deferral
 - **[Reactive Compaction](docs/reactive-compact-arch.md)** — Overflow recovery hardening
 - **[Commands & TUI](docs/commands-tui-architecture.md)** — Slash commands and dialog patterns
+- **[Session Changelog](docs/lightcodev2-session-changelog.md)** — async migration, queue, steer, and OM fixes landed in code
+- **[libSQL Migration Notes](docs/LIBSQL_MIGRATION_NOTES.md)** — async DB boundaries and sidecar runtime notes
+- **[Architecture Reference](docs/LIGHTCODE_ARCHITECTURE_REFERENCE.md)** — broad code-verified runtime map
 - **[Memory Spec](openspec/specs/memory/spec.md)** — Historical spec from the older Engram-backed phase
 
 ---

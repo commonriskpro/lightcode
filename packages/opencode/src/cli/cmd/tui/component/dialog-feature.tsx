@@ -125,7 +125,7 @@ export function DialogFeature() {
         config: "observer",
         modelConfig: "observer_model",
         enabled: () => isEnabled("observer", false),
-        currentModel: () => currentModel("observer_model") ?? "google/gemini-2.5-flash",
+        currentModel: () => currentModel("observer_model") ?? "opencode/qwen3.6-plus-free",
       },
       {
         id: "memory_agents",

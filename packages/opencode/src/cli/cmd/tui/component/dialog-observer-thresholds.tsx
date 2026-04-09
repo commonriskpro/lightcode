@@ -158,7 +158,8 @@ export function DialogObserverThresholds() {
         value={cur || t.default}
         onConfirm={(val) => {
           void save(t.key, val)
-          dialog.clear()
+          // Replace the DialogPrompt with a fresh DialogSelect so it re-reads sync data
+          dialog.replace(() => <DialogObserverThresholds />)
         }}
       />
     ))
