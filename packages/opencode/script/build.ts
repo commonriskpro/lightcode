@@ -2,6 +2,7 @@
 
 import { $ } from "bun"
 import fs from "fs"
+import os from "os"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
@@ -281,12 +282,37 @@ for (const item of targets) {
 
   await $`bun install --production --cwd ${`dist/${name}/bin`}`
 
-  // Smoke test: only run if binary is for current platform
+  // Generate the launcher script next to the binary. The launcher `cd`s
+  // into the binary directory before exec'ing the binary, so Bun's runtime
+  // resolver finds the sidecar `node_modules/`. See `script/launcher.sh`
+  // (and `script/launcher.cmd` for Windows) for the full rationale.
+  //
+  // The launcher is the file users should symlink into PATH (e.g.
+  //   ln -s /opt/lightcode/bin/lightcode-launcher.sh ~/.local/bin/lightcode
+  // ). Symlinking the binary directly will fail with a "Cannot find
+  // module '@libsql/client'" error when invoked from any directory other
+  // than the binary's own — that is the bug this whole wrapper exists to
+  // work around (oven-sh/bun#27058).
+  const launcherSource = item.os === "win32" ? "launcher.cmd" : "launcher.sh"
+  const launcherTarget =
+    item.os === "win32" ? `dist/${name}/bin/lightcode-launcher.cmd` : `dist/${name}/bin/lightcode-launcher.sh`
+  await Bun.write(launcherTarget, await Bun.file(`script/${launcherSource}`).text())
+  if (item.os !== "win32") await fs.promises.chmod(launcherTarget, 0o755)
+
+  // Smoke test: only run if binary is for current platform.
+  //
+  // We run the launcher from `os.tmpdir()` — a directory guaranteed NOT to
+  // contain a stray `node_modules/@libsql/client` that could mask a broken
+  // launcher. This is the EXACT scenario that crashed before this fix:
+  // invoking the binary from an unrelated cwd. If the launcher works
+  // correctly the smoke test passes; if anything regresses (someone removes
+  // the launcher, the chmod, or the cd inside the launcher), the build
+  // aborts here instead of shipping a broken binary.
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/lightcode`
-    console.log(`Running smoke test: ${binaryPath} --version`)
+    const launcherAbs = path.resolve(dir, launcherTarget)
+    console.log(`Running smoke test: ${launcherAbs} --version (cwd=${os.tmpdir()})`)
     try {
-      const versionOutput = await $`./lightcode --version`.cwd(`dist/${name}/bin`).text()
+      const versionOutput = await $`${launcherAbs} --version`.cwd(os.tmpdir()).text()
       console.log(`Smoke test passed: ${versionOutput.trim()}`)
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
