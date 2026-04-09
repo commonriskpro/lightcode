@@ -121,7 +121,36 @@ export function Session() {
       .filter((x) => x.parentID === parentID || x.id === parentID)
       .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   })
-  const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
+  const messages = createMemo(() => {
+    const list = sync.data.message[route.sessionID] ?? []
+    const out: typeof list = []
+    const kids = new Map<string, typeof list>()
+    const roots: typeof list = []
+
+    for (const msg of list) {
+      if (msg.role !== "assistant" || !msg.parentID) {
+        roots.push(msg)
+        continue
+      }
+      const group = kids.get(msg.parentID)
+      if (group) group.push(msg)
+      else kids.set(msg.parentID, [msg])
+    }
+
+    for (const msg of roots) {
+      out.push(msg)
+      const group = kids.get(msg.id)
+      if (!group) continue
+      out.push(...group.toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id)))
+      kids.delete(msg.id)
+    }
+
+    for (const group of kids.values()) {
+      out.push(...group.toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id)))
+    }
+
+    return out
+  })
   const permissions = createMemo(() => {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.permission[x.id] ?? [])
@@ -133,8 +162,27 @@ export function Session() {
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
-  const pending = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
+  const queued = createMemo(() => {
+    const done = new Set<string>()
+    let active: string | undefined
+
+    for (const msg of messages()) {
+      if (msg.role !== "assistant" || !msg.parentID) continue
+      if (!msg.time.completed) {
+        active = msg.parentID
+        continue
+      }
+      if (msg.error) continue
+      if (!msg.finish) continue
+      done.add(msg.parentID)
+    }
+
+    return new Set(
+      messages()
+        .filter((msg): msg is UserMessage => msg.role === "user")
+        .filter((msg) => !done.has(msg.id) && msg.id !== active)
+        .map((msg) => msg.id),
+    )
   })
 
   const lastAssistant = createMemo(() => {
@@ -1135,7 +1183,7 @@ export function Session() {
                         }}
                         message={message as UserMessage}
                         parts={sync.data.part[message.id] ?? []}
-                        pending={pending()}
+                        queued={queued()}
                       />
                     </Match>
                     <Match when={message.role === "assistant"}>
@@ -1225,7 +1273,7 @@ function UserMessage(props: {
   parts: Part[]
   onMouseUp: () => void
   index: number
-  pending?: string
+  queued?: ReadonlySet<string>
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1233,10 +1281,10 @@ function UserMessage(props: {
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
-  const queued = createMemo(() => props.pending && props.message.id > props.pending)
+  const isQueued = createMemo(() => props.queued?.has(props.message.id) ?? false)
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
-  const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
+  const metadataVisible = createMemo(() => isQueued() || ctx.showTimestamps())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
@@ -1285,7 +1333,7 @@ function UserMessage(props: {
               </box>
             </Show>
             <Show
-              when={queued()}
+              when={isQueued()}
               fallback={
                 <Show when={ctx.showTimestamps()}>
                   <text fg={theme.textMuted}>

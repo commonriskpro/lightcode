@@ -256,6 +256,7 @@ export namespace SessionPrompt {
   export interface Interface {
     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+    readonly enqueue: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
     readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
     readonly loop: (input: z.infer<typeof LoopInput>) => Effect.Effect<MessageV2.WithParts>
     readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts>
@@ -1542,23 +1543,43 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         return { info, parts }
       }, Effect.scoped)
 
+      const preparePrompt = Effect.fn("SessionPrompt.preparePrompt")(function* (input: PromptInput) {
+        const session = yield* sessions.get(input.sessionID)
+        yield* Effect.promise(() => SessionRevert.cleanup(session))
+        const message = yield* createUserMessage(input)
+        yield* sessions.touch(input.sessionID)
+
+        const permissions: Permission.Ruleset = []
+        for (const [t, enabled] of Object.entries(input.tools ?? {})) {
+          permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
+        }
+        if (permissions.length > 0) {
+          session.permission = permissions
+          yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
+        }
+
+        return { message, noReply: input.noReply === true }
+      })
+
+      const enqueue: (input: PromptInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.enqueue")(
+        function* (input: PromptInput) {
+          const prepared = yield* preparePrompt(input)
+          if (prepared.noReply) return prepared.message
+
+          const s = yield* InstanceState.get(state)
+          const runner = s.runners.get(input.sessionID)
+          if (!runner?.busy) {
+            yield* loop({ sessionID: input.sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+          }
+
+          return prepared.message
+        },
+      )
+
       const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.prompt")(
         function* (input: PromptInput) {
-          const session = yield* sessions.get(input.sessionID)
-          yield* Effect.promise(() => SessionRevert.cleanup(session))
-          const message = yield* createUserMessage(input)
-          yield* sessions.touch(input.sessionID)
-
-          const permissions: Permission.Ruleset = []
-          for (const [t, enabled] of Object.entries(input.tools ?? {})) {
-            permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
-          }
-          if (permissions.length > 0) {
-            session.permission = permissions
-            yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
-          }
-
-          if (input.noReply === true) return message
+          const prepared = yield* preparePrompt(input)
+          if (prepared.noReply) return prepared.message
           return yield* loop({ sessionID: input.sessionID })
         },
       )
@@ -1573,6 +1594,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           if (latest) return latest
           throw new Error("Impossible")
         })
+
+      function pendingUsers(msgs: MessageV2.WithParts[]) {
+        const done = new Set<string>()
+        for (const msg of msgs) {
+          if (msg.info.role !== "assistant") continue
+          if (!msg.info.finish || msg.info.error) continue
+          done.add(msg.info.parentID)
+        }
+        return msgs.filter(
+          (msg): msg is MessageV2.WithParts & { info: MessageV2.User } =>
+            msg.info.role === "user" && !done.has(msg.info.id),
+        )
+      }
 
       const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
         function* (sessionID: SessionID) {
@@ -1595,21 +1629,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
             let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
 
-            let lastUser: MessageV2.User | undefined
+            let latestUser: MessageV2.User | undefined
             let lastAssistant: MessageV2.Assistant | undefined
             let lastFinished: MessageV2.Assistant | undefined
             let tasks: MessageV2.SubtaskPart[] = []
             for (let i = msgs.length - 1; i >= 0; i--) {
               const msg = msgs[i]
-              if (!lastUser && msg.info.role === "user") lastUser = msg.info
+              if (!latestUser && msg.info.role === "user") latestUser = msg.info
               if (!lastAssistant && msg.info.role === "assistant") lastAssistant = msg.info
               if (!lastFinished && msg.info.role === "assistant" && msg.info.finish) lastFinished = msg.info
-              if (lastUser && lastFinished) break
+              if (latestUser && lastFinished) break
               const task = msg.parts.filter((part): part is MessageV2.SubtaskPart => part.type === "subtask")
               if (task && !lastFinished) tasks.push(...task)
             }
 
-            if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+            const queuedUsers = pendingUsers(msgs).map((msg) => msg.info)
+            const currentUser = queuedUsers[0] ?? latestUser
+
+            if (!currentUser) throw new Error("No user message found in stream. This should never happen.")
 
             const lastAssistantMsg = msgs.findLast(
               (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1622,9 +1659,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               lastAssistant?.finish &&
               !["tool-calls"].includes(lastAssistant.finish) &&
               !hasToolCalls &&
-              lastUser.id < lastAssistant.id
+              queuedUsers.length === 0
             ) {
-              log.info("exiting loop", { sessionID })
+              log.info("loop.break.finished-assistant", {
+                sessionID,
+                step,
+                lastUserID: currentUser?.id,
+                lastAssistantID: lastAssistant.id,
+                finish: lastAssistant.finish,
+                hasToolCalls,
+              })
               break
             }
 
@@ -1632,8 +1676,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             if (step === 1)
               yield* title({
                 session,
-                modelID: lastUser.model.modelID,
-                providerID: lastUser.model.providerID,
+                modelID: currentUser.model.modelID,
+                providerID: currentUser.model.providerID,
                 history: msgs,
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
@@ -1644,19 +1688,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const obsRec = yield* Effect.promise(() => OM.get(sessionID))
             const omCfg = yield* Effect.promise(() => Config.get())
 
-            const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+            const model = yield* getModel(currentUser.model.providerID, currentUser.model.modelID, sessionID)
             const task = tasks.pop()
 
             if (task?.type === "subtask") {
-              yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+              yield* handleSubtask({ task, model, lastUser: currentUser, sessionID, session, msgs })
               continue
             }
 
-            const agent = yield* agents.get(lastUser.agent)
+            const agent = yield* agents.get(currentUser.agent)
             if (!agent) {
               const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
               const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-              const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
+              const error = new NamedError.Unknown({ message: `Agent not found: "${currentUser.agent}".${hint}` })
               yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
               throw error
             }
@@ -1688,11 +1732,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
               const msg: MessageV2.Assistant = {
                 id: MessageID.ascending(),
-                parentID: lastUser.id,
+                parentID: currentUser.id,
                 role: "assistant",
                 mode: agent.name,
                 agent: agent.name,
-                variant: lastUser.variant,
+                variant: currentUser.variant,
                 path: { cwd: ctx.directory, root: ctx.worktree },
                 cost: 0,
                 tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -1701,6 +1745,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 time: { created: Date.now() },
                 sessionID,
               }
+              log.info("assistant.create.fork", {
+                sessionID,
+                step,
+                assistantID: msg.id,
+                parentID: currentUser.id,
+                agent: agent.name,
+              })
               yield* sessions.updateMessage(msg)
               const handle = yield* processor.create({
                 assistantMessage: msg,
@@ -1712,7 +1763,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               const allMsgs = [...fork.messages, ...childMsgs]
 
               const result = yield* handle.process({
-                user: lastUser,
+                user: currentUser,
                 agent,
                 permission: session.permission,
                 sessionID,
@@ -1727,6 +1778,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 workingMemory: workingMem,
               })
 
+              log.info("assistant.process.result.fork", {
+                sessionID,
+                step,
+                assistantID: msg.id,
+                result,
+                finish: handle.message.finish,
+                error: !!handle.message.error,
+              })
+
               if (result === "stop") break
               continue
             }
@@ -1734,17 +1794,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               log.info("using durable fork recovery", { sessionID })
             }
 
+            const queuedIDs = new Set(queuedUsers.slice(1).map((item) => item.id))
+            msgs = msgs.filter((item) => !(item.info.role === "user" && queuedIDs.has(item.info.id)))
             const maxSteps = agent.steps ?? Infinity
             const isLastStep = step >= maxSteps
             msgs = yield* insertReminders({ messages: msgs, agent, session })
 
             const msg: MessageV2.Assistant = {
               id: MessageID.ascending(),
-              parentID: lastUser.id,
+              parentID: currentUser.id,
               role: "assistant",
               mode: agent.name,
               agent: agent.name,
-              variant: lastUser.variant,
+              variant: currentUser.variant,
               path: { cwd: ctx.directory, root: ctx.worktree },
               cost: 0,
               tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -1753,6 +1815,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               time: { created: Date.now() },
               sessionID,
             }
+            log.info("assistant.create", {
+              sessionID,
+              step,
+              assistantID: msg.id,
+              parentID: currentUser.id,
+              agent: agent.name,
+            })
             yield* sessions.updateMessage(msg)
             const handle = yield* processor.create({
               assistantMessage: msg,
@@ -1769,26 +1838,28 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   agent,
                   session,
                   model,
-                  tools: lastUser.tools,
+                  tools: currentUser.tools,
                   processor: handle,
                   bypassAgentCheck,
                   messages: msgs,
                 })
 
-                if (lastUser.format?.type === "json_schema") {
+                if (currentUser.format?.type === "json_schema") {
                   tools["StructuredOutput"] = createStructuredOutputTool({
-                    schema: lastUser.format.schema,
+                    schema: currentUser.format.schema,
                     onSuccess(output) {
                       structured = output
                     },
                   })
                 }
 
-                if (step === 1) SessionSummary.summarize({ sessionID, messageID: lastUser.id })
+                if (step === 1) SessionSummary.summarize({ sessionID, messageID: currentUser.id })
 
                 if (step > 1 && lastFinished) {
                   for (const m of msgs) {
-                    if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
+                    if (m.info.role !== "user") continue
+                    if (m.info.id === currentUser.id) continue
+                    if (!queuedUsers.slice(1).some((item) => item.id === m.info.id)) continue
                     for (const p of m.parts) {
                       if (p.type !== "text" || p.ignored || p.synthetic) continue
                       if (!p.text.trim()) continue
@@ -1860,8 +1931,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                           sessionID,
                           role: "user" as const,
                           time: { created: 0 },
-                          agent: lastUser.agent,
-                          model: lastUser.model,
+                          agent: currentUser.agent,
+                          model: currentUser.model,
                         },
                         parts: [
                           {
@@ -1896,14 +1967,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   ...instructions,
                   ...(deferredSection ? [deferredSection] : []),
                 ]
-                const format = lastUser.format ?? { type: "text" as const }
+                const format = currentUser.format ?? { type: "text" as const }
                 if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
 
                 // Stash active context for fork subagents to inherit
                 activeContexts.set(sessionID, { system, tools, messages: modelMsgs })
 
                 const result = yield* handle.process({
-                  user: lastUser,
+                  user: currentUser,
                   agent,
                   permission: session.permission,
                   sessionID,
@@ -1923,11 +1994,41 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   memoryBlocks: memBlocks,
                 })
 
+                log.info("assistant.process.result", {
+                  sessionID,
+                  step,
+                  assistantID: msg.id,
+                  result,
+                  finish: handle.message.finish,
+                  error: !!handle.message.error,
+                })
+
                 if (structured !== undefined) {
                   handle.message.structured = structured
                   handle.message.finish = handle.message.finish ?? "stop"
                   yield* sessions.updateMessage(handle.message)
+                  log.info("loop.break.structured", {
+                    sessionID,
+                    step,
+                    assistantID: msg.id,
+                    finish: handle.message.finish,
+                  })
                   return "break" as const
+                }
+
+                const terminal = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
+                const latest = terminal ? yield* MessageV2.filterCompactedEffect(sessionID) : undefined
+                const queued = latest ? pendingUsers(latest).find((item) => item.info.id !== currentUser.id) : undefined
+
+                if (terminal && queued) {
+                  log.info("loop.continue.queued-user", {
+                    sessionID,
+                    step,
+                    assistantID: msg.id,
+                    finish: handle.message.finish,
+                    queuedUserID: queued.info.id,
+                  })
+                  return "continue" as const
                 }
 
                 const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
@@ -1950,6 +2051,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 yield* InstanceState.withALS(() => instruction.clear(handle.message.id)).pipe(Effect.flatMap((x) => x))
               }),
             )
+            log.info("loop.outcome", {
+              sessionID,
+              step,
+              assistantID: msg.id,
+              outcome,
+            })
             if (outcome === "break") break
             continue
           }
@@ -2302,6 +2409,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       return Service.of({
         assertNotBusy,
         cancel,
+        enqueue,
         prompt,
         loop,
         shell,
@@ -2409,6 +2517,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
   export async function prompt(input: PromptInput) {
     return runPromise((svc) => svc.prompt(PromptInput.parse(input)))
+  }
+
+  export async function enqueue(input: PromptInput) {
+    return runPromise((svc) => svc.enqueue(PromptInput.parse(input)))
   }
 
   export async function resolvePromptParts(template: string) {

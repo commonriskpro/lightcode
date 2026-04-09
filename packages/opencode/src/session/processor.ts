@@ -380,10 +380,22 @@ export namespace SessionProcessor {
                 cfg.experimental?.observer_message_tokens,
                 cfg.experimental?.observer_block_after,
               )
+              log.info("om.signal", {
+                sessionID: ctx.sessionID,
+                messageID: ctx.assistantMessage.id,
+                sig,
+                pendingTok,
+                unobserved: unobserved.length,
+                observationTokens: obsRec?.observation_tokens ?? 0,
+              })
               // activate(): condense buffered observations → main OM record, then run Reflector.
               // Called on "activate" (background fork) and "block" (blocking — backpressure).
               // Runs after the assistant message is written so the full turn is included.
               const activate = async () => {
+                log.info("om.activate.start", {
+                  sessionID: ctx.sessionID,
+                  messageID: ctx.assistantMessage.id,
+                })
                 await OMBuf.awaitInFlight(ctx.sessionID)
                 OMBuf.setObserving(ctx.sessionID, true)
                 try {
@@ -396,13 +408,26 @@ export namespace SessionProcessor {
                   if (fresh && (fresh.observation_tokens ?? 0) > Reflector.threshold) {
                     OMBuf.setReflecting(ctx.sessionID, true)
                     try {
+                      log.info("om.reflect.start", {
+                        sessionID: ctx.sessionID,
+                        messageID: ctx.assistantMessage.id,
+                        observationTokens: fresh.observation_tokens ?? 0,
+                      })
                       await Reflector.run(ctx.sessionID)
+                      log.info("om.reflect.done", {
+                        sessionID: ctx.sessionID,
+                        messageID: ctx.assistantMessage.id,
+                      })
                     } finally {
                       OMBuf.setReflecting(ctx.sessionID, false)
                     }
                   }
                 } finally {
                   OMBuf.setObserving(ctx.sessionID, false)
+                  log.info("om.activate.done", {
+                    sessionID: ctx.sessionID,
+                    messageID: ctx.assistantMessage.id,
+                  })
                 }
               }
               if (sig === "activate" || sig === "block") {
@@ -418,6 +443,14 @@ export namespace SessionProcessor {
                   const msgIds = unobserved.map((m) => m.info.id)
                   const p = (async () => {
                     OMBuf.setObserving(ctx.sessionID, true)
+                    log.info("om.buffer.start", {
+                      sessionID: ctx.sessionID,
+                      messageID: ctx.assistantMessage.id,
+                      pendingTok,
+                      unobserved: unobserved.length,
+                      firstMessageID: unobserved[0]?.info.id,
+                      lastMessageID: unobserved.at(-1)?.info.id,
+                    })
                     try {
                       const result = await Observer.run({
                         sid: ctx.sessionID,
@@ -457,6 +490,10 @@ export namespace SessionProcessor {
                     } finally {
                       OMBuf.setObserving(ctx.sessionID, false)
                       OMBuf.clearInFlight(ctx.sessionID)
+                      log.info("om.buffer.done", {
+                        sessionID: ctx.sessionID,
+                        messageID: ctx.assistantMessage.id,
+                      })
                     }
                   })()
                   OMBuf.setInFlight(ctx.sessionID, p)
