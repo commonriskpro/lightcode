@@ -3,6 +3,7 @@ import { cmd } from "./cmd"
 import { Git } from "@/git"
 import { Instance } from "@/project/instance"
 import { Process } from "@/util/process"
+import { userCwd } from "../bootstrap"
 
 export const PrCommand = cmd({
   command: "pr <number>",
@@ -15,7 +16,7 @@ export const PrCommand = cmd({
     }),
   async handler(args) {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         const project = Instance.project
         if (project.vcs !== "git") {
@@ -117,7 +118,7 @@ export const PrCommand = cmd({
           stdin: "inherit",
           stdout: "inherit",
           stderr: "inherit",
-          cwd: process.cwd(),
+          cwd: userCwd(),
         })
         const code = await opencodeProcess.exited
         if (code !== 0) throw new Error(`opencode exited with code ${code}`)

@@ -20,7 +20,7 @@ import { UI } from "../ui"
 import { cmd } from "./cmd"
 import { ModelsDev } from "../../provider/models"
 import { Instance } from "@/project/instance"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, userCwd } from "../bootstrap"
 import { Session } from "../../session"
 import type { SessionID } from "../../session/schema"
 import { MessageID, PartID } from "../../session/schema"
@@ -201,7 +201,7 @@ export const GithubInstallCommand = cmd({
   describe: "install the GitHub agent",
   async handler() {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         {
           UI.empty()
@@ -433,7 +433,7 @@ export const GithubRunCommand = cmd({
         describe: "GitHub personal access token (github_pat_********)",
       }),
   async handler(args) {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const isMock = args.token || args.event
 
       const context = isMock ? (JSON.parse(args.event!) as Context) : github.context

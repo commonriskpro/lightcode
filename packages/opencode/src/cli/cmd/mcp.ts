@@ -9,6 +9,7 @@ import { McpAuth } from "../../mcp/auth"
 import { McpOAuthProvider } from "../../mcp/oauth-provider"
 import { Config } from "../../config/config"
 import { Instance } from "../../project/instance"
+import { userCwd } from "../bootstrap"
 import { Installation } from "../../installation"
 import path from "path"
 import { Global } from "../../global"
@@ -70,7 +71,7 @@ export const McpListCommand = cmd({
   describe: "list MCP servers and their status",
   async handler() {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("MCP Servers")
@@ -147,7 +148,7 @@ export const McpAuthCommand = cmd({
       .command(McpAuthListCommand),
   async handler(args) {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("MCP OAuth Authentication")
@@ -284,7 +285,7 @@ export const McpAuthListCommand = cmd({
   describe: "list OAuth-capable MCP servers and their auth status",
   async handler() {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("MCP OAuth Status")
@@ -328,7 +329,7 @@ export const McpLogoutCommand = cmd({
     }),
   async handler(args) {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("MCP OAuth Logout")
@@ -423,7 +424,7 @@ export const McpAddCommand = cmd({
   describe: "add an MCP server",
   async handler() {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("Add MCP server")
@@ -593,7 +594,7 @@ export const McpDebugCommand = cmd({
     }),
   async handler(args) {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("MCP OAuth Debug")

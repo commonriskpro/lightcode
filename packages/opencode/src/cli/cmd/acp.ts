@@ -1,5 +1,5 @@
 import { Log } from "@/util/log"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, userCwd } from "../bootstrap"
 import { cmd } from "./cmd"
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import { ACP } from "@/acp/agent"
@@ -16,12 +16,12 @@ export const AcpCommand = cmd({
     return withNetworkOptions(yargs).option("cwd", {
       describe: "working directory",
       type: "string",
-      default: process.cwd(),
+      default: userCwd(),
     })
   },
   handler: async (args) => {
     process.env.OPENCODE_CLIENT = "acp"
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const opts = await resolveNetworkOptions(args)
       const server = Server.listen(opts)
 

@@ -1,7 +1,7 @@
 import { EOL } from "os"
 import { Ripgrep } from "../../../file/ripgrep"
 import { Instance } from "../../../project/instance"
-import { bootstrap } from "../../bootstrap"
+import { bootstrap, userCwd } from "../../bootstrap"
 import { cmd } from "../cmd"
 
 export const RipgrepCommand = cmd({
@@ -19,7 +19,7 @@ const TreeCommand = cmd({
       type: "number",
     }),
   async handler(args) {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       process.stdout.write((await Ripgrep.tree({ cwd: Instance.directory, limit: args.limit })) + EOL)
     })
   },
@@ -43,7 +43,7 @@ const FilesCommand = cmd({
         description: "Limit number of results",
       }),
   async handler(args) {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const files: string[] = []
       for await (const file of Ripgrep.files({
         cwd: Instance.directory,
@@ -77,7 +77,7 @@ const SearchCommand = cmd({
       }),
   async handler(args) {
     const results = await Ripgrep.search({
-      cwd: process.cwd(),
+      cwd: userCwd(),
       pattern: args.pattern,
       glob: args.glob as string[] | undefined,
       limit: args.limit,

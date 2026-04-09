@@ -7,6 +7,7 @@ import { Filesystem } from "@/util/filesystem"
 import { Instance } from "@/project/instance"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { InstanceRoutes } from "./instance"
+import { userCwd } from "@/cli/bootstrap"
 
 type Rule = { method?: string; path: string; exact?: boolean; action: "local" | "forward" }
 
@@ -27,7 +28,7 @@ function local(method: string, path: string) {
 const routes = lazy(() => InstanceRoutes())
 
 export const WorkspaceRouterMiddleware: MiddlewareHandler = async (c) => {
-  const raw = c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd()
+  const raw = c.req.query("directory") || c.req.header("x-opencode-directory") || userCwd()
   const directory = Filesystem.resolve(
     (() => {
       try {

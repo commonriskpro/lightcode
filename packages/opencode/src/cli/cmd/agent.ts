@@ -9,6 +9,7 @@ import fs from "fs/promises"
 import { Filesystem } from "../../util/filesystem"
 import matter from "gray-matter"
 import { Instance } from "../../project/instance"
+import { userCwd } from "../bootstrap"
 import { EOL } from "os"
 import type { Argv } from "yargs"
 
@@ -45,7 +46,7 @@ const AgentCreateCommand = cmd({
       }),
   async handler(args) {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         const cliPath = args.path
         const cliDescription = args.description
@@ -218,7 +219,7 @@ const AgentListCommand = cmd({
   describe: "list all available agents",
   async handler() {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         const agents = await Agent.list()
         const sortedAgents = agents.sort((a, b) => {

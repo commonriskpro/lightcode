@@ -3,7 +3,7 @@ import type { Session as SDKSession, Message, Part } from "@opencode-ai/sdk/v2"
 import { Session } from "../../session"
 import { MessageV2 } from "../../session/message-v2"
 import { cmd } from "./cmd"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, userCwd } from "../bootstrap"
 import { Database } from "../../storage/db"
 import { SessionTable, MessageTable, PartTable } from "../../session/session.sql"
 import { Instance } from "../../project/instance"
@@ -84,7 +84,7 @@ export const ImportCommand = cmd({
     })
   },
   handler: async (args) => {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       let exportData:
         | {
             info: SDKSession

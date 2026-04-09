@@ -10,6 +10,7 @@ import { Config } from "../../config/config"
 import { Global } from "../../global"
 import { Plugin } from "../../plugin"
 import { Instance } from "../../project/instance"
+import { userCwd } from "../bootstrap"
 import type { Hooks } from "@opencode-ai/plugin"
 import { Process } from "../../util/process"
 import { text } from "node:stream/consumers"
@@ -272,7 +273,7 @@ export const ProvidersLoginCommand = cmd({
       }),
   async handler(args) {
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         UI.empty()
         prompts.intro("Add credential")

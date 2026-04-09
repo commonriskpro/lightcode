@@ -9,7 +9,7 @@ import { ToolRegistry } from "../../../tool/registry"
 import { Instance } from "../../../project/instance"
 import { Permission } from "../../../permission"
 import { iife } from "../../../util/iife"
-import { bootstrap } from "../../bootstrap"
+import { bootstrap, userCwd } from "../../bootstrap"
 import { cmd } from "../cmd"
 
 export const AgentCommand = cmd({
@@ -31,7 +31,7 @@ export const AgentCommand = cmd({
         description: "Tool params as JSON or a JS object literal",
       }),
   async handler(args) {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const agentName = args.name as string
       const agent = await Agent.get(agentName)
       if (!agent) {

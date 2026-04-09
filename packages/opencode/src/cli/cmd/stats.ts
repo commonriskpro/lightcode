@@ -1,7 +1,7 @@
 import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { Session } from "../../session"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, userCwd } from "../bootstrap"
 import { Database } from "../../storage/db"
 import { SessionTable } from "../../session/session.sql"
 import { Project } from "../../project/project"
@@ -68,7 +68,7 @@ export const StatsCommand = cmd({
       })
   },
   handler: async (args) => {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const stats = await aggregateSessionStats(args.days, args.project)
 
       let modelLimit: number | undefined

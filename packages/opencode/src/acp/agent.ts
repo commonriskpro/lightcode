@@ -38,6 +38,7 @@ import { Provider } from "../provider/provider"
 import { ModelID, ProviderID } from "../provider/schema"
 import { Agent as AgentModule } from "../agent/agent"
 import { Installation } from "@/installation"
+import { userCwd } from "@/cli/bootstrap"
 import { MessageV2 } from "@/session/message-v2"
 import { Config } from "@/config/config"
 import { Todo } from "@/session/todo"
@@ -1552,7 +1553,7 @@ export namespace ACP {
     const configured = config.defaultModel
     if (configured) return configured
 
-    const directory = cwd ?? process.cwd()
+    const directory = cwd ?? userCwd()
 
     const specified = await sdk.config
       .get({ directory }, { throwOnError: true })

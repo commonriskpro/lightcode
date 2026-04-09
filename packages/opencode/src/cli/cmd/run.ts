@@ -4,7 +4,7 @@ import { pathToFileURL } from "url"
 import { UI } from "../ui"
 import { cmd } from "./cmd"
 import { Flag } from "../../flag/flag"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, userCwd } from "../bootstrap"
 import { EOL } from "os"
 import { Filesystem } from "../../util/filesystem"
 import { createOpencodeClient, type Message, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
@@ -214,6 +214,8 @@ function todo(info: ToolProps<typeof TodoWriteTool>) {
 
 function normalizePath(input?: string) {
   if (!input) return ""
+  // process.cwd() here intentionally reflects the effective project dir
+  // (possibly changed by the --dir flag handler above). Don't use userCwd().
   if (path.isAbsolute(input)) return path.relative(process.cwd(), input) || "."
   return input
 }
@@ -311,11 +313,16 @@ export const RunCommand = cmd({
     const directory = (() => {
       if (!args.dir) return undefined
       if (args.attach) return args.dir
+      // Resolve --dir relative to the user's invocation cwd, not the
+      // process cwd (which is the binary's sidecar dir after the entry
+      // shim's chdir). Otherwise `lightcode run --dir ./foo` would try
+      // to chdir into `dist/.../bin/foo` instead of `<user-cwd>/foo`.
+      const target = path.isAbsolute(args.dir) ? args.dir : path.resolve(userCwd(), args.dir)
       try {
-        process.chdir(args.dir)
+        process.chdir(target)
         return process.cwd()
       } catch {
-        UI.error("Failed to change directory to " + args.dir)
+        UI.error("Failed to change directory to " + target)
         process.exit(1)
       }
     })()
@@ -325,6 +332,9 @@ export const RunCommand = cmd({
       const list = Array.isArray(args.file) ? args.file : [args.file]
 
       for (const filePath of list) {
+        // Resolve against process.cwd() (which reflects any prior chdir from
+        // --dir) so that file paths are relative to the effective project
+        // directory, not the user's original invocation cwd.
         const resolvedPath = path.resolve(process.cwd(), filePath)
         if (!(await Filesystem.exists(resolvedPath))) {
           UI.error(`File not found: ${filePath}`)
@@ -664,7 +674,7 @@ export const RunCommand = cmd({
       return await execute(sdk)
     }
 
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = new Request(input, init)
         return Server.Default().fetch(request)

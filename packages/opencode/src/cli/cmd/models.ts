@@ -1,5 +1,6 @@
 import type { Argv } from "yargs"
 import { Instance } from "../../project/instance"
+import { userCwd } from "../bootstrap"
 import { Provider } from "../../provider/provider"
 import { ProviderID } from "../../provider/schema"
 import { ModelsDev } from "../../provider/models"
@@ -33,7 +34,7 @@ export const ModelsCommand = cmd({
     }
 
     await Instance.provide({
-      directory: process.cwd(),
+      directory: userCwd(),
       async fn() {
         const providers = await Provider.list()
 

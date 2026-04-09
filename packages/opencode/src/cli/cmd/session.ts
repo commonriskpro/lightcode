@@ -2,7 +2,7 @@ import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { Session } from "../../session"
 import { SessionID } from "../../session/schema"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, userCwd } from "../bootstrap"
 import { UI } from "../ui"
 import { Locale } from "../../util/locale"
 import { Flag } from "../../flag/flag"
@@ -57,7 +57,7 @@ export const SessionDeleteCommand = cmd({
     })
   },
   handler: async (args) => {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const sessionID = SessionID.make(args.sessionID)
       try {
         await Session.get(sessionID)
@@ -89,7 +89,7 @@ export const SessionListCommand = cmd({
       })
   },
   handler: async (args) => {
-    await bootstrap(process.cwd(), async () => {
+    await bootstrap(userCwd(), async () => {
       const sessions = await Array.fromAsync(Session.list({ roots: true, limit: args.maxCount }))
 
       if (sessions.length === 0) {
