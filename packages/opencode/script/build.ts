@@ -280,7 +280,17 @@ for (const item of targets) {
     ),
   )
 
-  await $`bun install --production --cwd ${`dist/${name}/bin`}`
+  const cwd = `dist/${name}/bin`
+  await $`bun install --production --cwd ${cwd}`
+  if (fs.existsSync(path.join(cwd, "bun.lock")) || fs.existsSync(path.join(cwd, "bun.lockb"))) {
+    try {
+      await $`bun pm trust onnxruntime-node --cwd ${cwd}`
+      console.log("Trusted onnxruntime-node postinstall for embeddings")
+      await $`bun install --production --cwd ${cwd}`
+    } catch {
+      // Keep build non-blocking if trust fails.
+    }
+  }
 
   // Generate the launcher script next to the binary. The launcher `cd`s
   // into the binary directory before exec'ing the binary, so Bun's runtime
