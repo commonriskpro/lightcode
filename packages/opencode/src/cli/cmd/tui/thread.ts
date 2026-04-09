@@ -136,13 +136,12 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
-      // Update PWD and LIGHTCODE_USER_CWD so the worker — which will chdir
-      // back to the binary directory in its entry shim to resolve the
-      // sidecar — can still recover the effective project directory via
+      // Update LIGHTCODE_USER_CWD so the worker — which inherits the env
+      // from this process — recovers the effective project directory via
       // userCwd(). Without this, `--project foo` would be lost on the
-      // worker side (PWD would still point at the original invocation cwd,
-      // not the resolved project directory).
-      process.env.PWD = cwd
+      // worker side: LIGHTCODE_USER_CWD would still hold the value the
+      // launcher script set at startup (the user's original invocation
+      // cwd), not the resolved project directory.
       process.env.LIGHTCODE_USER_CWD = cwd
 
       const worker = new Worker(file, {

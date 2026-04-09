@@ -209,13 +209,7 @@ for (const item of targets) {
   const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
   const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
   const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
-  // The worker has its own entry shim (`worker-entry.ts`) that chdir's to the
-  // binary directory so the sidecar `node_modules/` resolves at runtime — see
-  // the comment in `src/cli/cmd/tui/worker-entry.ts` for the full rationale.
-  // The real worker module (`worker.ts`) is still bundled as a dependency via
-  // the dynamic import inside the shim; it does not need to be a separate
-  // entrypoint.
-  const workerPath = "./src/cli/cmd/tui/worker-entry.ts"
+  const workerPath = "./src/cli/cmd/tui/worker.ts"
 
   // Use platform-specific bunfs root path based on target OS
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
@@ -239,12 +233,7 @@ for (const item of targets) {
     files: {
       ...(embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {}),
     },
-    // The main binary uses `src/entry.ts` as its entrypoint, not `src/index.ts`.
-    // The shim chdir's into the binary directory so the externalized sidecar
-    // packages (@libsql/client, fastembed) resolve at runtime even when the
-    // user runs `lightcode` via a symlink from an unrelated cwd. See the
-    // header comment in `src/entry.ts` for the full rationale.
-    entrypoints: ["./src/entry.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
@@ -268,9 +257,7 @@ for (const item of targets) {
       execArgv: ["--user-agent=lightcode-dream-daemon/" + Script.version, "--use-system-ca", "--"],
       windows: {},
     },
-    // Use the daemon entry shim for the same reason as the main binary —
-    // see `src/dream/daemon-entry.ts` for the full rationale.
-    entrypoints: ["./src/dream/daemon-entry.ts"],
+    entrypoints: ["./src/dream/daemon.ts"],
   })
 
   await Bun.file(`dist/${name}/bin/package.json`).write(
@@ -296,19 +283,11 @@ for (const item of targets) {
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = path.resolve(dir, `dist/${name}/bin/lightcode`)
+    const binaryPath = `dist/${name}/bin/lightcode`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
-      // Run from `dist/<name>/bin/` first — the historical guarantee that the
-      // sidecar resolves when the binary's cwd matches its own directory.
-      const localOutput = await $`./lightcode --version`.cwd(`dist/${name}/bin`).text()
-      console.log(`Smoke test (local cwd) passed: ${localOutput.trim()}`)
-      // Now run from an unrelated cwd (the package root). The entry shim
-      // should chdir into the binary dir before any import resolves, so the
-      // sidecar `@libsql/client` still loads. This is the exact scenario
-      // that was broken before the shim was added.
-      const remoteOutput = await $`${binaryPath} --version`.cwd(dir).text()
-      console.log(`Smoke test (remote cwd) passed: ${remoteOutput.trim()}`)
+      const versionOutput = await $`./lightcode --version`.cwd(`dist/${name}/bin`).text()
+      console.log(`Smoke test passed: ${versionOutput.trim()}`)
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)
