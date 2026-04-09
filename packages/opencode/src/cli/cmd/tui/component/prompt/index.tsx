@@ -238,6 +238,17 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
+        title: "Steer current turn",
+        value: "prompt.steer",
+        category: "Prompt",
+        enabled: status().type !== "idle",
+        onSelect: (dialog) => {
+          if (!input.focused) return
+          void submit("steer")
+          dialog.clear()
+        },
+      },
+      {
         title: "Paste",
         value: "prompt.paste",
         keybind: "input_paste",
@@ -603,7 +614,7 @@ export function Prompt(props: PromptProps) {
     },
   ])
 
-  async function submit() {
+  async function submit(mode: "queue" | "steer" = "queue") {
     if (props.disabled) return
     if (autocomplete?.visible) return
     if (!store.prompt.input) return
@@ -660,6 +671,14 @@ export function Prompt(props: PromptProps) {
     // Filter out text parts (pasted content) since they're now expanded inline
     const nonTextParts = store.prompt.parts.filter((part) => part.type !== "text")
 
+    if (mode === "steer" && nonTextParts.length > 0) {
+      toast.show({
+        message: "Steer currently supports text only",
+        variant: "warning",
+      })
+      return
+    }
+
     // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
@@ -706,24 +725,37 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
-      sdk.client.session
-        .promptAsync({
-          sessionID,
-          ...selectedModel,
-          messageID,
-          agent: local.agent.current().name,
-          model: selectedModel,
-          variant,
-          parts: [
-            {
-              id: PartID.ascending(),
-              type: "text",
-              text: inputText,
-            },
-            ...nonTextParts.map(assign),
-          ],
-        })
-        .catch(() => {})
+      if (mode === "steer" && status().type !== "idle") {
+        const url = new URL(`/session/${sessionID}/steer_async`, sdk.url)
+        if (sdk.directory) url.searchParams.set("directory", sdk.directory)
+        if (sdk.workspaceID) url.searchParams.set("workspace", sdk.workspaceID)
+        sdk
+          .fetch(url.toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: inputText }),
+          })
+          .catch(() => {})
+      } else {
+        sdk.client.session
+          .promptAsync({
+            sessionID,
+            ...selectedModel,
+            messageID,
+            agent: local.agent.current().name,
+            model: selectedModel,
+            variant,
+            parts: [
+              {
+                id: PartID.ascending(),
+                type: "text",
+                text: inputText,
+              },
+              ...nonTextParts.map(assign),
+            ],
+          })
+          .catch(() => {})
+      }
     }
     history.append({
       ...store.prompt,
@@ -1004,7 +1036,9 @@ export function Prompt(props: PromptProps) {
                     input.cursorOffset = input.plainText.length
                 }
               }}
-              onSubmit={submit}
+              onSubmit={() => {
+                void submit()
+              }}
               onPaste={async (event: PasteEvent) => {
                 if (props.disabled) {
                   event.preventDefault()

@@ -257,6 +257,7 @@ export namespace SessionPrompt {
     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
     readonly enqueue: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
+    readonly steer: (input: SteerInput) => Effect.Effect<void>
     readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
     readonly loop: (input: z.infer<typeof LoopInput>) => Effect.Effect<MessageV2.WithParts>
     readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts>
@@ -291,6 +292,7 @@ export namespace SessionPrompt {
       const state = yield* InstanceState.make(
         Effect.fn("SessionPrompt.state")(function* () {
           const runners = new Map<string, Runner<MessageV2.WithParts>>()
+          const steers = new Map<string, Array<{ text: string; time: number }>>()
           yield* Effect.addFinalizer(
             Effect.fnUntraced(function* () {
               yield* Effect.forEach(
@@ -300,9 +302,10 @@ export namespace SessionPrompt {
               )
               yield* Effect.forEach(runners.values(), (r) => r.cancel, { concurrency: "unbounded", discard: true })
               runners.clear()
+              steers.clear()
             }),
           )
-          return { runners }
+          return { runners, steers }
         }),
       )
 
@@ -1576,6 +1579,64 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         },
       )
 
+      const steer: (input: SteerInput) => Effect.Effect<void> = Effect.fn("SessionPrompt.steer")(function* (input) {
+        const s = yield* InstanceState.get(state)
+        const runner = s.runners.get(input.sessionID)
+        let text = input.text
+
+        if (input.messageID) {
+          const msgs = yield* sessions.messages({ sessionID: input.sessionID })
+          const msg = msgs.find((item) => item.info.id === input.messageID)
+          if (!msg || msg.info.role !== "user") return
+          text = msg.parts
+            .filter((part): part is MessageV2.TextPart => part.type === "text" && !part.synthetic && !part.ignored)
+            .map((part) => part.text)
+            .join("\n")
+            .trim()
+          if (!text) return
+        }
+
+        if (!text?.trim()) return
+
+        if (!runner?.busy) {
+          yield* enqueue({
+            sessionID: input.sessionID,
+            parts: [{ id: PartID.ascending(), type: "text", text }],
+          })
+          return
+        }
+
+        if (input.messageID) {
+          const msgs = yield* sessions.messages({ sessionID: input.sessionID })
+          const msg = msgs.find((item) => item.info.id === input.messageID)
+          if (msg && msg.info.role === "user") {
+            const ctx = yield* InstanceState.context
+            yield* sessions.updateMessage({
+              id: MessageID.ascending(),
+              parentID: msg.info.id,
+              role: "assistant",
+              mode: msg.info.agent,
+              agent: msg.info.agent,
+              variant: msg.info.variant,
+              path: { cwd: ctx.directory, root: ctx.worktree },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              providerID: msg.info.model.providerID,
+              modelID: msg.info.model.modelID,
+              time: { created: Date.now(), completed: Date.now() },
+              finish: "steered",
+              sessionID: input.sessionID,
+            })
+          }
+        }
+
+        const list = s.steers.get(input.sessionID) ?? []
+        list.push({ text, time: Date.now() })
+        s.steers.set(input.sessionID, list)
+        yield* runner.cancel
+        yield* loop({ sessionID: input.sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+      })
+
       const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.prompt")(
         function* (input: PromptInput) {
           const prepared = yield* preparePrompt(input)
@@ -1798,6 +1859,45 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             msgs = msgs.filter((item) => !(item.info.role === "user" && queuedIDs.has(item.info.id)))
             const maxSteps = agent.steps ?? Infinity
             const isLastStep = step >= maxSteps
+            const s = yield* InstanceState.get(state)
+            const steers = s.steers.get(sessionID) ?? []
+            if (steers.length > 0) {
+              s.steers.set(sessionID, [])
+              msgs = [
+                ...msgs,
+                ...steers.map((item) => {
+                  const id = MessageID.ascending()
+                  return {
+                    info: {
+                      id,
+                      role: "user" as const,
+                      sessionID,
+                      time: { created: item.time },
+                      agent: currentUser.agent,
+                      model: currentUser.model,
+                    },
+                    parts: [
+                      {
+                        id: PartID.ascending(),
+                        sessionID,
+                        messageID: id,
+                        type: "text" as const,
+                        synthetic: true,
+                        text: [
+                          "<system-reminder>",
+                          "The user steered the current turn with the following instruction:",
+                          item.text.trim(),
+                          "",
+                          "Incorporate this into the current turn at the next sensible step. Do not treat it as a new queued turn.",
+                          "</system-reminder>",
+                        ].join("\n"),
+                      },
+                    ],
+                  }
+                }),
+              ]
+            }
+
             msgs = yield* insertReminders({ messages: msgs, agent, session })
 
             const msg: MessageV2.Assistant = {
@@ -2410,6 +2510,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         assertNotBusy,
         cancel,
         enqueue,
+        steer,
         prompt,
         loop,
         shell,
@@ -2521,6 +2622,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
   export async function enqueue(input: PromptInput) {
     return runPromise((svc) => svc.enqueue(PromptInput.parse(input)))
+  }
+
+  export const SteerInput = z.object({
+    sessionID: SessionID.zod,
+    text: z.string().trim().min(1).optional(),
+    messageID: MessageID.zod.optional(),
+  })
+  export type SteerInput = z.infer<typeof SteerInput>
+
+  export async function steer(input: SteerInput) {
+    return runPromise((svc) => svc.steer(SteerInput.parse(input)))
   }
 
   export async function resolvePromptParts(template: string) {

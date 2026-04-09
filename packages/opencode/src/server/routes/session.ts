@@ -802,6 +802,40 @@ export const SessionRoutes = lazy(() =>
       },
     )
     .post(
+      "/:sessionID/steer_async",
+      describeRoute({
+        summary: "Steer active turn",
+        description: "Inject steering text into the currently running turn, or enqueue it if the session is idle.",
+        operationId: "session.steer_async",
+        responses: {
+          204: { description: "Steer accepted" },
+          ...errors(400, 404),
+        },
+      }),
+      validator(
+        "param",
+        z.object({
+          sessionID: SessionID.zod,
+        }),
+      ),
+      validator("json", SessionPrompt.SteerInput.omit({ sessionID: true })),
+      async (c) => {
+        c.status(204)
+        c.header("Content-Type", "application/json")
+        return stream(c, async () => {
+          const sessionID = c.req.valid("param").sessionID
+          const body = c.req.valid("json")
+          SessionPrompt.steer({ ...body, sessionID }).catch(async (err) => {
+            log.error("steer_async failed", { sessionID, error: err })
+            await Bus.publish(Session.Event.Error, {
+              sessionID,
+              error: new NamedError.Unknown({ message: err instanceof Error ? err.message : String(err) }).toObject(),
+            })
+          })
+        })
+      },
+    )
+    .post(
       "/:sessionID/command",
       describeRoute({
         summary: "Send command",

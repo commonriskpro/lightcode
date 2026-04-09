@@ -185,6 +185,15 @@ export function Session() {
     )
   })
 
+  const steered = createMemo(() => {
+    const ids = new Set<string>()
+    for (const msg of messages()) {
+      if (msg.role !== "assistant" || msg.finish !== "steered") continue
+      ids.add(msg.parentID)
+    }
+    return ids
+  })
+
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")
   })
@@ -1184,9 +1193,10 @@ export function Session() {
                         message={message as UserMessage}
                         parts={sync.data.part[message.id] ?? []}
                         queued={queued()}
+                        steered={steered()}
                       />
                     </Match>
-                    <Match when={message.role === "assistant"}>
+                    <Match when={message.role === "assistant" && message.finish !== "steered"}>
                       <AssistantMessage
                         last={lastAssistant()?.id === message.id}
                         message={message as AssistantMessage}
@@ -1274,19 +1284,47 @@ function UserMessage(props: {
   onMouseUp: () => void
   index: number
   queued?: ReadonlySet<string>
+  steered?: ReadonlySet<string>
 }) {
   const ctx = use()
   const local = useLocal()
+  const sdk = useSDK()
+  const toast = useToast()
   const text = createMemo(() => props.parts.flatMap((x) => (x.type === "text" && !x.synthetic ? [x] : []))[0])
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
   const isQueued = createMemo(() => props.queued?.has(props.message.id) ?? false)
+  const isSteered = createMemo(() => props.steered?.has(props.message.id) ?? false)
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
-  const metadataVisible = createMemo(() => isQueued() || ctx.showTimestamps())
+  const steeredFg = createMemo(() => selectedForeground(theme, theme.primary))
+  const metadataVisible = createMemo(() => isQueued() || isSteered() || ctx.showTimestamps())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
+
+  async function steer(evt?: { preventDefault?: () => void; stopPropagation?: () => void }) {
+    evt?.preventDefault?.()
+    evt?.stopPropagation?.()
+    const part = text()
+    if (!part?.text.trim()) return
+    if (files().length > 0) {
+      toast.show({ message: "Queued steer supports text-only prompts for now", variant: "warning" })
+      return
+    }
+    const url = new URL(`/session/${props.message.sessionID}/steer_async`, sdk.url)
+    if (sdk.directory) url.searchParams.set("directory", sdk.directory)
+    if (sdk.workspaceID) url.searchParams.set("workspace", sdk.workspaceID)
+    await sdk
+      .fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageID: props.message.id }),
+      })
+      .catch(() => {
+        toast.show({ message: "Failed to steer queued prompt", variant: "error" })
+      })
+  }
 
   return (
     <>
@@ -1335,18 +1373,30 @@ function UserMessage(props: {
             <Show
               when={isQueued()}
               fallback={
-                <Show when={ctx.showTimestamps()}>
-                  <text fg={theme.textMuted}>
-                    <span style={{ fg: theme.textMuted }}>
-                      {Locale.todayTimeOrDateTime(props.message.time.created)}
-                    </span>
-                  </text>
-                </Show>
+                <Switch>
+                  <Match when={isSteered()}>
+                    <text fg={theme.textMuted}>
+                      <span style={{ bg: theme.primary, fg: steeredFg(), bold: true }}> STEERED </span>
+                    </text>
+                  </Match>
+                  <Match when={ctx.showTimestamps()}>
+                    <text fg={theme.textMuted}>
+                      <span style={{ fg: theme.textMuted }}>
+                        {Locale.todayTimeOrDateTime(props.message.time.created)}
+                      </span>
+                    </text>
+                  </Match>
+                </Switch>
               }
             >
-              <text fg={theme.textMuted}>
-                <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
-              </text>
+              <box flexDirection="row" gap={1}>
+                <text fg={theme.textMuted}>
+                  <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
+                </text>
+                <text fg={theme.textMuted} onMouseUp={steer}>
+                  <span style={{ bg: theme.primary, fg: steeredFg(), bold: true }}> ⎈ STEER </span>
+                </text>
+              </box>
             </Show>
           </box>
         </box>
