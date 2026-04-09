@@ -38,7 +38,7 @@ export const UpdateWorkingMemoryTool = Tool.define("update_working_memory", {
           ? { type: "agent" as const, id: ctx.agent }
           : { type: "thread" as const, id: ctx.sessionID as string }
 
-    Memory.setWorkingMemory(scopeRef, key, value)
+    await Memory.setWorkingMemory(scopeRef, key, value)
 
     const label =
       scope === "project"
@@ -75,7 +75,7 @@ export const UpdateUserMemoryTool = Tool.define("update_user_memory", {
       },
     })
 
-    Memory.setUserMemory(key, value)
+    await Memory.setUserMemory(key, value)
 
     return {
       title: "update_user_memory",
