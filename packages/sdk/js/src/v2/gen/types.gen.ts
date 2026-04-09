@@ -214,6 +214,35 @@ export type EventSessionStatus = {
   }
 }
 
+export type EventSessionOmUpdated = {
+  type: "session.om.updated"
+  properties: {
+    sessionID: string
+    observations: string | null
+    reflections: string | null
+    current_task: string | null
+    observation_tokens: number
+    generation_count: number
+    last_observed_at: number | null
+  }
+}
+
+export type EventSessionObserverUpdated = {
+  type: "session.observer.updated"
+  properties: {
+    sessionID: string
+    active: boolean
+  }
+}
+
+export type EventSessionReflectorUpdated = {
+  type: "session.reflector.updated"
+  properties: {
+    sessionID: string
+    active: boolean
+  }
+}
+
 export type EventSessionIdle = {
   type: "session.idle"
   properties: {
@@ -982,6 +1011,9 @@ export type Event =
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventSessionStatus
+  | EventSessionOmUpdated
+  | EventSessionObserverUpdated
+  | EventSessionReflectorUpdated
   | EventSessionIdle
   | EventQuestionAsked
   | EventQuestionReplied

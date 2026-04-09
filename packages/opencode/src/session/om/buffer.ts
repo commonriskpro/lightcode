@@ -1,8 +1,8 @@
 import type { SessionID } from "../schema"
+import { Bus } from "@/bus"
+import { OMEvent } from "./event"
 
-// lastInterval tracks the token count at the last "buffer" signal
-// so we only fire "buffer" once per INTERVAL, not on every turn after crossing 6k
-type State = { tok: number; pending: boolean; lastInterval: number }
+type State = { tok: number; boundary: number }
 
 const state = new Map<SessionID, State>()
 const inFlight = new Map<SessionID, Promise<void>>()
@@ -70,7 +70,7 @@ export namespace OMBuf {
   function ensure(sid: SessionID): State {
     const s = state.get(sid)
     if (s) return s
-    const next: State = { tok: 0, pending: false, lastInterval: 0 }
+    const next: State = { tok: 0, boundary: 0 }
     state.set(sid, next)
     return next
   }
@@ -83,7 +83,7 @@ export namespace OMBuf {
     blockAfter?: number,
   ): "buffer" | "activate" | "block" | "idle" {
     const s = ensure(sid)
-    s.tok += tok
+    s.tok = tok
     // Resolve trigger: use config threshold when provided, else adaptive DEFAULT_RANGE.
     // When obsTokens is known, apply adaptive shrink so total budget stays within max.
     const base = configThreshold ?? DEFAULT_RANGE
@@ -96,22 +96,21 @@ export namespace OMBuf {
     if (s.tok >= trigger) return "activate"
     // Fire "buffer" only when crossing a new INTERVAL boundary, not every turn
     const intervals = Math.floor(s.tok / INTERVAL)
-    const lastIntervals = Math.floor(s.lastInterval / INTERVAL)
+    const lastIntervals = Math.floor(s.boundary / INTERVAL)
     if (intervals > lastIntervals) {
-      s.lastInterval = s.tok
+      s.boundary = s.tok
       return "buffer"
     }
     return "idle"
   }
 
-  // Reset tok and lastInterval after activate() so each observation cycle
-  // starts fresh. Without this, s.tok grows unbounded and the system stays
-  // permanently in "activate" or "block" after the first condensation.
+  // Reset the pending-token boundary after activation so the next cycle starts
+  // from the post-activation tail, matching Mastra's buffer lifecycle.
   export function resetCycle(sid: SessionID): void {
     const s = state.get(sid)
     if (!s) return
     s.tok = 0
-    s.lastInterval = 0
+    s.boundary = 0
   }
 
   // Full reset — called when a session is fully closed (onIdle) to free memory.
@@ -119,8 +118,8 @@ export namespace OMBuf {
     state.delete(sid)
     inFlight.delete(sid)
     seals.delete(sid)
-    observingSet.delete(sid)
-    reflectingSet.delete(sid)
+    if (observingSet.delete(sid)) emit(OMEvent.ObserverUpdated, sid, false)
+    if (reflectingSet.delete(sid)) emit(OMEvent.ReflectorUpdated, sid, false)
   }
 
   export function setInFlight(sid: SessionID, p: Promise<void>): void {
@@ -146,6 +145,12 @@ export namespace OMBuf {
     return state.get(sid)?.tok ?? 0
   }
 
+  export function minNewTokens(): number {
+    return INTERVAL / 2
+  }
+
+  // Legacy helper kept for tests and ad hoc callers.
+  // Production buffering should use check() with current pending tokens.
   export function add(sid: SessionID, tok: number): void {
     ensure(sid).tok += tok
   }
@@ -159,12 +164,16 @@ export namespace OMBuf {
     return reflectingSet.size > 0
   }
   export function setObserving(sid: SessionID, v: boolean): void {
+    if (observingSet.has(sid) === v) return
     if (v) observingSet.add(sid)
     else observingSet.delete(sid)
+    emit(OMEvent.ObserverUpdated, sid, v)
   }
   export function setReflecting(sid: SessionID, v: boolean): void {
+    if (reflectingSet.has(sid) === v) return
     if (v) reflectingSet.add(sid)
     else reflectingSet.delete(sid)
+    emit(OMEvent.ReflectorUpdated, sid, v)
   }
 
   // In-memory seal map: session → sealed_at timestamp
@@ -178,5 +187,13 @@ export namespace OMBuf {
 
   export function sealedAt(sid: string): number {
     return seals.get(sid) ?? 0
+  }
+
+  function emit(
+    def: typeof OMEvent.ObserverUpdated | typeof OMEvent.ReflectorUpdated,
+    sessionID: SessionID,
+    active: boolean,
+  ) {
+    void Bus.publish(def, { sessionID, active }).catch(() => {})
   }
 }

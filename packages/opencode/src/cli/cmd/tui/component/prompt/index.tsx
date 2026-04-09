@@ -148,14 +148,11 @@ export function Prompt(props: PromptProps) {
     const msgParts = sync.data.part[last.id] ?? []
     const lastStepFinish = msgParts.findLast((p): p is any => p.type === "step-finish")
 
-    // Context should NOT include cache.read because those tokens were already in context
-    // from previous turns - they are not new context. Only cache.write is new.
+    // Context usage should include cached reads because those tokens still occupy
+    // model context even when they were reused from cache.
     const step = lastStepFinish ?? last
     const tokens =
-      step.tokens.input -
-      step.tokens.cache.read + // subtract cache.read (already in context)
-      step.tokens.output +
-      step.tokens.reasoning
+      step.tokens.input + step.tokens.cache.read + step.tokens.cache.write + step.tokens.output + step.tokens.reasoning
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]

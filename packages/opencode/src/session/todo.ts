@@ -40,11 +40,12 @@ export namespace Todo {
       const bus = yield* Bus.Service
 
       const update = Effect.fn("Todo.update")(function* (input: { sessionID: SessionID; todos: Info[] }) {
-        yield* Effect.sync(() =>
-          Database.transaction((db) => {
-            db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
+        yield* Effect.promise(() =>
+          Database.transaction(async (db) => {
+            await db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
             if (input.todos.length === 0) return
-            db.insert(TodoTable)
+            await db
+              .insert(TodoTable)
               .values(
                 input.todos.map((todo, position) => ({
                   session_id: input.sessionID,

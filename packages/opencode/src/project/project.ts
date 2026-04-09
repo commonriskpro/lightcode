@@ -487,7 +487,7 @@ export namespace Project {
   }
 
   export function setInitialized(id: ProjectID) {
-    Database.use((db) =>
+    return Database.use((db) =>
       db.update(ProjectTable).set({ time_initialized: Date.now() }).where(eq(ProjectTable.id, id)).run(),
     )
   }

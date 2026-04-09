@@ -70,22 +70,27 @@ export namespace Workspace {
       projectID: input.projectID,
     }
 
-    await Database.use(async (db) => {
-      await db
-        .insert(WorkspaceTable)
-        .values({
-          id: info.id,
-          type: info.type,
-          branch: info.branch,
-          name: info.name,
-          directory: info.directory,
-          extra: info.extra,
-          project_id: info.projectID,
-        })
-        .run()
-    })
-
     await adaptor.create(config)
+    try {
+      await Database.use((db) =>
+        db
+          .insert(WorkspaceTable)
+          .values({
+            id: info.id,
+            type: info.type,
+            branch: info.branch,
+            name: info.name,
+            directory: info.directory,
+            extra: info.extra,
+            project_id: info.projectID,
+          })
+          .run(),
+      )
+    } catch (err) {
+      await adaptor.remove(info).catch(() => {})
+      throw err
+    }
+
     return info
   })
 
@@ -107,7 +112,7 @@ export namespace Workspace {
     if (row) {
       const info = fromRow(row)
       const adaptor = await getAdaptor(row.type)
-      adaptor.remove(info)
+      await adaptor.remove(info)
       await Database.use((db) => db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, id)).run())
       return info
     }

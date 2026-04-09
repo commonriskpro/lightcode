@@ -791,9 +791,9 @@ export const SessionRoutes = lazy(() =>
         return stream(c, async () => {
           const sessionID = c.req.valid("param").sessionID
           const body = c.req.valid("json")
-          SessionPrompt.prompt({ ...body, sessionID }).catch((err) => {
+          SessionPrompt.prompt({ ...body, sessionID }).catch(async (err) => {
             log.error("prompt_async failed", { sessionID, error: err })
-            Bus.publish(Session.Event.Error, {
+            await Bus.publish(Session.Event.Error, {
               sessionID,
               error: new NamedError.Unknown({ message: err instanceof Error ? err.message : String(err) }).toObject(),
             })

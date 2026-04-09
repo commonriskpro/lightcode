@@ -410,7 +410,7 @@ export namespace Session {
         }
         log.info("created", result)
 
-        yield* Effect.sync(() => SyncEvent.run(Event.Created, { sessionID: result.id, info: result }))
+        yield* Effect.promise(() => SyncEvent.run(Event.Created, { sessionID: result.id, info: result }))
 
         const cfg = yield* config.get()
         if (!result.parentID && (Flag.OPENCODE_AUTO_SHARE || cfg.share === "auto")) {
@@ -442,7 +442,9 @@ export namespace Session {
           const { ShareNext } = await import("@/share/share-next")
           return ShareNext.create(id)
         })
-        yield* Effect.sync(() => SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: result.url } } }))
+        yield* Effect.promise(() =>
+          SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: result.url } } }),
+        )
         return result
       })
 
@@ -451,7 +453,7 @@ export namespace Session {
           const { ShareNext } = await import("@/share/share-next")
           await ShareNext.remove(id)
         })
-        yield* Effect.sync(() => SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: null } } }))
+        yield* Effect.promise(() => SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: null } } }))
       })
 
       const children = Effect.fn("Session.children")(function* (parentID: SessionID) {
@@ -474,13 +476,11 @@ export namespace Session {
             yield* remove(child.id)
           }
           yield* unshare(sessionID).pipe(Effect.ignore)
-          yield* Effect.sync(() => {
-            SyncEvent.run(Event.Deleted, { sessionID, info: session })
-            SyncEvent.remove(sessionID)
-            // Release all in-memory OM state for this session.
-            // The DB rows are cleaned up by cascade on SessionTable delete.
+          yield* Effect.promise(async () => {
+            await SyncEvent.run(Event.Deleted, { sessionID, info: session })
+            await SyncEvent.remove(sessionID)
             OMBuf.reset(sessionID)
-            void SessionMemory.clear(sessionID)
+            await SessionMemory.clear(sessionID)
           })
         } catch (e) {
           log.error(e)
@@ -489,13 +489,13 @@ export namespace Session {
 
       const updateMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
         Effect.gen(function* () {
-          yield* Effect.sync(() => SyncEvent.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg }))
+          yield* Effect.promise(() => SyncEvent.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg }))
           return msg
         }).pipe(Effect.withSpan("Session.updateMessage"))
 
       const updatePart = <T extends MessageV2.Part>(part: T): Effect.Effect<T> =>
         Effect.gen(function* () {
-          yield* Effect.sync(() =>
+          yield* Effect.promise(() =>
             SyncEvent.run(MessageV2.Event.PartUpdated, {
               sessionID: part.sessionID,
               part: structuredClone(part),
@@ -559,7 +559,7 @@ export namespace Session {
       })
 
       const patch = (sessionID: SessionID, info: Patch) =>
-        Effect.sync(() => SyncEvent.run(Event.Updated, { sessionID, info }))
+        Effect.promise(() => SyncEvent.run(Event.Updated, { sessionID, info }))
 
       const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
         yield* patch(sessionID, { time: { updated: Date.now() } })
@@ -617,7 +617,7 @@ export namespace Session {
         sessionID: SessionID
         messageID: MessageID
       }) {
-        yield* Effect.sync(() =>
+        yield* Effect.promise(() =>
           SyncEvent.run(MessageV2.Event.Removed, {
             sessionID: input.sessionID,
             messageID: input.messageID,
@@ -631,7 +631,7 @@ export namespace Session {
         messageID: MessageID
         partID: PartID
       }) {
-        yield* Effect.sync(() =>
+        yield* Effect.promise(() =>
           SyncEvent.run(MessageV2.Event.PartRemoved, {
             sessionID: input.sessionID,
             messageID: input.messageID,

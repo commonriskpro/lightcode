@@ -29,7 +29,7 @@ export namespace SyncEvent {
 
   export type SerializedEvent<Def extends Definition = Definition> = Event<Def> & { type: string }
 
-  type ProjectorFunc = (db: Database.TxOrDb, data: unknown) => void
+  type ProjectorFunc = (db: Database.TxOrDb, data: unknown) => void | Promise<void>
 
   export const registry = new Map<string, Definition>()
   let projectors: Map<Definition, ProjectorFunc> | undefined
@@ -97,12 +97,12 @@ export namespace SyncEvent {
 
   export function project<Def extends Definition>(
     def: Def,
-    func: (db: Database.TxOrDb, data: Event<Def>["data"]) => void,
+    func: (db: Database.TxOrDb, data: Event<Def>["data"]) => void | Promise<void>,
   ): [Definition, ProjectorFunc] {
     return [def, func as ProjectorFunc]
   }
 
-  function process<Def extends Definition>(def: Def, event: Event<Def>, options: { publish: boolean }) {
+  async function process<Def extends Definition>(def: Def, event: Event<Def>, options: { publish: boolean }) {
     if (projectors == null) {
       throw new Error("No projectors available. Call `SyncEvent.init` to install projectors")
     }
@@ -114,11 +114,12 @@ export namespace SyncEvent {
 
     // idempotent: need to ignore any events already logged
 
-    Database.transaction((tx) => {
-      projector(tx, event.data)
+    await Database.transaction(async (tx) => {
+      await projector(tx, event.data)
 
       if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
-        tx.insert(EventSequenceTable)
+        await tx
+          .insert(EventSequenceTable)
           .values({
             aggregate_id: event.aggregateID,
             seq: event.seq,
@@ -128,7 +129,8 @@ export namespace SyncEvent {
             set: { seq: event.seq },
           })
           .run()
-        tx.insert(EventTable)
+        await tx
+          .insert(EventTable)
           .values({
             id: event.id,
             seq: event.seq,
@@ -139,21 +141,14 @@ export namespace SyncEvent {
           .run()
       }
 
-      Database.effect(() => {
+      Database.effect(async () => {
         Bus.emit("event", {
           def,
           event,
         })
 
         if (options?.publish) {
-          const result = convertEvent(def.type, event.data)
-          if (result instanceof Promise) {
-            result.then((data) => {
-              ProjectBus.publish({ type: def.type, properties: def.schema }, data)
-            })
-          } else {
-            ProjectBus.publish({ type: def.type, properties: def.schema }, result)
-          }
+          await ProjectBus.publish({ type: def.type, properties: def.schema }, await convertEvent(def.type, event.data))
         }
       })
     })
@@ -185,7 +180,7 @@ export namespace SyncEvent {
       throw new Error(`Sequence mismatch for aggregate "${event.aggregateID}": expected ${expected}, got ${event.seq}`)
     }
 
-    process(def, event, { publish: !!options?.republish })
+    await process(def, event, { publish: !!options?.republish })
   }
 
   export async function run<Def extends Definition>(def: Def, data: Event<Def>["data"]) {
@@ -210,7 +205,7 @@ export namespace SyncEvent {
         const seq = row?.seq != null ? row.seq + 1 : 0
 
         const event = { id, seq, aggregateID: agg, data }
-        process(def, event, { publish: true })
+        await process(def, event, { publish: true })
       },
       {
         behavior: "immediate",

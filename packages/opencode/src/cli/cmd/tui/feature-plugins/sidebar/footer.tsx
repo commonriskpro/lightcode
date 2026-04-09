@@ -1,6 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Global } from "@/global"
+import { AutoDream } from "@/dream"
 
 const DREAM_FRAMES = [
   "☁     dreaming   ",
@@ -40,6 +41,8 @@ const REFLECT_FRAMES = [
 ]
 
 const STICKY_MS = 1500
+const DREAM_MS = 2000
+const FRAME_MS = 400
 
 const id = "internal:sidebar-footer"
 
@@ -55,6 +58,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const [isDreaming, setIsDreaming] = createSignal(false)
   const [isObserving, setIsObserving] = createSignal(false)
   const [isReflecting, setIsReflecting] = createSignal(false)
+  const [dream, setDream] = createSignal(false)
+  const [obs, setObs] = createSignal(false)
+  const [ref, setRef] = createSignal(false)
   const [frame, setFrame] = createSignal(0)
   const [obsFrame, setObsFrame] = createSignal(0)
   const [refFrame, setRefFrame] = createSignal(0)
@@ -62,26 +68,68 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const [obsUntil, setObsUntil] = createSignal(0)
   const [refUntil, setRefUntil] = createSignal(0)
 
+  const sync = (
+    set: (value: boolean) => void,
+    keep: () => number,
+    mark: (value: number) => void,
+    show: (value: boolean) => void,
+  ) => {
+    return (active: boolean) => {
+      const now = Date.now()
+      set(active)
+      if (active) mark(now + STICKY_MS)
+      show(active || now < keep())
+    }
+  }
+
+  const syncDream = sync(setDream, dreamUntil, setDreamUntil, setIsDreaming)
+  const syncObs = sync(setObs, obsUntil, setObsUntil, setIsObserving)
+  const syncRef = sync(setRef, refUntil, setRefUntil, setIsReflecting)
+
   onMount(() => {
-    const poll = setInterval(() => {
+    const tick = () => {
+      const now = Date.now()
+      const dreaming = dream() || now < dreamUntil()
+      const observing = obs() || now < obsUntil()
+      const reflecting = ref() || now < refUntil()
+      setIsDreaming(dreaming)
+      setIsObserving(observing)
+      setIsReflecting(reflecting)
+      if (dreaming) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
+      if (observing) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
+      if (reflecting) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
+    }
+
+    const load = () => {
       void (async () => {
-        const now = Date.now()
         const mem = await props.api.client.session.memory({ sessionID: props.session_id }).catch(() => undefined)
-        const obs = (mem?.data as { is_observing?: boolean } | undefined)?.is_observing === true
-        const ref = (mem?.data as { is_reflecting?: boolean } | undefined)?.is_reflecting === true
-        const dream = (mem?.data as { is_dreaming?: boolean } | undefined)?.is_dreaming === true
-        if (dream) setDreamUntil(now + STICKY_MS)
-        setIsDreaming(dream || now < dreamUntil())
-        if (obs) setObsUntil(now + STICKY_MS)
-        if (ref) setRefUntil(now + STICKY_MS)
-        setIsObserving(obs || now < obsUntil())
-        setIsReflecting(ref || now < refUntil())
-        if (dream || now < dreamUntil()) setFrame((f) => (f + 1) % DREAM_FRAMES.length)
-        if (obs || now < obsUntil()) setObsFrame((f) => (f + 1) % OBSERVE_FRAMES.length)
-        if (ref || now < refUntil()) setRefFrame((f) => (f + 1) % REFLECT_FRAMES.length)
+        syncObs((mem?.data as { is_observing?: boolean } | undefined)?.is_observing === true)
+        syncRef((mem?.data as { is_reflecting?: boolean } | undefined)?.is_reflecting === true)
+        syncDream((await AutoDream.status(props.api.state.path.directory).catch(() => ({ dreaming: false }))).dreaming)
       })()
-    }, 400)
-    onCleanup(() => clearInterval(poll))
+    }
+
+    load()
+    const frame = setInterval(tick, FRAME_MS)
+    const poll = setInterval(() => {
+      void AutoDream.status(props.api.state.path.directory)
+        .then((data) => syncDream(data.dreaming))
+        .catch(() => syncDream(false))
+    }, DREAM_MS)
+    const offObs = props.api.event.on("session.observer.updated", (evt) => {
+      if (evt.properties.sessionID !== props.session_id) return
+      syncObs(evt.properties.active)
+    })
+    const offRef = props.api.event.on("session.reflector.updated", (evt) => {
+      if (evt.properties.sessionID !== props.session_id) return
+      syncRef(evt.properties.active)
+    })
+    onCleanup(() => {
+      clearInterval(frame)
+      clearInterval(poll)
+      offObs()
+      offRef()
+    })
   })
   const path = createMemo(() => {
     const dir = props.api.state.path.directory || process.cwd()

@@ -15,16 +15,17 @@ import { eq, sql } from "drizzle-orm"
 import { Database } from "../storage/db"
 import { Token } from "../util/token"
 import { Embedder } from "./embedder"
-import type { SessionID } from "../session/schema"
+import type { SessionID, MessageID } from "../session/schema"
 import type { SessionRecallResult } from "./contracts"
 import { MemorySessionChunkTable } from "./schema.sql"
+import { MessageTable } from "../session/session.sql"
 
 const MIN_TOKENS = 50
 const CHUNK_SIZE = 4096 // chars per chunk
 const DEFAULT_RECALL_LIMIT = 5
 const DISTANCE_THRESHOLD = 0.25
 
-function id(msg: string, idx: number): string {
+function id(msg: MessageID, idx: number): string {
   return `${msg}:${idx}`
 }
 
@@ -39,6 +40,7 @@ function chunks(text: string): string[] {
 
 let _available: boolean | undefined
 let _probe: Promise<boolean> | undefined
+const cleared = new Set<SessionID>()
 
 async function available(): Promise<boolean> {
   if (typeof _available === "boolean") return _available
@@ -58,7 +60,8 @@ export namespace SessionMemory {
    * - embedder is unavailable
    * - vec table not available
    */
-  export async function append(sid: SessionID, msgId: string, text: string): Promise<void> {
+  export async function append(sid: SessionID, msgId: MessageID, text: string): Promise<void> {
+    if (cleared.has(sid)) return
     if (Token.estimate(text) < MIN_TOKENS) return
     if (!(await available())) return
 
@@ -69,7 +72,13 @@ export namespace SessionMemory {
     const vecs = await embedder.embed(parts)
     const now = Date.now()
 
+    if (cleared.has(sid)) return
+
+    const row = await Database.use((db) => db.select().from(MessageTable).where(eq(MessageTable.id, msgId)).get())
+    if (!row) return
+
     for (let i = 0; i < parts.length; i++) {
+      if (cleared.has(sid)) return
       const vec = vecs[i]
       if (!vec) continue
       await Database.use((db) =>
@@ -171,6 +180,7 @@ export namespace SessionMemory {
   export async function clear(sid: SessionID): Promise<void> {
     if (!(await available())) return
 
+    cleared.add(sid)
     await Database.use((db) =>
       db.delete(MemorySessionChunkTable).where(eq(MemorySessionChunkTable.session_id, sid)).run(),
     )

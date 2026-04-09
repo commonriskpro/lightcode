@@ -2,10 +2,12 @@ import { Database, eq, asc } from "../../storage/db"
 import { ObservationTable, ObservationBufferTable } from "../session.sql"
 import type { SessionID } from "../schema"
 import { Identifier } from "@/id/id"
+import { Bus } from "@/bus"
 import { Observer } from "./observer"
 import { Token } from "@/util/token"
 import { wrapInObservationGroup } from "./groups"
 import { retentionFloorAt, withSessionLock } from "./buffer"
+import { OMEvent } from "./event"
 
 export type ObservationRecord = typeof ObservationTable.$inferSelect
 export type ObservationBuffer = typeof ObservationBufferTable.$inferSelect
@@ -105,6 +107,7 @@ export namespace OM {
         await Database.use((db) => db.insert(ObservationTable).values(placeholder).run())
       }
     })
+    await publish(sid)
   }
 
   export async function activate(sid: SessionID): Promise<void> {
@@ -166,6 +169,7 @@ export namespace OM {
       await Database.use((db) =>
         db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run(),
       )
+      await publish(sid)
     }) // end withSessionLock
   }
 
@@ -178,6 +182,7 @@ export namespace OM {
           .where(eq(ObservationTable.session_id, sid))
           .run(),
       )
+      await publish(sid)
     })
   }
 
@@ -192,8 +197,23 @@ export namespace OM {
         .where(eq(ObservationTable.session_id, sid))
         .run(),
     )
+    await publish(sid)
   }
 
   // V3: observeSafe() removed — targeted obsolete direct-upsert+seal pattern.
   // Final: addBufferSafe() above is now the canonical OM write path used by the hot path.
+
+  async function publish(sid: SessionID) {
+    const rec = await get(sid)
+    if (!rec) return
+    await Bus.publish(OMEvent.Updated, {
+      sessionID: sid,
+      observations: rec.observations,
+      reflections: rec.reflections,
+      current_task: rec.current_task,
+      observation_tokens: rec.observation_tokens,
+      generation_count: rec.generation_count,
+      last_observed_at: rec.last_observed_at,
+    })
+  }
 }

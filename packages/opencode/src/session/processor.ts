@@ -12,7 +12,7 @@ import { Session } from "."
 import { LLM } from "./llm"
 import { PromptProfile } from "./prompt-profile"
 import { MessageV2 } from "./message-v2"
-import { OM, OMBuf, Observer, Reflector } from "./om"
+import { OM, OMBuf, OMPending, Observer, Reflector } from "./om"
 import { ulid } from "ulid"
 
 import { PartID } from "./schema"
@@ -365,14 +365,17 @@ export namespace SessionProcessor {
                 }
               }
 
-              // Mid-turn OM check — fire background Observer when INTERVAL budget crossed.
-              // Only handles "buffer"; "activate" and "block" remain end-of-turn only.
-              const stepTok = usage.tokens.input + usage.tokens.output
+              // Mid-turn OM check — fire background Observer when the current
+              // unobserved pending context crosses a new buffer boundary.
+              // This matches Mastra's pending-token model instead of counting
+              // total provider step usage.
               const cfg = yield* Effect.promise(() => Config.get())
               const obsRec = yield* Effect.promise(() => OM.get(ctx.sessionID))
+              const unobserved = yield* Effect.promise(() => OMPending.messages(ctx.sessionID, obsRec))
+              const pendingTok = OMPending.tokens(unobserved)
               const sig = OMBuf.check(
                 ctx.sessionID,
-                stepTok,
+                pendingTok,
                 obsRec?.observation_tokens,
                 cfg.experimental?.observer_message_tokens,
                 cfg.experimental?.observer_block_after,
@@ -410,20 +413,7 @@ export namespace SessionProcessor {
               }
 
               if (sig === "buffer" && !OMBuf.getInFlight(ctx.sessionID)) {
-                const boundary = obsRec?.last_observed_at ?? 0
-                const obsIds = new Set<string>(
-                  obsRec?.observed_message_ids ? (JSON.parse(obsRec.observed_message_ids) as string[]) : [],
-                )
-                const sealed = OMBuf.sealedAt(ctx.sessionID)
-                const unobserved = (yield* Effect.promise(() =>
-                  Array.fromAsync(MessageV2.stream(ctx.sessionID)),
-                )).filter(
-                  (m) =>
-                    (m.info.time?.created ?? 0) > boundary &&
-                    !obsIds.has(m.info.id) &&
-                    (sealed === 0 || (m.info.time?.created ?? 0) > sealed),
-                )
-                if (unobserved.length > 0) {
+                if (unobserved.length > 0 && pendingTok >= OMBuf.minNewTokens()) {
                   const sealAt = unobserved.at(-1)?.info.time?.created ?? 0
                   const msgIds = unobserved.map((m) => m.info.id)
                   const p = (async () => {
@@ -441,9 +431,9 @@ export namespace SessionProcessor {
                             id: ulid(),
                             session_id: ctx.sessionID,
                             observations: result.observations,
-                            message_tokens: stepTok,
+                            message_tokens: pendingTok,
                             observation_tokens: Token.estimate(result.observations),
-                            starts_at: boundary,
+                            starts_at: obsRec?.last_observed_at ?? 0,
                             ends_at: unobserved.at(-1)?.info.time?.created ?? Date.now(),
                             first_msg_id: unobserved[0]?.info.id ?? null,
                             last_msg_id: unobserved.at(-1)?.info.id ?? null,

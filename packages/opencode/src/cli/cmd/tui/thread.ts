@@ -198,12 +198,15 @@ export const TuiThreadCommand = cmd({
       process.on("SIGUSR2", reload)
 
       let stopped = false
+      let exiting = false
       const stop = async () => {
         if (stopped) return
         stopped = true
         process.off("uncaughtException", error)
         process.off("unhandledRejection", error)
         process.off("SIGUSR2", reload)
+        process.off("SIGINT", interrupt)
+        process.off("SIGTERM", terminate)
         await withTimeout(client.call("shutdown", undefined), 5000).catch((error) => {
           Log.Default.warn("worker shutdown failed", {
             error: errorMessage(error),
@@ -211,6 +214,22 @@ export const TuiThreadCommand = cmd({
         })
         worker.terminate()
       }
+
+      const exit = async (signal: "SIGINT" | "SIGTERM") => {
+        if (exiting) return
+        exiting = true
+        Log.Default.info("tui signal received", { signal })
+        await stop()
+        process.exit(signal === "SIGINT" ? 130 : 143)
+      }
+      const interrupt = () => {
+        void exit("SIGINT")
+      }
+      const terminate = () => {
+        void exit("SIGTERM")
+      }
+      process.on("SIGINT", interrupt)
+      process.on("SIGTERM", terminate)
 
       const prompt = await input(args.prompt)
       const config = await Instance.provide({

@@ -121,10 +121,12 @@ export namespace SessionRevert {
           remove.push(msg)
         }
         for (const msg of remove) {
-          SyncEvent.run(MessageV2.Event.Removed, {
-            sessionID,
-            messageID: msg.info.id,
-          })
+          yield* Effect.promise(() =>
+            SyncEvent.run(MessageV2.Event.Removed, {
+              sessionID,
+              messageID: msg.info.id,
+            }),
+          )
         }
         if (session.revert.partID && target) {
           const partID = session.revert.partID
@@ -133,11 +135,13 @@ export namespace SessionRevert {
             const removeParts = target.parts.slice(idx)
             target.parts = target.parts.slice(0, idx)
             for (const part of removeParts) {
-              SyncEvent.run(MessageV2.Event.PartRemoved, {
-                sessionID,
-                messageID: target.info.id,
-                partID: part.id,
-              })
+              yield* Effect.promise(() =>
+                SyncEvent.run(MessageV2.Event.PartRemoved, {
+                  sessionID,
+                  messageID: target.info.id,
+                  partID: part.id,
+                }),
+              )
             }
           }
         }

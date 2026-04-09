@@ -29,14 +29,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const msgParts = parts(last.id)
     const lastStepFinish = msgParts.findLast((p): p is StepFinishPart => p.type === "step-finish")
 
-    // Context should NOT include cache.read because those tokens were already in context
-    // from previous turns - they are not new context. Only cache.write is new.
+    // Context usage should include cached reads because those tokens still occupy
+    // model context even when they were reused from cache.
     const step = lastStepFinish ?? last
     const tokens =
-      step.tokens.input -
-      step.tokens.cache.read + // subtract cache.read (already in context)
-      step.tokens.output +
-      step.tokens.reasoning
+      step.tokens.input + step.tokens.cache.read + step.tokens.cache.write + step.tokens.output + step.tokens.reasoning
 
     const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     return {
