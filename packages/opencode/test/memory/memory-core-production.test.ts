@@ -13,10 +13,7 @@
  * P-9:  Scope defaults remain stable
  */
 
-import { beforeEach, afterEach, describe, test, expect } from "bun:test"
-import os from "os"
-import path from "path"
-import { rm } from "fs/promises"
+import { beforeEach, describe, test, expect } from "bun:test"
 import { Database } from "../../src/storage/db"
 import { DEFAULT_USER_SCOPE_ID } from "../../src/memory/contracts"
 import { Memory } from "../../src/memory/provider"
@@ -36,27 +33,25 @@ import { tmpdir } from "../fixture/fixture"
 
 // ─── Test DB setup ────────────────────────────────────────────────────────────
 
-let testDbPath: string
+const CLEAN_TABLES = [
+  "memory_working",
+  "memory_artifacts",
+  "memory_agent_handoffs",
+  "memory_fork_contexts",
+  "memory_links",
+  "memory_session_chunks",
+  "session_observation",
+  "session",
+  "project",
+]
 
 async function setup() {
-  testDbPath = path.join(os.tmpdir(), `prod-test-${Math.random().toString(36).slice(2)}.db`)
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  process.env["OPENCODE_DB"] = testDbPath
-  await Database.Client()
-}
-
-async function teardown() {
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  await rm(testDbPath, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
-  delete process.env["OPENCODE_DB"]
+  const db = await Database.Client()
+  for (const t of CLEAN_TABLES) {
+    try {
+      await db.$client.execute(`DELETE FROM ${t}`)
+    } catch {}
+  }
 }
 
 const threadScope: ScopeRef = { type: "thread", id: "prod-thread" }
@@ -65,9 +60,9 @@ const projectScope: ScopeRef = { type: "project", id: "prod-project" }
 const userScope: ScopeRef = { type: "user", id: "default" }
 const globalScope: ScopeRef = { type: "global_pattern", id: "prod-global" }
 
-function seedSession(sid = threadScope.id, pid = projectScope.id) {
+async function seedSession(sid = threadScope.id, pid = projectScope.id) {
   const now = Date.now()
-  Database.use((db) =>
+  await Database.use((db) =>
     db
       .insert(ProjectTable)
       .values({
@@ -86,7 +81,7 @@ function seedSession(sid = threadScope.id, pid = projectScope.id) {
       .onConflictDoNothing()
       .run(),
   )
-  Database.use((db) =>
+  await Database.use((db) =>
     db
       .insert(SessionTable)
       .values({
@@ -118,7 +113,6 @@ function seedSession(sid = threadScope.id, pid = projectScope.id) {
 
 describe("P-1: Working memory precedence — thread > agent > project", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("thread value wins over project when same key (bug fix)", async () => {
     await WorkingMemory.set(projectScope, "goals", "Project goals: ship V1")
@@ -236,7 +230,6 @@ describe("P-1: Working memory precedence — thread > agent > project", () => {
 
 describe("P-2: FTS5 two-pass search unique cases", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("prefix-OR fallback handles single-token singular to plural matches", async () => {
     const fts = new FTS5Backend()
@@ -360,7 +353,6 @@ describe("P-2: FTS5 two-pass search unique cases", () => {
 
 describe("P-3: Memory.buildContext() falls back to recent() when FTS returns empty", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("returns recent artifacts when FTS query has no matches", async () => {
     // Index an artifact about database design
@@ -435,15 +427,11 @@ describe("P-4: Agent scope is operational in UpdateWorkingMemoryTool", () => {
 
   test("agent scope writes to agent scope_type in working memory", async () => {
     await setup()
-    try {
-      await WorkingMemory.set(agentScope, "mode", "build agent operational memory")
-      const records = await WorkingMemory.get(agentScope, "mode")
-      expect(records).toHaveLength(1)
-      expect(records[0].scope_type).toBe("agent")
-      expect(records[0].scope_id).toBe("build")
-    } finally {
-      await teardown()
-    }
+    await WorkingMemory.set(agentScope, "mode", "build agent operational memory")
+    const records = await WorkingMemory.get(agentScope, "mode")
+    expect(records).toHaveLength(1)
+    expect(records[0].scope_type).toBe("agent")
+    expect(records[0].scope_id).toBe("build")
   })
 
   test("general working memory schema accepts agent and rejects user scope", async () => {
@@ -458,7 +446,6 @@ describe("P-4: Agent scope is operational in UpdateWorkingMemoryTool", () => {
 
 describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("agent working memory is included when passed as ancestor scope", async () => {
     await WorkingMemory.set(agentScope, "agent_goal", "Build the auth module end to end")
@@ -502,7 +489,7 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
   })
 
   test("buildContext returns block metadata with stable ordering", async () => {
-    seedSession()
+    await seedSession()
     await WorkingMemory.set(projectScope, "proj_pref", "project default")
     await Memory.indexArtifact({
       scope_type: "project",
@@ -580,7 +567,6 @@ describe("P-5: Agent scope included in Memory.buildContext() ancestry", () => {
 
 describe("P-5C: update_user_memory is explicit and controlled", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("tool asks for approval before writing user memory", async () => {
     let asked = 0
@@ -630,7 +616,6 @@ describe("P-5C: update_user_memory is explicit and controlled", () => {
 
 describe("P-6B: Working memory guidance is present in provider hot path output", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("Memory.buildContext workingMemory includes update_working_memory guidance", async () => {
     await WorkingMemory.set(projectScope, "goals", "Ship production memory")

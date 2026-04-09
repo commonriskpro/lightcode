@@ -15,9 +15,6 @@
  */
 
 import { beforeEach, afterEach, describe, test, expect } from "bun:test"
-import os from "os"
-import path from "path"
-import { rm } from "fs/promises"
 import { Database } from "../../src/storage/db"
 import { WorkingMemory } from "../../src/memory/working-memory"
 import { FTS5Backend, format as formatArtifacts } from "../../src/memory/fts5-backend"
@@ -25,31 +22,33 @@ import { Handoff } from "../../src/memory/handoff"
 import { Memory } from "../../src/memory/provider"
 import type { ScopeRef } from "../../src/memory/contracts"
 
-// Use a unique temp DB for each test run to ensure isolation
-let testDbPath: string
+/**
+ * Clean all memory-related tables between tests.
+ *
+ * The preload creates a shared :memory: DB with all tables.
+ * We must NOT close+reset the connection (that breaks ALS context
+ * and causes "no such table" errors in Database.use/transaction).
+ * Instead, just DELETE all rows to ensure test isolation.
+ */
+const CLEAN_TABLES = [
+  "memory_working",
+  "memory_artifacts",
+  "memory_agent_handoffs",
+  "memory_fork_contexts",
+  "memory_links",
+  "memory_session_chunks",
+  "session_observation",
+  "session",
+  "project",
+]
 
-async function setupTestDb() {
-  testDbPath = path.join(os.tmpdir(), `memory-test-${Math.random().toString(36).slice(2)}.db`)
-  // Close any existing connection first
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  // Set the DB path via env BEFORE triggering the lazy Client init
-  process.env["OPENCODE_DB"] = testDbPath
-  // Force init with new path — this runs all migrations
-  await Database.Client()
-}
-
-async function teardownTestDb() {
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  await rm(testDbPath, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
-  delete process.env["OPENCODE_DB"]
+async function setupDb() {
+  const db = await Database.Client()
+  for (const t of CLEAN_TABLES) {
+    try {
+      await db.$client.execute(`DELETE FROM ${t}`)
+    } catch {}
+  }
 }
 
 const projectScope: ScopeRef = { type: "project", id: "test-project" }
@@ -59,8 +58,7 @@ const agentScope: ScopeRef = { type: "agent", id: "test-agent-001" }
 const globalScope: ScopeRef = { type: "global_pattern", id: "typescript-patterns" }
 
 describe("SC-10: Fresh DB migration", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("runs without error and creates all memory tables", async () => {
     const db = await Database.Client()
@@ -78,8 +76,7 @@ describe("SC-10: Fresh DB migration", () => {
 })
 
 describe("SC-2: Working memory persists", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("write + read round-trip for project scope", async () => {
     await WorkingMemory.set(projectScope, "project_state", "We are building feature X")
@@ -116,8 +113,7 @@ describe("SC-2: Working memory persists", () => {
 })
 
 describe("SC-6: Scope isolation", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("writes to project scope don't appear in user scope", async () => {
     await WorkingMemory.set(projectScope, "key1", "project value")
@@ -183,8 +179,7 @@ describe("SC-6: Scope isolation", () => {
 })
 
 describe("SC-5: FTS5 search", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("FTS5 special character query does not crash", async () => {
     const fts = new FTS5Backend()
@@ -210,8 +205,7 @@ describe("SC-5: FTS5 search", () => {
 })
 
 describe("SC-7: Topic-key dedupe", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("different topic_keys create separate artifacts", async () => {
     const fts = new FTS5Backend()
@@ -287,8 +281,7 @@ describe("SC-7: Topic-key dedupe", () => {
 })
 
 describe("SC-8: format() respects token budget", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("format() respects token budget", async () => {
     const fts = new FTS5Backend()
@@ -318,8 +311,7 @@ describe("SC-8: format() respects token budget", () => {
 })
 
 describe("SC-4: Fork context durability", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("fork context persists and is retrievable", async () => {
     await Handoff.writeFork({
@@ -376,8 +368,7 @@ describe("SC-4: Fork context durability", () => {
 })
 
 describe("SC-9: No external process required", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("all memory operations succeed without Engram daemon", async () => {
     // Ensure no OPENCODE_MEMORY_USE_ENGRAM is set
@@ -413,8 +404,7 @@ describe("SC-9: No external process required", () => {
 })
 
 describe("SC-1: buildContext() composes all layers", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("returns all undefined when DB is empty", async () => {
     const ctx = await Memory.buildContext({
@@ -489,8 +479,7 @@ describe("SC-1: buildContext() composes all layers", () => {
 })
 
 describe("Working memory: global_pattern scope strips private tags", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("private tags stripped from global_pattern writes", async () => {
     await WorkingMemory.set(
@@ -514,8 +503,7 @@ describe("Working memory: global_pattern scope strips private tags", () => {
 })
 
 describe("Working memory: clearScope", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("clearScope removes all records for a scope", async () => {
     await WorkingMemory.set(projectScope, "key1", "v1")
@@ -531,8 +519,7 @@ describe("Working memory: clearScope", () => {
 })
 
 describe("Memory.setWorkingMemory / getWorkingMemory via provider", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("provider delegates to WorkingMemory service correctly", async () => {
     await Memory.setWorkingMemory(projectScope, "goals", "Build memory core V1")
@@ -543,8 +530,7 @@ describe("Memory.setWorkingMemory / getWorkingMemory via provider", () => {
 })
 
 describe("Memory.writeForkContext / getForkContext via provider", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("provider fork context round-trip", async () => {
     await Memory.writeForkContext({

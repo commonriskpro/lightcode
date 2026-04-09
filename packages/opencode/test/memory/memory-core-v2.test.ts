@@ -11,10 +11,7 @@
  * V2-F: format() 800-char preview
  */
 
-import { beforeEach, afterEach, describe, test, expect } from "bun:test"
-import os from "os"
-import path from "path"
-import { rm } from "fs/promises"
+import { beforeEach, describe, test, expect } from "bun:test"
 import { Database } from "../../src/storage/db"
 import { WorkingMemory } from "../../src/memory/working-memory"
 import { FTS5Backend, format as formatArtifacts } from "../../src/memory/fts5-backend"
@@ -31,34 +28,32 @@ import { MessageID, SessionID } from "../../src/session/schema"
 import type { ScopeRef } from "../../src/memory/contracts"
 import { tmpdir } from "../fixture/fixture"
 
-let testDbPath: string
+const CLEAN_TABLES = [
+  "memory_working",
+  "memory_artifacts",
+  "memory_agent_handoffs",
+  "memory_fork_contexts",
+  "memory_links",
+  "memory_session_chunks",
+  "session_observation",
+  "session",
+  "project",
+]
 
-async function setupTestDb() {
-  testDbPath = path.join(os.tmpdir(), `memory-v2-test-${Math.random().toString(36).slice(2)}.db`)
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  process.env["OPENCODE_DB"] = testDbPath
-  await Database.Client()
-}
-
-async function teardownTestDb() {
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  await rm(testDbPath, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
-  delete process.env["OPENCODE_DB"]
+async function setupDb() {
+  const db = await Database.Client()
+  for (const t of CLEAN_TABLES) {
+    try {
+      await db.$client.execute(`DELETE FROM ${t}`)
+    } catch {}
+  }
 }
 
 const projectScope: ScopeRef = { type: "project", id: "v2-test-project" }
 
-function seedSession(sid: SessionID, pid = projectScope.id) {
+async function seedSession(sid: SessionID, pid = projectScope.id) {
   const now = Date.now()
-  Database.use((db) =>
+  await Database.use((db) =>
     db
       .insert(ProjectTable)
       .values({
@@ -77,7 +72,7 @@ function seedSession(sid: SessionID, pid = projectScope.id) {
       .onConflictDoNothing()
       .run(),
   )
-  Database.use((db) =>
+  await Database.use((db) =>
     db
       .insert(SessionTable)
       .values({
@@ -108,30 +103,35 @@ function seedSession(sid: SessionID, pid = projectScope.id) {
 // ─── V2-1: OM Atomicity ───────────────────────────────────────────────────────
 
 describe("V2-1: OM atomicity — seal only advances after write succeeds", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("addBufferSafe persists buffer and observed ids together", async () => {
     const sid = SessionID.make("v2-atomic-001")
     await seedSession(sid)
 
-    await OM.addBufferSafe(
-      {
-        id: "buf-v2-001",
-        session_id: sid,
-        observations: "Observed a runtime change",
-        message_tokens: 10,
-        observation_tokens: 20,
-        starts_at: 1,
-        ends_at: 2,
-        first_msg_id: MessageID.make("m1"),
-        last_msg_id: MessageID.make("m2"),
-        time_created: Date.now(),
-        time_updated: Date.now(),
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await OM.addBufferSafe(
+          {
+            id: "buf-v2-001",
+            session_id: sid,
+            observations: "Observed a runtime change",
+            message_tokens: 10,
+            observation_tokens: 20,
+            starts_at: 1,
+            ends_at: 2,
+            first_msg_id: MessageID.make("m1"),
+            last_msg_id: MessageID.make("m2"),
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          },
+          sid,
+          ["m1", "m2"],
+        )
       },
-      sid,
-      ["m1", "m2"],
-    )
+    })
 
     expect(await OM.buffers(sid)).toHaveLength(1)
     expect((await OM.get(sid))?.observed_message_ids).toBe(JSON.stringify(["m1", "m2"]))
@@ -173,8 +173,7 @@ describe("V2-1: OM atomicity — seal only advances after write succeeds", () =>
 // ─── V2-3: Working Memory in System Prompt ────────────────────────────────────
 
 describe("V2-3: Working memory injects into system prompt", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("wrapWorkingMemory creates correct XML block", async () => {
     const { SystemPrompt } = await import("../../src/session/system")
@@ -215,8 +214,7 @@ describe("V2-3: Working memory injects into system prompt", () => {
 // ─── V2-4: update_working_memory Tool ─────────────────────────────────────────
 
 describe("V2-4: update_working_memory tool", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("tool stores working memory correctly via Memory.setWorkingMemory", async () => {
     // Test the underlying service call directly (tool execute delegates to it)
@@ -249,8 +247,7 @@ describe("V2-4: update_working_memory tool", () => {
 // ─── V2-5: FTS5Backend.recent() ───────────────────────────────────────────────
 
 describe("V2-5: FTS5Backend.recent() returns latest artifacts", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("recent() returns artifacts ordered by time_updated DESC", async () => {
     const fts = new FTS5Backend()
@@ -333,8 +330,7 @@ describe("V2-5: FTS5Backend.recent() returns latest artifacts", () => {
 // ─── V2-6: Dream persistConsolidation writes to memory_artifacts ──────────────
 
 describe("V2-6: Dream persistConsolidation writes to memory_artifacts", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("persistConsolidation() writes to memory_artifacts when OPENCODE_DREAM_USE_NATIVE_MEMORY=true", async () => {
     // Ensure native memory flag is true (default)
@@ -393,8 +389,7 @@ describe("V2-7: Engram gate removed from autodream idle()", () => {
 // ─── V2-F: Format 800-char preview ────────────────────────────────────────────
 
 describe("V2-F: format() uses 800-char preview", () => {
-  beforeEach(setupTestDb)
-  afterEach(teardownTestDb)
+  beforeEach(setupDb)
 
   test("format() uses 800-char preview instead of 300", async () => {
     const fts = new FTS5Backend()

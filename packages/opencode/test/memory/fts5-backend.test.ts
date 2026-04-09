@@ -28,6 +28,7 @@ async function boot() {
       content text NOT NULL,
       topic_key text,
       normalized_hash text,
+      embedding F32_BLOB(384),
       revision_count integer NOT NULL DEFAULT 1,
       duplicate_count integer NOT NULL DEFAULT 1,
       last_seen_at integer,

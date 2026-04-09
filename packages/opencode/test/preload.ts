@@ -76,8 +76,11 @@ delete process.env["SAMBANOVA_API_KEY"]
 delete process.env["OPENCODE_SERVER_PASSWORD"]
 delete process.env["OPENCODE_SERVER_USERNAME"]
 
-// Use in-memory sqlite
-process.env["OPENCODE_DB"] = ":memory:"
+// Use a temp file-based SQLite DB instead of :memory:.
+// Drizzle + libSQL :memory: has a bug where the database is destroyed after
+// a transaction commits, making all subsequent queries fail with "no such table".
+// A file-based DB avoids this while still being isolated per test process.
+process.env["OPENCODE_DB"] = path.join(dir, "test.db")
 
 // Now safe to import from src/
 const { Log } = await import("../src/util/log")

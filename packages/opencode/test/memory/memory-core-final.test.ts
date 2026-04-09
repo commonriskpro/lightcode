@@ -9,10 +9,7 @@
  * F-8: wrapRecall uses <memory-recall> not <engram-recall>
  */
 
-import { beforeEach, afterEach, describe, test, expect } from "bun:test"
-import os from "os"
-import path from "path"
-import { rm } from "fs/promises"
+import { beforeEach, describe, test, expect } from "bun:test"
 import { Database } from "../../src/storage/db"
 import { Memory } from "../../src/memory/provider"
 import { OM } from "../../src/session/om"
@@ -21,37 +18,37 @@ import { ProjectTable } from "../../src/project/project.sql"
 import { SessionTable } from "../../src/session/session.sql"
 import { MessageID, SessionID } from "../../src/session/schema"
 import type { ScopeRef } from "../../src/memory/contracts"
+import { Instance } from "../../src/project/instance"
+import { tmpdir } from "../fixture/fixture"
 
 // ─── Test DB setup ────────────────────────────────────────────────────────────
 
-let testDbPath: string
+const CLEAN_TABLES = [
+  "memory_working",
+  "memory_artifacts",
+  "memory_agent_handoffs",
+  "memory_fork_contexts",
+  "memory_links",
+  "memory_session_chunks",
+  "session_observation",
+  "session",
+  "project",
+]
 
 async function setup() {
-  testDbPath = path.join(os.tmpdir(), `final-test-${Math.random().toString(36).slice(2)}.db`)
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  process.env["OPENCODE_DB"] = testDbPath
-  await Database.Client()
-}
-
-async function teardown() {
-  try {
-    await Database.close()
-  } catch {}
-  Database.Client.reset()
-  await rm(testDbPath, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-wal`, { force: true }).catch(() => undefined)
-  await rm(`${testDbPath}-shm`, { force: true }).catch(() => undefined)
-  delete process.env["OPENCODE_DB"]
+  const db = await Database.Client()
+  for (const t of CLEAN_TABLES) {
+    try {
+      await db.$client.execute(`DELETE FROM ${t}`)
+    } catch {}
+  }
 }
 
 const projectScope: ScopeRef = { type: "project", id: "final-project" }
 
-function seedSession(sid: SessionID, pid = projectScope.id) {
+async function seedSession(sid: SessionID, pid = projectScope.id) {
   const now = Date.now()
-  Database.use((db) =>
+  await Database.use((db) =>
     db
       .insert(ProjectTable)
       .values({
@@ -70,7 +67,7 @@ function seedSession(sid: SessionID, pid = projectScope.id) {
       .onConflictDoNothing()
       .run(),
   )
-  Database.use((db) =>
+  await Database.use((db) =>
     db
       .insert(SessionTable)
       .values({
@@ -102,7 +99,6 @@ function seedSession(sid: SessionID, pid = projectScope.id) {
 
 describe("F-1: addBufferSafe() merge path", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("addBufferSafe() merges observed ids into existing record", async () => {
     const sid = SessionID.make("final-om-002")
@@ -123,23 +119,29 @@ describe("F-1: addBufferSafe() merge path", () => {
       time_updated: Date.now(),
     })
 
-    await OM.addBufferSafe(
-      {
-        id: "buf-final-002",
-        session_id: sid,
-        observations: "second batch",
-        message_tokens: 10,
-        observation_tokens: 20,
-        starts_at: 3,
-        ends_at: 4,
-        first_msg_id: MessageID.make("m2"),
-        last_msg_id: MessageID.make("m3"),
-        time_created: Date.now(),
-        time_updated: Date.now(),
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await OM.addBufferSafe(
+          {
+            id: "buf-final-002",
+            session_id: sid,
+            observations: "second batch",
+            message_tokens: 10,
+            observation_tokens: 20,
+            starts_at: 3,
+            ends_at: 4,
+            first_msg_id: MessageID.make("m2"),
+            last_msg_id: MessageID.make("m3"),
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          },
+          sid,
+          ["m2", "m3"],
+        )
       },
-      sid,
-      ["m2", "m3"],
-    )
+    })
 
     expect((await OM.get(sid))?.observed_message_ids).toBe(JSON.stringify(["m1", "m2", "m3"]))
   })
@@ -149,7 +151,6 @@ describe("F-1: addBufferSafe() merge path", () => {
 
 describe("F-3: Fork context snapshot is enriched", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("Memory.writeForkContext stores enriched JSON", async () => {
     await Memory.writeForkContext({
@@ -184,7 +185,6 @@ describe("F-3: Fork context snapshot is enriched", () => {
 
 describe("F-4: Memory.writeHandoff() wired for non-fork sessions", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("Memory.writeHandoff() persists to memory_agent_handoffs", async () => {
     const id = await Memory.writeHandoff({
@@ -210,7 +210,6 @@ describe("F-4: Memory.writeHandoff() wired for non-fork sessions", () => {
 
 describe("F-5: buildContext semantic recall tag formatting", () => {
   beforeEach(setup)
-  afterEach(teardown)
 
   test("buildContext formats semantic recall with memory-recall tags", async () => {
     await Memory.indexArtifact({
