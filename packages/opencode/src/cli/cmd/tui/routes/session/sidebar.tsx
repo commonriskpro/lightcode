@@ -6,6 +6,7 @@ import { Installation } from "@/installation"
 import { TuiPluginRuntime } from "../../plugin"
 import { getScrollAcceleration } from "../../util/scroll"
 import { Locale } from "@/util/locale"
+import { sidebar as sidebarPrimitives, tags } from "../../ui/primitives"
 
 const DEFAULT_TITLE = /^(New session|Child session) - \d{4}-\d{2}-\d{2}T/
 
@@ -15,6 +16,8 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const config = useTuiConfig()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const accel = createMemo(() => getScrollAcceleration(config))
+  const sb = createMemo(() => sidebarPrimitives(theme))
+  const chips = createMemo(() => tags(theme))
 
   // Atlas state
   const threads = createMemo(() => sync.data.session.filter((s) => !DEFAULT_TITLE.test(s.title)).length)
@@ -34,7 +37,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   return (
     <Show when={session()}>
       <box
-        backgroundColor={theme.backgroundPanel}
+        backgroundColor={sb().bg}
         width={28}
         height="100%"
         paddingTop={1}
@@ -46,50 +49,50 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         <scrollbox flexGrow={1} scrollAcceleration={accel()}>
           <box flexShrink={0} gap={1}>
             {/* Header */}
-            <text fg={theme.text}>
+            <text fg={sb().title}>
               <b>Atlas Index</b>
             </text>
 
             {/* Legend */}
-            <box>
-              <text fg={theme.textMuted}>
-                <span style={{ fg: theme.info }}>◈</span> active thread
+            <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+              <text fg={sb().muted}>
+                <span style={{ fg: chips().thread.bg }}>◈</span> active thread
               </text>
-              <text fg={theme.textMuted}>
-                <span style={{ fg: theme.secondary }}>●</span> memory anchor
+              <text fg={sb().muted}>
+                <span style={{ fg: chips().anchor.bg }}>●</span> memory anchor
               </text>
-              <text fg={theme.textMuted}>
-                <span style={{ fg: theme.warning }}>▲</span> queued signal
+              <text fg={sb().muted}>
+                <span style={{ fg: chips().signal.bg }}>▲</span> queued signal
               </text>
-              <text fg={theme.textMuted}>
-                <span style={{ fg: theme.error }}>⚠</span> drift / tension
+              <text fg={sb().muted}>
+                <span style={{ fg: chips().drift.bg }}>⚠</span> drift / tension
               </text>
             </box>
 
             {/* Atlas state */}
-            <box>
-              <text fg={theme.text}>
+            <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+              <text fg={sb().title}>
                 <b>Atlas state</b>
               </text>
               <box flexDirection="row" justifyContent="space-between">
-                <text fg={theme.textMuted}>threads</text>
-                <text fg={theme.info}>{threads()}</text>
+                <text fg={sb().muted}>threads</text>
+                <text fg={chips().thread.bg}>{threads()}</text>
               </box>
               <box flexDirection="row" justifyContent="space-between">
-                <text fg={theme.textMuted}>signals</text>
-                <text fg={todos() > 0 ? theme.warning : theme.textMuted}>{todos()}</text>
+                <text fg={sb().muted}>signals</text>
+                <text fg={todos() > 0 ? chips().signal.bg : sb().muted}>{todos()}</text>
               </box>
               <box flexDirection="row" justifyContent="space-between">
-                <text fg={theme.textMuted}>anchored</text>
-                <text fg={diffs() > 0 ? theme.text : theme.textMuted}>{diffs()}</text>
+                <text fg={sb().muted}>anchored</text>
+                <text fg={diffs() > 0 ? sb().body : sb().muted}>{diffs()}</text>
               </box>
               <box flexDirection="row" justifyContent="space-between">
-                <text fg={theme.textMuted}>MCP</text>
-                <text fg={mcp() > 0 ? theme.success : theme.textMuted}>{mcp()}</text>
+                <text fg={sb().muted}>MCP</text>
+                <text fg={mcp() > 0 ? theme.success : sb().muted}>{mcp()}</text>
               </box>
               <Show when={lsp() > 0}>
                 <box flexDirection="row" justifyContent="space-between">
-                  <text fg={theme.textMuted}>LSP</text>
+                  <text fg={sb().muted}>LSP</text>
                   <text fg={theme.success}>{lsp()}</text>
                 </box>
               </Show>
@@ -98,13 +101,13 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             {/* Recent threads */}
             <Show when={recent().length > 0}>
               <box>
-                <text fg={theme.text}>
+                <text fg={sb().title}>
                   <b>Threads</b>
                 </text>
                 <For each={recent()}>
                   {(s) => (
-                    <text fg={theme.textMuted} wrapMode="none">
-                      <span style={{ fg: theme.secondary }}>◇</span> {Locale.truncate(s.title, 20)}
+                    <text fg={sb().muted} wrapMode="none">
+                      <span style={{ fg: chips().anchor.bg }}>◇</span> {Locale.truncate(s.title, 20)}
                     </text>
                   )}
                 </For>
@@ -117,9 +120,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         </scrollbox>
 
         <box flexShrink={0} paddingTop={1}>
-          <text fg={theme.textMuted}>
+          <text fg={sb().muted}>
             <span style={{ fg: theme.success }}>•</span> <b>Light</b>
-            <span style={{ fg: theme.text }}>
+            <span style={{ fg: sb().body }}>
               <b>Code</b>
             </span>{" "}
             {Installation.VERSION}

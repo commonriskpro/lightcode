@@ -35,6 +35,7 @@ import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { useTextareaKeybindings } from "../textarea-keybindings"
 import { DialogSkill } from "../dialog-skill"
+import { prompt as promptPrimitives, tags } from "../../ui/primitives"
 
 export type PromptProps = {
   sessionID?: string
@@ -91,6 +92,8 @@ export function Prompt(props: PromptProps) {
   const renderer = useRenderer()
   const { theme, syntax } = useTheme()
   const kv = useKV()
+  const pp = createMemo(() => promptPrimitives(theme))
+  const chips = createMemo(() => tags(theme))
   const list = createMemo(() => props.placeholders?.normal ?? [])
   const shell = createMemo(() => props.placeholders?.shell ?? [])
   const [auto, setAuto] = createSignal<AutocompleteRef>()
@@ -936,10 +939,10 @@ export function Prompt(props: PromptProps) {
             bottomLeft: "╹",
           }}
         >
-          <box paddingLeft={2} paddingRight={2} flexShrink={0} backgroundColor={theme.backgroundElement} flexGrow={1}>
+          <box paddingLeft={2} paddingRight={2} flexShrink={0} backgroundColor={pp().shell} flexGrow={1}>
             <textarea
               placeholder={placeholderText()}
-              placeholderColor={theme.textMuted}
+              placeholderColor={pp().placeholder}
               textColor={keybind.leader ? theme.textMuted : theme.text}
               focusedTextColor={keybind.leader ? theme.textMuted : theme.text}
               minHeight={1}
@@ -1116,7 +1119,7 @@ export function Prompt(props: PromptProps) {
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
+              focusedBackgroundColor={pp().shell}
               cursorColor={theme.text}
               syntaxStyle={syntax()}
             />
@@ -1150,15 +1153,15 @@ export function Prompt(props: PromptProps) {
           borderColor={highlight()}
           customBorderChars={{
             ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
+            vertical: pp().divider.a !== 0 ? "╹" : " ",
           }}
         >
           <box
             height={1}
             border={["bottom"]}
-            borderColor={theme.backgroundElement}
+            borderColor={pp().divider}
             customBorderChars={
-              theme.backgroundElement.a !== 0
+              pp().divider.a !== 0
                 ? {
                     ...EmptyBorder,
                     horizontal: "▀",
@@ -1244,12 +1247,12 @@ export function Prompt(props: PromptProps) {
                 </box>
               </box>
               <box flexDirection="row" gap={1} flexShrink={0}>
-                <text fg={theme.warning}>
-                  ⎈ <span style={{ fg: theme.textMuted }}>inject signal</span>
+                <text fg={chips().signal.bg}>
+                  ⎈ <span style={{ fg: pp().hint }}>inject signal</span>
                 </text>
                 <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
                   esc{" "}
-                  <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
+                  <span style={{ fg: store.interrupt > 0 ? theme.primary : pp().hint }}>
                     {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
                   </span>
                 </text>
@@ -1263,27 +1266,27 @@ export function Prompt(props: PromptProps) {
                   <Switch>
                     <Match when={usage()}>
                       {(item) => (
-                        <text fg={theme.textMuted} wrapMode="none">
+                        <text fg={pp().meta} wrapMode="none">
                           {[item().context, item().cost].filter(Boolean).join(" · ")}
                         </text>
                       )}
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {keybind.print("agent_cycle")} <span style={{ fg: pp().hint }}>agents</span>
                       </text>
                     </Match>
                   </Switch>
                   <text fg={theme.text}>
-                    /atlas <span style={{ fg: theme.textMuted }}>field</span>
+                    /atlas <span style={{ fg: pp().hint }}>field</span>
                   </text>
                   <text fg={theme.text}>
-                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>actions</span>
+                    {keybind.print("command_list")} <span style={{ fg: pp().hint }}>actions</span>
                   </text>
                 </Match>
                 <Match when={store.mode === "shell"}>
                   <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+                    esc <span style={{ fg: pp().hint }}>exit shell mode</span>
                   </text>
                 </Match>
               </Switch>

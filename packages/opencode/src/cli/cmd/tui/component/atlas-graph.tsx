@@ -2,6 +2,7 @@ import { createMemo, createResource, createSignal, onCleanup, onMount, For, Show
 import { useSync } from "@tui/context/sync"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
+import { graph as graphPrimitives } from "../ui/primitives"
 import type { Session, Todo, FileDiff, Message, AssistantMessage, Part } from "@opencode-ai/sdk/v2"
 
 // --- Graph data model ---
@@ -450,31 +451,32 @@ export function AtlasGraph(props: { sessionID: string; width: number; height: nu
 
   const nodeCount = createMemo(() => graph()?.nodes.length ?? 0)
   const edgeCount = createMemo(() => graph()?.edges.length ?? 0)
+  const gp = createMemo(() => graphPrimitives(theme))
 
   const color = (cell: Cell) => {
     if (cell.kind === "empty") return theme.background
-    if (cell.kind === "cluster") return theme.borderSubtle
-    if (cell.kind === "center") return theme.info
+    if (cell.kind === "cluster") return gp().cluster
+    if (cell.kind === "center") return gp().active
 
     if (cell.kind === "edge") {
-      if (cell.weight === "strong") return theme.border
-      if (cell.weight === "weak") return theme.borderSubtle
-      return cell.ring <= 1 ? theme.borderActive : theme.borderSubtle
+      if (cell.weight === "strong") return gp().edge
+      if (cell.weight === "weak") return gp().edgeFaint
+      return cell.ring <= 1 ? gp().edge : gp().edgeFaint
     }
 
     const base: Record<NodeKind, typeof theme.text> = {
-      thread: theme.info,
-      parent: theme.secondary,
-      child: theme.secondary,
-      anchor: theme.secondary,
-      signal: theme.warning,
-      file: theme.text,
-      mcp: theme.textMuted,
-      drift: theme.error,
+      thread: gp().thread,
+      parent: gp().anchor,
+      child: gp().anchor,
+      anchor: gp().anchor,
+      signal: gp().signal,
+      file: gp().file,
+      mcp: gp().mcp,
+      drift: gp().drift,
     }
 
-    if (cell.ring >= 3) return theme.textMuted
-    if (cell.ring >= 2) return theme.borderActive
+    if (cell.ring >= 3) return gp().labelFar
+    if (cell.ring >= 2) return gp().far
     return base[cell.kind as NodeKind]
   }
 

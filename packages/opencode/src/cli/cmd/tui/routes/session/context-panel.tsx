@@ -6,6 +6,7 @@ import { TuiPluginRuntime } from "../../plugin"
 import { getScrollAcceleration } from "../../util/scroll"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "@/util/locale"
+import { sidebar as sidebarPrimitives, tags, border as borderPrimitives } from "../../ui/primitives"
 
 const DEFAULT_TITLE = /^(New session|Child session) - \d{4}-\d{2}-\d{2}T/
 
@@ -23,6 +24,9 @@ export function ContextPanel(props: { sessionID: string }) {
   const config = useTuiConfig()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const accel = createMemo(() => getScrollAcceleration(config))
+  const sb = createMemo(() => sidebarPrimitives(theme))
+  const chips = createMemo(() => tags(theme))
+  const bd = createMemo(() => borderPrimitives(theme))
 
   const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
   const last = createMemo(() =>
@@ -86,7 +90,7 @@ export function ContextPanel(props: { sessionID: string }) {
   return (
     <Show when={session()}>
       <box
-        backgroundColor={theme.backgroundPanel}
+        backgroundColor={sb().bg}
         width={34}
         height="100%"
         paddingTop={1}
@@ -98,23 +102,27 @@ export function ContextPanel(props: { sessionID: string }) {
           <box flexShrink={0} gap={1}>
             {/* Selected node header */}
             <box>
-              <text fg={theme.text}>
+              <text fg={sb().title}>
                 <b>Context panel</b>
               </text>
-              <text fg={theme.textMuted}>Selected node / {named(session()!.title, 18, "thread")}</text>
+              <text fg={sb().muted}>Selected node / {named(session()!.title, 18, "thread")}</text>
             </box>
 
             {/* Node detail card */}
-            <box>
-              <text fg={theme.text}>
+            <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+              <text fg={sb().title}>
                 <b>{named(session()!.title, 24, "Active thread")}</b>
               </text>
               <box flexDirection="row" gap={1}>
-                <text fg={theme.info}> THREAD </text>
-                <text fg={badge().color}> {badge().text} </text>
+                <text fg={chips().thread.fg}>
+                  <span style={{ bg: chips().thread.bg, fg: chips().thread.fg }}> THREAD </span>
+                </text>
+                <text fg={badge().color}>
+                  <span style={{ bg: badge().color, fg: theme.background }}> {badge().text} </span>
+                </text>
               </box>
               <Show when={model()}>
-                <text fg={theme.textMuted}>
+                <text fg={sb().muted}>
                   {model()} · {agent()}
                 </text>
               </Show>
@@ -123,25 +131,25 @@ export function ContextPanel(props: { sessionID: string }) {
             {/* Closest related nodes */}
             <Show when={related() > 0}>
               <box>
-                <text fg={theme.text}>
+                <text fg={sb().title}>
                   <b>Related nodes</b>
                 </text>
                 <Show when={parent()}>
-                  <text fg={theme.textMuted}>
-                    <span style={{ fg: theme.secondary }}>◇</span> {named(parent()!.title, 22, "parent")}
+                  <text fg={sb().muted}>
+                    <span style={{ fg: chips().anchor.bg }}>◇</span> {named(parent()!.title, 22, "parent")}
                   </text>
                 </Show>
                 <For each={children().slice(0, 3)}>
                   {(child) => (
-                    <text fg={theme.textMuted}>
-                      <span style={{ fg: theme.secondary }}>◆</span> {named(child.title, 22, "fork")}
+                    <text fg={sb().muted}>
+                      <span style={{ fg: chips().anchor.bg }}>◆</span> {named(child.title, 22, "fork")}
                     </text>
                   )}
                 </For>
                 <For each={todos().slice(0, 3)}>
                   {(todo) => (
-                    <text fg={theme.textMuted}>
-                      <span style={{ fg: theme.warning }}>▲</span> {Locale.truncate(todo.content, 22)}
+                    <text fg={sb().muted}>
+                      <span style={{ fg: chips().signal.bg }}>▲</span> {Locale.truncate(todo.content, 22)}
                     </text>
                   )}
                 </For>
@@ -149,8 +157,8 @@ export function ContextPanel(props: { sessionID: string }) {
                   {(diff) => {
                     const name = diff.file.split("/").pop() ?? diff.file
                     return (
-                      <text fg={theme.textMuted}>
-                        <span style={{ fg: theme.text }}>□</span> {Locale.truncate(name, 22)}
+                      <text fg={sb().muted}>
+                        <span style={{ fg: sb().body }}>□</span> {Locale.truncate(name, 22)}
                       </text>
                     )
                   }}
@@ -159,11 +167,11 @@ export function ContextPanel(props: { sessionID: string }) {
             </Show>
 
             {/* Field interpretation */}
-            <box>
-              <text fg={theme.text}>
+            <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+              <text fg={sb().title}>
                 <b>Field interpretation</b>
               </text>
-              <text fg={theme.textMuted} wrapMode="word">
+              <text fg={sb().muted} wrapMode="word">
                 {interpretation()}
               </text>
             </box>
@@ -175,8 +183,12 @@ export function ContextPanel(props: { sessionID: string }) {
 
         {/* Actions footer */}
         <box flexShrink={0} paddingTop={1} flexDirection="row" gap={1}>
-          <text fg={theme.info}> /atlas </text>
-          <text fg={theme.warning}> /signal </text>
+          <text>
+            <span style={{ bg: chips().anchor.bg, fg: chips().anchor.fg }}> /atlas </span>
+          </text>
+          <text>
+            <span style={{ bg: chips().signal.bg, fg: chips().signal.fg }}> /signal </span>
+          </text>
         </box>
       </box>
     </Show>
