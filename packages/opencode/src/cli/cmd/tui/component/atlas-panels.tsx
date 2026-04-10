@@ -55,7 +55,7 @@ export function AtlasPanels(props: { sessionID: string; width: number }) {
         gap={1}
         flexShrink={0}
         paddingTop={1}
-        height={wide() ? 7 : undefined}
+        height={wide() ? 6 : undefined}
       >
         {/* Active narrative */}
         <box
