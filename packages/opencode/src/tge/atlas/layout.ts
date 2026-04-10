@@ -57,26 +57,28 @@ export function ring(nodes: GraphNode[], edges: GraphEdge[], w: number, h: numbe
   }
 
   // Rings 1-3: concentric ellipses with jitter
+  // Margins and jitter scale with viewport size for resolution independence
+  const margin = Math.max(4, Math.round(w * 0.04))
   for (const idx of [1, 2, 3]) {
     const group = rings.get(idx) ?? []
     if (!group.length) continue
 
     // Ellipse radii scale with viewport, capped to avoid overflow
-    const rx = Math.min(w * 0.22 * idx + 30, w / 2 - 40)
-    const ry = Math.min(h * 0.2 * idx + 20, h / 2 - 30)
+    const rx = Math.min(w * 0.22 * idx, w / 2 - margin * 2)
+    const ry = Math.min(h * 0.22 * idx, h / 2 - margin)
     const step = (2 * Math.PI) / Math.max(group.length, 1)
     const offset = idx * 0.7
 
     for (let i = 0; i < group.length; i++) {
       const angle = step * i + offset
-      const jx = jitter(i + idx * 17, idx === 1 ? 8 : 15)
-      const jy = jitter(i + idx * 31, idx === 1 ? 6 : 10)
+      const jx = jitter(i + idx * 17, Math.max(1, Math.round(w * 0.01)))
+      const jy = jitter(i + idx * 31, Math.max(1, Math.round(h * 0.02)))
       const px = cx + rx * Math.cos(angle) + jx
       const py = cy + ry * Math.sin(angle) + jy
       placed.push({
         ...group[i],
-        px: Math.max(30, Math.min(w - 30, px)),
-        py: Math.max(20, Math.min(h - 20, py)),
+        px: Math.max(margin, Math.min(w - margin, px)),
+        py: Math.max(margin, Math.min(h - margin, py)),
       })
     }
   }
@@ -93,7 +95,7 @@ export function ring(nodes: GraphNode[], edges: GraphEdge[], w: number, h: numbe
   for (const [key, members] of groups) {
     const avgX = members.reduce((s, m) => s + m.px, 0) / members.length
     const minY = Math.min(...members.map((m) => m.py))
-    clusters.set(key, { label: key, cx: avgX, cy: minY - 16 })
+    clusters.set(key, { label: key, cx: avgX, cy: minY - 4 })
   }
 
   return { nodes: placed, edges, width: w, height: h, clusters }

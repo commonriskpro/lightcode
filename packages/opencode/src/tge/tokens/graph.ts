@@ -2,30 +2,30 @@ import { palette, alpha } from "./color"
 
 /** Graph-specific visual tokens.
  *
- * Sizes are calibrated for supersample rendering where ~10x20 pixels
- * map to one terminal cell. Nodes need to be large enough that
- * drawSuperSampleBuffer produces visible color in the cell average.
+ * Sizes are in pixels at 2x scale (2 pixels per terminal cell dimension).
+ * drawSuperSampleBuffer renders quadrant blocks from 2×2 pixels per cell.
+ * At 2x: 1px = 0.5 cells, radius 3 = 3 cells wide (diameter 6px).
  */
 export const graph = {
-  /** Center (active thread) node radius in pixels (~4 cells wide, ~2 cells tall) */
-  centerRadius: 16,
-  /** Standard node radius (ring 1) — ~3 cells wide */
-  nodeRadius: 10,
-  /** Small node radius (ring 2-3) — ~2 cells wide */
-  smallRadius: 7,
+  /** Center (active thread) node radius — ~3 cells wide */
+  centerRadius: 3,
+  /** Standard node radius (ring 1) — ~2 cells wide */
+  nodeRadius: 2,
+  /** Small node radius (ring 2-3) — ~1 cell wide */
+  smallRadius: 1,
 
-  /** Edge line widths — must survive supersample averaging */
-  edgeStrong: 6,
-  edgeNormal: 4,
-  edgeWeak: 3,
+  /** Edge line widths at 2x */
+  edgeStrong: 2,
+  edgeNormal: 1,
+  edgeWeak: 1,
 
-  /** Halo glow around center node */
-  haloRadius: 36,
-  haloColor: alpha(palette.thread, 0x70),
+  /** Halo glow around center node — ~5 cells radius */
+  haloRadius: 6,
+  haloColor: alpha(palette.thread, 0x90),
 
   /** Cluster halo */
-  clusterHaloRadius: 24,
-  clusterHaloColor: alpha(palette.borderStrong, 0x40),
+  clusterHaloRadius: 4,
+  clusterHaloColor: alpha(palette.borderStrong, 0x50),
 
   /** Node colors by kind */
   node: {

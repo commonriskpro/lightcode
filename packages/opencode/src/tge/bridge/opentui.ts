@@ -2,12 +2,9 @@
  * opentui pixel bridge — composites TGE PixelBuffers into opentui's render pipeline.
  *
  * drawSuperSampleBuffer expects 2×2 pixels per terminal cell (quadrant blocks).
- * For a region of W×H cells, the pixel buffer must be (W*2)×(H*2) pixels.
- * Stride must be aligned to 256 bytes.
- *
- * The TGE paint system renders at arbitrary pixel resolution, so this bridge
- * downsamples from the high-res TGE buffer to the 2x quadrant buffer before
- * calling drawSuperSampleBuffer.
+ * The TGE paint system renders directly at 2x scale, so the bridge simply
+ * copies the pixel buffer to a 256-byte aligned buffer and calls
+ * drawSuperSampleBuffer. No downsampling needed.
  *
  * Text labels are written AFTER the supersample call via drawText.
  */
@@ -46,7 +43,7 @@ const VR = 0x04
 const VG = 0x04
 const VB = 0x0a
 
-export function bridge(cellW: number, cellH: number, _mode: "supersample" | "halfblock" = "supersample"): Bridge {
+export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "halfblock" = "supersample"): Bridge {
   const regions: Region[] = []
   let aligned: Uint8Array | null = null
   let curW = 0
@@ -55,83 +52,55 @@ export function bridge(cellW: number, cellH: number, _mode: "supersample" | "hal
 
   const process = (buffer: OptimizedBuffer, _delta: number) => {
     for (const r of regions) {
-      render(buffer, r, cellW, cellH)
+      render(buffer, r)
     }
   }
 
-  function render(buffer: OptimizedBuffer, region: Region, cw: number, ch: number) {
+  function render(buffer: OptimizedBuffer, region: Region) {
     const buf = region.buf
     if (buf.width <= 0 || buf.height <= 0) return
 
-    // drawSuperSampleBuffer expects 2×2 pixels per cell (quadrant blocks)
-    const qw = region.cols * 2
-    const qh = region.rows * 2
+    // Buffer is already at 2x scale (cols*2 × rows*2)
+    const pw = buf.width
+    const ph = buf.height
 
     // Reallocate aligned buffer if size changed
-    if (qw !== curW || qh !== curH || !aligned) {
-      curW = qw
-      curH = qh
-      stride = Math.ceil((qw * 4) / 256) * 256
-      aligned = new Uint8Array(stride * qh)
+    if (pw !== curW || ph !== curH || !aligned) {
+      curW = pw
+      curH = ph
+      stride = Math.ceil((pw * 4) / 256) * 256
+      aligned = new Uint8Array(stride * ph)
     }
 
-    // Downsample: TGE buffer (cols*cellW × rows*cellH) → quadrant buffer (cols*2 × rows*2)
-    // Each quadrant pixel averages a block of (cellW/2 × cellH/2) TGE pixels
-    const bw = cw / 2 // TGE pixels per quadrant pixel, horizontal
-    const bh = ch / 2 // TGE pixels per quadrant pixel, vertical
+    // Copy pixels to aligned buffer, alpha-blending onto void black
     const d = buf.data
-
-    for (let qy = 0; qy < qh; qy++) {
-      const dr = qy * stride
-      for (let qx = 0; qx < qw; qx++) {
-        // Source pixel region in TGE buffer
-        const sx0 = Math.floor(qx * bw)
-        const sy0 = Math.floor(qy * bh)
-        const sx1 = Math.min(Math.floor((qx + 1) * bw), buf.width)
-        const sy1 = Math.min(Math.floor((qy + 1) * bh), buf.height)
-
-        let tr = 0,
-          tg = 0,
-          tb = 0,
-          cnt = 0
-        for (let py = sy0; py < sy1; py++) {
-          const sr = py * buf.stride
-          for (let px = sx0; px < sx1; px++) {
-            const si = sr + px * 4
-            const a = d[si + 3]
-            if (a === 0) {
-              tr += VR
-              tg += VG
-              tb += VB
-            } else if (a === 0xff) {
-              tr += d[si]
-              tg += d[si + 1]
-              tb += d[si + 2]
-            } else {
-              const inv = 255 - a
-              tr += (d[si] * a + VR * inv) / 255
-              tg += (d[si + 1] * a + VG * inv) / 255
-              tb += (d[si + 2] * a + VB * inv) / 255
-            }
-            cnt++
-          }
-        }
-
-        const di = dr + qx * 4
-        if (cnt === 0) {
+    for (let y = 0; y < ph; y++) {
+      const sr = y * buf.stride
+      const dr = y * stride
+      for (let x = 0; x < pw; x++) {
+        const si = sr + x * 4
+        const di = dr + x * 4
+        const a = d[si + 3]
+        if (a === 0) {
           aligned[di] = VR
           aligned[di + 1] = VG
           aligned[di + 2] = VB
           aligned[di + 3] = 0xff
+        } else if (a === 0xff) {
+          aligned[di] = d[si]
+          aligned[di + 1] = d[si + 1]
+          aligned[di + 2] = d[si + 2]
+          aligned[di + 3] = 0xff
         } else {
-          aligned[di] = Math.round(tr / cnt)
-          aligned[di + 1] = Math.round(tg / cnt)
-          aligned[di + 2] = Math.round(tb / cnt)
+          const inv = 255 - a
+          aligned[di] = (d[si] * a + VR * inv + 127) / 255
+          aligned[di + 1] = (d[si + 1] * a + VG * inv + 127) / 255
+          aligned[di + 2] = (d[si + 2] * a + VB * inv + 127) / 255
           aligned[di + 3] = 0xff
         }
       }
       // Zero padding bytes
-      for (let x = qw * 4; x < stride; x++) {
+      for (let x = pw * 4; x < stride; x++) {
         aligned[dr + x] = 0
       }
     }
@@ -164,7 +133,7 @@ export function bridge(cellW: number, cellH: number, _mode: "supersample" | "hal
     },
     process,
     paint(buffer: OptimizedBuffer, region: Region) {
-      render(buffer, region, cellW, cellH)
+      render(buffer, region)
     },
     destroy() {
       regions.length = 0

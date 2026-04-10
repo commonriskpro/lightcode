@@ -117,13 +117,12 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     const pos = abs(anchor)
     const c = Math.max(1, Math.min(props.width, renderer.width - pos.col))
     const r = Math.max(1, Math.min(props.height, renderer.height - pos.row))
-    const cw = tge.cellW()
-    const ch = tge.cellH()
-    const pw = c * cw
-    const ph = r * ch
+    // Render at 2x scale: drawSuperSampleBuffer expects 2×2 pixels per cell
+    const pw = c * 2
+    const ph = r * 2
     if (pw <= 0 || ph <= 0) return
 
-    const f = renderAtlas(d, pw, ph, cw, ch)
+    const f = renderAtlas(d, pw, ph, 2, 2)
 
     const labels: TextLabel[] = f.texts.map((t) => ({
       content: t.content,
