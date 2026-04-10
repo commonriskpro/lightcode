@@ -61,6 +61,7 @@ import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { ContextPanel } from "./context-panel"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -212,14 +213,22 @@ export function Session() {
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
 
   const wide = createMemo(() => dimensions().width > 120)
+  const extraWide = createMemo(() => dimensions().width > 180)
   const sidebarVisible = createMemo(() => {
     if (session()?.parentID) return false
     if (sidebarOpen()) return true
     if (sidebar() === "auto" && wide()) return true
     return false
   })
+  const contextVisible = createMemo(() => {
+    if (session()?.parentID) return false
+    if (!sidebarVisible()) return false
+    return extraWide()
+  })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(
+    () => dimensions().width - (sidebarVisible() ? 42 : 0) - (contextVisible() ? 38 : 0) - 4,
+  )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1089,8 +1098,43 @@ export function Session() {
       }}
     >
       <box flexDirection="row">
+        {/* Atlas Index — left panel */}
+        <Show when={sidebarVisible()}>
+          <Switch>
+            <Match when={wide()}>
+              <Sidebar sessionID={route.sessionID} />
+            </Match>
+            <Match when={!wide()}>
+              <box
+                position="absolute"
+                top={0}
+                left={0}
+                right={0}
+                bottom={0}
+                alignItems="flex-start"
+                backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
+              >
+                <Sidebar sessionID={route.sessionID} />
+              </box>
+            </Match>
+          </Switch>
+        </Show>
+
+        {/* Atlas Field — center */}
         <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
           <Show when={session()}>
+            {/* Field strip — thread path breadcrumb */}
+            <box flexDirection="row" flexShrink={0} justifyContent="space-between" height={1}>
+              <text fg={theme.textMuted} wrapMode="none">
+                <span style={{ fg: theme.info }}>{"◈"}</span>{" "}
+                <span style={{ fg: theme.text }}>{Locale.truncate(session()!.title, 40)}</span>
+              </text>
+              <Show when={contextVisible()}>
+                <text fg={theme.textMuted} wrapMode="none">
+                  {sync.data.session_status?.[route.sessionID]?.type === "idle" ? "idle" : "active"}
+                </text>
+              </Show>
+            </box>
             <scrollbox
               ref={(r) => (scroll = r)}
               viewportOptions={{
@@ -1243,25 +1287,9 @@ export function Session() {
           </Show>
           <Toast />
         </box>
-        <Show when={sidebarVisible()}>
-          <Switch>
-            <Match when={wide()}>
-              <Sidebar sessionID={route.sessionID} />
-            </Match>
-            <Match when={!wide()}>
-              <box
-                position="absolute"
-                top={0}
-                left={0}
-                right={0}
-                bottom={0}
-                alignItems="flex-end"
-                backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
-              >
-                <Sidebar sessionID={route.sessionID} />
-              </box>
-            </Match>
-          </Switch>
+        {/* Context Panel — right panel */}
+        <Show when={contextVisible()}>
+          <ContextPanel sessionID={route.sessionID} />
         </Show>
       </box>
     </context.Provider>
