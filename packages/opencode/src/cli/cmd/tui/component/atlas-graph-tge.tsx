@@ -115,10 +115,14 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     if (!d || !tge.active() || !anchor) return
 
     const pos = abs(anchor)
-    // Confine the graph to its box (props.width × props.height).
-    // Do NOT extend to terminal edges — sidebar and context panel own those.
-    const gc = Math.max(1, Math.min(props.width, renderer.width - pos.col))
-    const gr = Math.max(1, Math.min(props.height, renderer.height - pos.row))
+    // drawSuperSampleBuffer iterates from posX to terminal width,
+    // so the bridge buffer must cover the FULL remaining terminal area.
+    // The TGE renders in SCREEN PIXEL coordinates (square pixels) so
+    // circles are naturally circular. The bridge area-samples down to 2x.
+    const c = Math.max(1, renderer.width - pos.col)
+    const r = Math.max(1, renderer.height - pos.row)
+    const gc = Math.min(props.width, c)
+    const gr = Math.min(props.height, r)
     // Screen pixel dimensions: cells × cell pixel size
     const cw = Math.max(1, tge.cellW())
     const ch = Math.max(1, tge.cellH())
@@ -141,8 +145,8 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
       key: "atlas-field",
       col: pos.col,
       row: pos.row,
-      cols: gc,
-      rows: gr,
+      cols: c,
+      rows: r,
       buf: f.buffer,
       labels,
     })
