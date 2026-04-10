@@ -104,9 +104,27 @@ system[3]    — not cached    <working-memory>                      ← durable
 system[last] — not cached    Volatile: date + model identity
 ```
 
-### Fork Subagent
+### Fork Subagent + Durable Launch
 
-When the `task` tool spawns a subagent, it inherits the parent's system prompt, tool set, and conversation history. The child's API call prefix is **identical** to the parent's. With 3 subagent calls per session: **30,000–180,000 tokens saved**.
+When the `task` tool spawns a subagent, LightCode now uses a durable launch lifecycle:
+
+- **fork mode** for same-model launches → child reuses the parent's prompt prefix and cache-friendly context
+- **handoff mode** for different-model launches → child gets a persisted task snapshot with WM/OM context
+- launch preparation persists session + fork/handoff state before child execution begins
+
+This preserves the cache win for forked children while making parent→child launch restart-safe and async-DB-safe.
+
+With 3 same-model subagent calls per session: **30,000–180,000 tokens saved**.
+
+### Database Coordination
+
+Storage now uses explicit async DB lanes:
+
+- `Database.read(...)` for reads
+- `Database.write(...)` for single-write operations
+- `Database.tx(...)` for atomic workflows like subagent launch
+
+Write access is coordinated in-process so launch-critical writes, OM, sync, and memory persistence do not race each other. Post-commit `Database.effect(...)` callbacks run after the writer gate is released so the main agent loop does not deadlock on follow-up reads.
 
 ### Batched LSP Diagnostics
 

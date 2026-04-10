@@ -117,7 +117,7 @@ Or trigger manually: type `/dream` in the TUI.
 {
   "experimental": {
     "multi_step": true, // Multi-step streaming (default: true)
-    "fork_subagent": true, // Fork subagent caching (default: true)
+    "fork_subagent": true, // Same-model subagent launch uses durable fork mode (default: true)
     "deferred_tools": true, // Deferred tools (default: auto-detected)
     "autodream": false, // Background memory (default: false)
   },

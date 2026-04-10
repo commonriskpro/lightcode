@@ -13,11 +13,14 @@ The compiled binary ships with an adjacent `node_modules/` sidecar that contains
 The storage API is async now:
 
 - `await Database.Client()`
-- `await Database.use(async (db) => ...)`
-- `await Database.transaction(async (tx) => ...)`
+- `await Database.read(async (db) => ...)`
+- `await Database.write(async (db) => ...)`
+- `await Database.tx(async (tx) => ...)`
 - `await Database.close()`
 
 `drizzle-orm/libsql` is async-only, so callers must respect the boundary.
+
+`Database.use(...)` and `Database.transaction(...)` still exist as compatibility wrappers, but new code should use the explicit `read/write/tx` split.
 
 ## 3.1 Migration gotchas that were fixed in code
 
@@ -26,6 +29,8 @@ The tricky part was not just the DB client — it was every caller that still be
 - `SyncEvent` had to await async projectors
 - session callers like `session/index.ts` and `session/revert.ts` had to stop treating event/projector work as fire-and-forget
 - async DB code inside transaction helpers had to stop leaking unresolved promises
+- write ownership had to move to a coordinated in-process gate so subagent launch, OM, sync, and memory writes do not interleave unpredictably
+- post-commit callbacks had to run after releasing the writer gate; keeping the lock during `Database.effect(...)` can deadlock follow-up reads and stall the main agent loop
 
 If you migrate another path to libSQL, verify the whole call chain. Half-async code is how you get phantom state, missing projections, and race bugs.
 

@@ -9,7 +9,9 @@
 - **Output**: creates `migration/<timestamp>_<slug>/migration.sql` and `snapshot.json`.
 - **Tests**: migration tests should read the per-folder layout (no `_journal.json`).
 - **Runtime DB**: storage uses `@libsql/client` + `drizzle-orm/libsql`.
-- **Client lifecycle**: `Database.Client()`, `Database.use(...)`, `Database.transaction(...)`, and `Database.close()` are async.
+- **Client lifecycle**: `Database.Client()`, `Database.read(...)`, `Database.write(...)`, `Database.tx(...)`, and `Database.close()` are async.
+- **Read/write split**: use `Database.read(...)` for selects, `Database.write(...)` for single-write operations, and `Database.tx(...)` for atomic multi-step workflows. `Database.use(...)` / `Database.transaction(...)` are compatibility wrappers and should not be used for new code.
+- **Coordinator behavior**: write access is serialized in-process; post-commit `Database.effect(...)` callbacks run after the writer gate is released to avoid deadlocks with follow-up reads.
 - **Vectors**: semantic recall uses libSQL native vectors (`F32_BLOB(384)` + `vector_distance_cos`).
 
 ## Sidecar native deps

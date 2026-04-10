@@ -213,13 +213,14 @@ Manual trigger via TUI. Also aliased as `/summarize`.
 
 ---
 
-## 4. Fork Subagent
+## 4. Fork Subagent / Durable Launch
 
-When `session.create()` is called with a `parentID`, the child session **inherits the parent's cached system prompt** — skipping the cold-start cache miss.
+When the `task` tool spawns a subagent, the runtime now goes through a durable `SubagentLaunch` workflow instead of ad hoc inline persistence.
 
-- Enables ~90% cache hit on first subagent turn (parent's BP2/BP3 already warm)
-- Used internally by the `task` tool when spawning subtask sessions
-- Source: `src/session/session.ts` (parentID propagation)
+- Same-model launches use **fork mode** and persist restart-safe fork context before child start
+- Different-model launches use **handoff mode** and persist task description + WM/OM snapshots before child start
+- Child execution only starts after launch preparation reaches a durable `prepared` state
+- Source: `packages/opencode/src/subagent/launch.ts`, `packages/opencode/src/memory/handoff.ts`
 
 ---
 
@@ -237,7 +238,7 @@ When `session.create()` is called with a `parentID`, the child session **inherit
 | `glob`        | File pattern matching                                             |
 | `grep`        | Regex content search via ripgrep                                  |
 | `ls`          | Directory listing                                                 |
-| `task`        | Spawn a subagent session (fork or fresh)                          |
+| `task`        | Spawn a subagent session through durable fork/handoff launch flow |
 | `webfetch`    | Fetch URL content as markdown or text                             |
 | `websearch`   | Web search via Exa (requires `OPENCODE_ENABLE_EXA`)               |
 | `codesearch`  | Live framework/library docs via Context7 MCP                      |

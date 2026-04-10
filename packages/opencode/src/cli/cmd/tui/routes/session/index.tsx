@@ -30,6 +30,7 @@ import type {
   TextPart,
   ReasoningPart,
 } from "@opencode-ai/sdk/v2"
+import { MessageV2 } from "@/session/message-v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
 import type { Tool } from "@/tool/tool"
@@ -172,7 +173,12 @@ export function Session() {
         active = msg.parentID
         continue
       }
-      if (msg.error) continue
+      if (msg.error) {
+        if (MessageV2.AbortedError.isInstance(msg.error)) {
+          done.add(msg.parentID)
+        }
+        continue
+      }
       if (!msg.finish) continue
       done.add(msg.parentID)
     }

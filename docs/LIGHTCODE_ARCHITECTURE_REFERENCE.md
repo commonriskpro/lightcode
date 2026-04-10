@@ -384,10 +384,11 @@ export function use<T>(callback: (trx: TxOrDb) => T): T {
 │  └─────────────────────────────────────────────────────────────────┘
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────┐
-│  │                     HANDOOK / FORK (handoff.ts)                  │
-│  │   • writeFork() - contexto de fork padre→hijo                   │
-│  │   • writeHandoff() - snapshot WM + OM en handoff               │
-│  │   • getHandoff() / getFork() - recuperación post-restart        │
+│  │         SUBAGENT LAUNCH + HANDOFF / FORK (launch.ts)            │
+│  │   • prepare/start lifecycle durable                              │
+│  │   • subagent_launch row + states                                 │
+│  │   • writeFork() / writeHandoff() called from launch ownership    │
+│  │   • getHandoff() / getFork() - recuperación post-restart         │
 │  └─────────────────────────────────────────────────────────────────┘
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -449,22 +450,22 @@ export namespace Memory {
   }
 
   // Working Memory API
-  export function setWorkingMemory(scope: ScopeRef, key: string, value: string, format?): void
-  export function setUserMemory(key: string, value: string, format?, id?): void
-  export function getWorkingMemory(scope: ScopeRef, key?: string): WorkingMemoryRecord[]
+  export function setWorkingMemory(scope: ScopeRef, key: string, value: string, format?): Promise<void>
+  export function setUserMemory(key: string, value: string, format?, id?): Promise<void>
+  export function getWorkingMemory(scope: ScopeRef, key?: string): Promise<WorkingMemoryRecord[]>
 
   // Observational Memory API
-  export function getObservations(sessionId: string): ObservationRecord | undefined
+  export function getObservations(sessionId: string): Promise<ObservationRecord | undefined>
 
   // Semantic Recall API
-  export function searchArtifacts(query: string, scopes: ScopeRef[], limit?): MemoryArtifact[]
-  export function indexArtifact(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): string
+  export function searchArtifacts(query: string, scopes: ScopeRef[], limit?): Promise<MemoryArtifact[]>
+  export function indexArtifact(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string>
 
   // Handoff/Fork API
-  export function getHandoff(childSessionId: string): AgentHandoff | undefined
-  export function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): string
-  export function getForkContext(sessionId: string): ForkContext | undefined
-  export function writeForkContext(ctx: Omit<ForkContext, "id" | "time_created">): void
+  export function getHandoff(childSessionId: string): Promise<AgentHandoff | undefined>
+  export function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): Promise<string>
+  export function getForkContext(sessionId: string): Promise<ForkContext | undefined>
+  export function writeForkContext(ctx: Omit<ForkContext, "id" | "time_created">): Promise<void>
 }
 ```
 
@@ -547,12 +548,12 @@ export namespace WorkingMemory {
    * If key exists: update value, increment version, update time_updated
    * If key doesn't exist: insert new record
    */
-  export function set(scope: ScopeRef, key: string, value: string, format = "markdown"): void {
+  export async function set(scope: ScopeRef, key: string, value: string, format = "markdown"): Promise<void> {
     const safe = scope.type === "global_pattern" ? stripPrivate(value) : value
     const now = nowMs()
 
-    Database.transaction(() => {
-      const existing = Database.use((db) =>
+    await Database.tx(async () => {
+      const existing = await Database.read((db) =>
         db
           .select({ id: WorkingMemoryTable.id, version: WorkingMemoryTable.version })
           .from(WorkingMemoryTable)
@@ -567,7 +568,7 @@ export namespace WorkingMemory {
       )
 
       if (existing) {
-        Database.use((db) =>
+        await Database.write((db) =>
           db
             .update(WorkingMemoryTable)
             .set({ value: safe, format, version: existing.version + 1, time_updated: now })
@@ -575,7 +576,7 @@ export namespace WorkingMemory {
             .run(),
         )
       } else {
-        Database.use((db) =>
+        await Database.write((db) =>
           db
             .insert(WorkingMemoryTable)
             .values({
@@ -703,10 +704,10 @@ async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated
   const topicKey = normalizeTopicKey(artifact.topic_key)
   const now = Date.now()
 
-  Database.transaction(() => {
+  await Database.tx(async () => {
     // 1. Topic-key upsert
     if (topicKey) {
-      const existing = Database.use((db) =>
+      const existing = await Database.read((db) =>
         db
           .select({ id: MemoryArtifactTable.id, revision_count: MemoryArtifactTable.revision_count })
           .from(MemoryArtifactTable)
@@ -725,7 +726,7 @@ async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated
 
       if (existing) {
         // Update with revision_count++
-        Database.use((db) =>
+        await Database.write((db) =>
           db
             .update(MemoryArtifactTable)
             .set({
@@ -746,7 +747,7 @@ async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated
 
     // 2. Hash dedupe within 15-min window
     const windowStart = now - DEDUPE_WINDOW_MS // 15 * 60 * 1000
-    const dup = Database.use((db) =>
+    const dup = await Database.read((db) =>
       db
         .select({ id: MemoryArtifactTable.id, duplicate_count: MemoryArtifactTable.duplicate_count })
         .from(MemoryArtifactTable)
@@ -767,7 +768,7 @@ async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated
 
     if (dup) {
       // Increment duplicate_count
-      Database.use((db) =>
+      await Database.write((db) =>
         db
           .update(MemoryArtifactTable)
           .set({ duplicate_count: dup.duplicate_count + 1, last_seen_at: now, time_updated: now })
@@ -779,7 +780,7 @@ async index(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated
 
     // 3. Insert new artifact
     const id = nowId()
-    Database.use((db) =>
+    await Database.write((db) =>
       db
         .insert(MemoryArtifactTable)
         .values({
@@ -824,11 +825,11 @@ export function search(query: string, scopes: ScopeRef[], limit = 10): MemoryArt
   const results: ArtifactSearchResult[] = []
   const seen = new Set<string>()
 
-  // Direct topic_key match (Engram-style: "/" in query = topic_key lookup)
-  if (query.includes("/")) {
-    const topicResults = Database.use((db) =>
-      db
-        .select()
+    // Direct topic_key match (Engram-style: "/" in query = topic_key lookup)
+    if (query.includes("/")) {
+      const topicResults = await Database.read((db) =>
+        db
+          .select()
         .from(MemoryArtifactTable)
         .where(and(eq(MemoryArtifactTable.topic_key, query.trim()), isNull(MemoryArtifactTable.deleted_at)))
         .orderBy(sql`${MemoryArtifactTable.time_updated} DESC`)
@@ -1241,23 +1242,23 @@ export namespace Reflector {
 ```typescript
 // record.ts:18-186 - OM namespace
 export namespace OM {
-  export function get(sid: SessionID): ObservationRecord | undefined {
-    return Database.use((db) => db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get())
+  export async function get(sid: SessionID): Promise<ObservationRecord | undefined> {
+    return Database.read((db) => db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get())
   }
 
-  export function addBufferSafe(buf: ObservationBuffer, sid: SessionID, msgIds: string[]): void {
-    Database.transaction(() => {
+  export async function addBufferSafe(buf: ObservationBuffer, sid: SessionID, msgIds: string[]): Promise<void> {
+    await Database.tx(async () => {
       // Step 1: persist observation buffer chunk
-      Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+      await Database.write((db) => db.insert(ObservationBufferTable).values(buf).run())
 
       // Step 2: atomically merge msgIds into observed_message_ids
-      const rec = Database.use((db) =>
+      const rec = await Database.read((db) =>
         db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get(),
       )
 
       if (rec) {
         const merged = mergeIds(rec.observed_message_ids ?? null, msgIds)
-        Database.use((db) =>
+        await Database.write((db) =>
           db
             .update(ObservationTable)
             .set({ observed_message_ids: merged, time_updated: Date.now() })
@@ -1266,7 +1267,7 @@ export namespace OM {
         )
       } else {
         // Insert placeholder with observed IDs
-        Database.use((db) => db.insert(ObservationTable).values(placeholder).run())
+        await Database.write((db) => db.insert(ObservationTable).values(placeholder).run())
       }
     })
   }
@@ -1275,7 +1276,7 @@ export namespace OM {
     const bufs = buffers(sid)
     if (!bufs.length) return
 
-    const rec = get(sid)
+    const rec = await get(sid)
     const chunks = bufs.map((b) => b.observations)
 
     // Condense via LLM
@@ -1294,18 +1295,22 @@ export namespace OM {
         observed_message_ids: mergeIds(rec.observed_message_ids ?? null, ids),
         time_updated: Date.now(),
       }
-      Database.use((db) => db.update(ObservationTable).set(updated).where(eq(ObservationTable.id, rec.id)).run())
+      await Database.write((db) =>
+        db.update(ObservationTable).set(updated).where(eq(ObservationTable.id, rec.id)).run(),
+      )
     } else {
       // Insert new
-      Database.use((db) => db.insert(ObservationTable).values(next).run())
+      await Database.write((db) => db.insert(ObservationTable).values(next).run())
     }
 
     // Clear buffers
-    Database.use((db) => db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run())
+    await Database.write((db) =>
+      db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run(),
+    )
   }
 
-  export function reflect(sid: SessionID, txt: string): void {
-    Database.use((db) =>
+  export async function reflect(sid: SessionID, txt: string): Promise<void> {
+    await Database.write((db) =>
       db
         .update(ObservationTable)
         .set({ reflections: txt, time_updated: Date.now() })
@@ -1365,70 +1370,71 @@ export namespace Handoff {
    * Transactional — the fork is only live after this write succeeds.
    * Upsert on session_id: safe to call multiple times.
    */
-  export function writeFork(ctx: { sessionId: string; parentSessionId: string; context: string }): void {
+  export async function writeFork(
+    ctx: { sessionId: string; parentSessionId: string; context: string },
+    opts?: { db?: Database.TxOrDb },
+  ): Promise<void> {
     const id = newId("fork")
     const now = Date.now()
 
-    Database.transaction(() => {
-      Database.use((db) =>
-        db
-          .insert(ForkContextTable)
-          .values({
-            id,
-            session_id: ctx.sessionId,
+    const run = (db: Database.TxOrDb) =>
+      db
+        .insert(ForkContextTable)
+        .values({
+          id,
+          session_id: ctx.sessionId,
+          parent_session_id: ctx.parentSessionId,
+          context: ctx.context,
+          time_created: now,
+        })
+        .onConflictDoUpdate({
+          target: ForkContextTable.session_id,
+          set: {
             parent_session_id: ctx.parentSessionId,
             context: ctx.context,
             time_created: now,
-          })
-          .onConflictDoUpdate({
-            target: ForkContextTable.session_id,
-            set: {
-              parent_session_id: ctx.parentSessionId,
-              context: ctx.context,
-              time_created: now,
-            },
-          })
-          .run(),
-      )
-    })
+          },
+        })
+        .run()
+
+    if (opts?.db) return run(opts.db)
+    await Database.write(run)
   }
 
   /**
    * Write an agent handoff record (parent → child).
    * Includes snapshots of working memory and observations.
    */
-  export function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): string {
+  export async function writeHandoff(
+    h: Omit<AgentHandoff, "id" | "time_created">,
+    opts?: { db?: Database.TxOrDb },
+  ): Promise<string> {
     const id = newId("handoff")
     const now = Date.now()
 
-    Database.transaction(() => {
-      Database.use((db) =>
-        db
-          .insert(AgentHandoffTable)
-          .values({
-            id,
-            parent_session_id: h.parent_session_id,
-            child_session_id: h.child_session_id,
-            context: h.context,
-            working_memory_snap: h.working_memory_snap,
-            observation_snap: h.observation_snap,
-            metadata: h.metadata,
-            time_created: now,
-          })
-          .onConflictDoUpdate({
-            target: AgentHandoffTable.child_session_id,
-            set: {
-              parent_session_id: h.parent_session_id,
-              context: h.context,
-              working_memory_snap: h.working_memory_snap,
-              observation_snap: h.observation_snap,
-              metadata: h.metadata,
-              time_created: now,
-            },
-          })
-          .run(),
-      )
-    })
+    const input = { ...h, id, time_created: now }
+    const run = (db: Database.TxOrDb) =>
+      db
+        .insert(AgentHandoffTable)
+        .values(input)
+        .onConflictDoUpdate({
+          target: AgentHandoffTable.child_session_id,
+          set: {
+            parent_session_id: input.parent_session_id,
+            context: input.context,
+            working_memory_snap: input.working_memory_snap,
+            observation_snap: input.observation_snap,
+            metadata: input.metadata,
+            time_created: input.time_created,
+          },
+        })
+        .run()
+
+    if (opts?.db) {
+      await run(opts.db)
+      return id
+    }
+    await Database.write(run)
 
     return id
   }
@@ -1759,32 +1765,23 @@ PARENT SESSION
       │
       ▼
 ┌─────────────────┐
-│ fork() called   │
-│ (session/index) │
+│ task tool called │
+│ (tool/task.ts)   │
 └────────┬────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 1. Write fork context to DB (handoff.ts)                     │
-│                                                              │
-│    Memory.writeForkContext({                                 │
-│      session_id: childID,                                    │
-│      parent_session_id: parentID,                            │
-│      context: JSON.stringify({                              │
-│        taskDescription,                                      │
-│        currentTask,                                          │
-│        suggestedContinuation,                                │
-│        workingMemorySnapshot,                                │
-│      }),                                                     │
-│    })                                                        │
+│ 1. SubagentLaunch.prepare()                                  │
+│    - create child session inside Database.tx()               │
+│    - insert subagent_launch row                              │
+│    - persist fork OR handoff snapshot before child start     │
 └──────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 2. Clone messages up to messageID                            │
-│    (session/index.ts:511-546)                                │
-│    - Copy messages to new session ID                          │
-│    - Copy parts with new IDs                                  │
+│ 2. Mark launch prepared                                      │
+│    - state: preparing → prepared                             │
+│    - child session exists only if launch tx commits          │
 └──────────────────────────────────────────────────────────────┘
          │
          ▼
@@ -1792,33 +1789,21 @@ CHILD SESSION STARTS
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 3. Durable child hydration (prompt.ts:107-155)               │
+│ 3. SubagentLaunch.start()                                    │
 │                                                              │
-│    const handoff = Memory.getHandoff(sessionID)             │
-│    const fork = Memory.getForkContext(sessionID)            │
-│                                                              │
-│    // Extrae working_memory_snap de handoff                  │
-│    // Extrae observation_snap de handoff                     │
-│    // Extrae context de fork                                 │
+│    - resolve prompt parts                                     │
+│    - state: prepared → starting → started                    │
+│    - call SessionPrompt.prompt()                             │
 └──────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 4. Memory.buildContext() (prompt.ts:166-180)                │
+│ 4. Durable child hydration (prompt.ts)                       │
 │                                                              │
-│    const memCtx = await Memory.buildContext({               │
-│      scope: { type: "thread", id: sessionID },             │
-│      ancestorScopes: [                                      │
-│        { type: "agent", id: agentName },                    │
-│        { type: "project", id: projectID },                 │
-│        Memory.userScope(),                                   │
-│      ],                                                      │
-│      semanticQuery: lastUserText(msgs),                     │
-│    })                                                        │
-│                                                              │
-│    // Combina con durableChildHydration()                     │
-│    // workingMemory = memCtx.workingMemory + handoff WM     │
-│    // observations = fork/handff observations               │
+│    const handoff = await Memory.getHandoff(sessionID)        │
+│    const fork = await Memory.getForkContext(sessionID)       │
+│    const memCtx = await Memory.buildContext(...)             │
+│    // child merges runtime memory with durable launch state  │
 └──────────────────────────────────────────────────────────────┘
          │
          ▼
