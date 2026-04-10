@@ -1,7 +1,8 @@
-import { createMemo, For } from "solid-js"
+import { createMemo, createResource, createSignal, onCleanup, onMount, For } from "solid-js"
 import { useSync } from "@tui/context/sync"
+import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
-import type { Session, Todo, FileDiff } from "@opencode-ai/sdk/v2"
+import type { Session, Todo, FileDiff, Message, AssistantMessage } from "@opencode-ai/sdk/v2"
 
 // --- Graph data model ---
 
@@ -165,13 +166,24 @@ function drawEdge(grid: Cell[][], x0: number, y0: number, x1: number, y1: number
 
 // --- Data extraction ---
 
+type Memory = {
+  observations: string | null
+  reflections: string | null
+  observation_tokens: number
+  generation_count: number
+  is_observing: boolean
+  is_reflecting: boolean
+}
+
 function extract(
   session: Session,
   sessions: Session[],
+  messages: Message[],
   todos: Todo[],
   diffs: FileDiff[],
   mcp: { name: string; status: string }[],
   status: string | undefined,
+  memory: Memory | null,
 ) {
   const nodes: Omit<GraphNode, "col" | "row">[] = []
   const edges: GraphEdge[] = []
@@ -179,7 +191,7 @@ function extract(
   // Ring 0: Active thread
   nodes.push({ id: session.id, kind: "thread", label: session.title.slice(0, 14) || "thread", ring: 0 })
 
-  // Ring 1: Parent
+  // Ring 1: Parent thread
   if (session.parentID) {
     const parent = sessions.find((s) => s.id === session.parentID)
     if (parent) {
@@ -188,20 +200,62 @@ function extract(
     }
   }
 
-  // Ring 1: Children
+  // Ring 1: Children threads
   const children = sessions.filter((s) => s.parentID === session.id)
   for (const child of children.slice(0, 4)) {
     nodes.push({ id: child.id, kind: "child", label: child.title.slice(0, 12) || "fork", ring: 1 })
     edges.push({ from: session.id, to: child.id })
   }
 
-  // Ring 1: Drift (if error status)
-  if (status === "retry") {
-    nodes.push({ id: "drift", kind: "drift", label: "drift", ring: 1 })
-    edges.push({ from: session.id, to: "drift" })
+  // Ring 1: Anchors — user messages as checkpoints (sample evenly, max 5)
+  const anchors = messages.filter((m) => m.role === "user")
+  const step = Math.max(1, Math.floor(anchors.length / 5))
+  const sampled = anchors.filter((_, i) => i % step === 0).slice(0, 5)
+  for (const [i, msg] of sampled.entries()) {
+    const id = `anchor-${i}`
+    const label = msg.summary?.title?.slice(0, 12) ?? `turn ${i + 1}`
+    nodes.push({ id, kind: "anchor", label, ring: 1 })
+    edges.push({ from: session.id, to: id })
   }
 
-  // Ring 2: Signals (pending todos)
+  // Ring 1: Drift — retry, context overflow, or assistant errors
+  const drifts: string[] = []
+  if (status === "retry") drifts.push("retry")
+  const errs = messages.filter((m): m is AssistantMessage => m.role === "assistant" && !!m.error)
+  if (errs.length > 0) {
+    const last = errs[errs.length - 1]
+    const kind = last.error && "type" in last.error ? last.error.type : "error"
+    if (kind === "context_overflow") drifts.push("overflow")
+    else if (!drifts.includes("retry")) drifts.push(kind.slice(0, 10))
+  }
+  for (const [i, label] of drifts.entries()) {
+    const id = `drift-${i}`
+    nodes.push({ id, kind: "drift", label, ring: 1 })
+    edges.push({ from: session.id, to: id })
+  }
+
+  // Ring 2: Memory artifacts (observer/reflector)
+  if (memory) {
+    if (memory.observations) {
+      nodes.push({ id: "mem-obs", kind: "anchor", label: "observations", ring: 2 })
+      edges.push({ from: session.id, to: "mem-obs" })
+    }
+    if (memory.reflections) {
+      nodes.push({ id: "mem-ref", kind: "anchor", label: "reflections", ring: 2 })
+      edges.push({ from: session.id, to: "mem-ref" })
+      if (memory.observations) edges.push({ from: "mem-obs", to: "mem-ref" })
+    }
+    if (memory.is_observing) {
+      nodes.push({ id: "mem-active", kind: "signal", label: "observing", ring: 2 })
+      edges.push({ from: session.id, to: "mem-active" })
+    }
+    if (memory.is_reflecting) {
+      nodes.push({ id: "mem-reflecting", kind: "signal", label: "reflecting", ring: 2 })
+      edges.push({ from: session.id, to: "mem-reflecting" })
+    }
+  }
+
+  // Ring 2: Signals (pending/in-progress todos)
   const pending = todos.filter((t) => t.status === "pending" || t.status === "in_progress")
   for (const [i, todo] of pending.slice(0, 5).entries()) {
     const id = `signal-${i}`
@@ -209,7 +263,7 @@ function extract(
     edges.push({ from: session.id, to: id })
   }
 
-  // Ring 2: Modified files
+  // Ring 2: Modified files (anchored changes)
   for (const [i, diff] of diffs.slice(0, 5).entries()) {
     const id = `file-${i}`
     const name = diff.file.split("/").pop() ?? diff.file
@@ -225,6 +279,18 @@ function extract(
     edges.push({ from: session.id, to: id })
   }
 
+  // Ring 3: Sibling threads (recent threads in same project, excluding self/parent/children)
+  const exclude = new Set([session.id, session.parentID ?? "", ...children.map((c) => c.id)])
+  const siblings = sessions
+    .filter((s) => !exclude.has(s.id) && !s.parentID && s.id !== session.id)
+    .sort((a, b) => b.time.updated - a.time.updated)
+    .slice(0, 3)
+  for (const [i, sib] of siblings.entries()) {
+    const id = `sibling-${i}`
+    nodes.push({ id, kind: "parent", label: sib.title.slice(0, 10), ring: 3 })
+    // No edge to center — these are ambient context, not direct relations
+  }
+
   return { nodes, edges }
 }
 
@@ -232,18 +298,35 @@ function extract(
 
 export function AtlasGraph(props: { sessionID: string; width: number; height: number }) {
   const sync = useSync()
+  const sdk = useSDK()
   const { theme } = useTheme()
 
   const session = createMemo(() => sync.session.get(props.sessionID))
+  const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
   const todos = createMemo(() => sync.data.todo[props.sessionID] ?? [])
   const diffs = createMemo(() => sync.data.session_diff[props.sessionID] ?? [])
   const mcp = createMemo(() => Object.entries(sync.data.mcp).map(([name, item]) => ({ name, status: item.status })))
   const status = createMemo(() => sync.data.session_status?.[props.sessionID]?.type)
 
+  // Poll memory state
+  const [tick, setTick] = createSignal(0)
+  onMount(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 5000)
+    onCleanup(() => clearInterval(id))
+  })
+  const [mem] = createResource(tick, async (): Promise<Memory | null> => {
+    try {
+      const res = await sdk.client.session.memory({ sessionID: props.sessionID })
+      return (res.data as Memory) ?? null
+    } catch {
+      return null
+    }
+  })
+
   const graph = createMemo(() => {
     const s = session()
     if (!s) return null
-    const { nodes, edges } = extract(s, sync.data.session, todos(), diffs(), mcp(), status())
+    const { nodes, edges } = extract(s, sync.data.session, messages(), todos(), diffs(), mcp(), status(), mem() ?? null)
     return layout(nodes, edges, props.width, props.height)
   })
 
@@ -269,9 +352,8 @@ export function AtlasGraph(props: { sessionID: string; width: number; height: nu
     }
 
     const c = base[cell.kind]
-    // Fade by ring distance
+    // Fade by ring distance — ring 2 keeps color but dimmer, ring 3 fully muted
     if (cell.ring >= 3) return theme.textMuted
-    if (cell.ring >= 2) return theme.textMuted
     return c
   }
 
