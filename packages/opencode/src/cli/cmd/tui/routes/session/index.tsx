@@ -1229,7 +1229,7 @@ export function Session() {
             {/* Main surface — atlas graph OR message thread */}
             <Show when={atlasVisible()}>
               {/* Memory Atlas heading */}
-              <box flexShrink={0} paddingLeft={1} paddingTop={1}>
+              <box flexShrink={0} paddingLeft={1}>
                 <text fg={theme.text} wrapMode="none">
                   <b>Memory Atlas</b>
                 </text>
@@ -1243,10 +1243,9 @@ export function Session() {
                 flexDirection="row"
                 flexShrink={0}
                 gap={1}
+                height={1}
                 paddingLeft={1}
                 paddingRight={1}
-                paddingTop={1}
-                paddingBottom={1}
                 flexWrap="wrap"
               >
                 <text>
@@ -1284,22 +1283,25 @@ export function Session() {
                 </text>
               </box>
 
+              {/* Graph takes remaining space via flexGrow */}
               <Show
                 when={Flag.OPENCODE_EXPERIMENTAL_TGE}
                 fallback={
                   <AtlasGraph
                     sessionID={route.sessionID}
                     width={contentWidth()}
-                    height={Math.max(dimensions().height - 18, 8)}
+                    height={Math.max(dimensions().height - 14, 8)}
                   />
                 }
               >
                 <AtlasGraphTGE
                   sessionID={route.sessionID}
                   width={contentWidth()}
-                  height={Math.max(dimensions().height - 18, 8)}
+                  height={Math.max(dimensions().height - 14, 8)}
                 />
               </Show>
+
+              {/* Bottom panels — fixed height, never collapsed */}
               <AtlasPanels sessionID={route.sessionID} width={contentWidth()} />
             </Show>
             <Show when={!atlasVisible()}>
