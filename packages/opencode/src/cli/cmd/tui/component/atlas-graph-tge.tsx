@@ -115,11 +115,13 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     if (!d || !tge.active() || !anchor) return
 
     const pos = abs(anchor)
-    // drawPackedBuffer places cells explicitly — only cover the graph area.
-    // The TGE renders in SCREEN PIXEL coordinates (square pixels) so
-    // circles are naturally circular. The bridge rasterizes quadrants from
-    // the full-resolution source, producing superior color fidelity.
-    const gc = Math.max(1, Math.min(props.width, renderer.width - pos.col))
+    // Clamp graph so it never extends past its parent's content area.
+    // The parent box (flexGrow=1, pL=1, pR=1) occupies the center column;
+    // its right edge = renderer.width - contextPanelWidth (36 when visible,
+    // i.e. renderer.width > 140). Subtract pos.col to get max columns.
+    const right = renderer.width > 140 ? renderer.width - 36 : renderer.width
+    const maxCols = Math.max(1, right - pos.col)
+    const gc = Math.max(1, Math.min(props.width, maxCols))
     const gr = Math.max(1, Math.min(props.height, renderer.height - pos.row))
     // Screen pixel dimensions: cells × cell pixel size
     const cw = Math.max(1, tge.cellW())

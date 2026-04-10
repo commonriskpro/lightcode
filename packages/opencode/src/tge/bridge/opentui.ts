@@ -1,13 +1,17 @@
 /**
  * opentui pixel bridge — composites TGE PixelBuffers into opentui's render pipeline.
  *
- * Supports two rendering modes:
- *   - "kitty": Kitty graphics protocol for pixel-perfect rendering (Ghostty, Kitty, etc)
+ * Supports three rendering modes:
+ *   - "kitty": Kitty graphics protocol for pixel-perfect rendering (direct terminal)
+ *   - "placeholder": Kitty Unicode Placeholders for pixel-perfect in tmux panes
  *   - "packed": drawPackedBuffer with hybrid quadrant/halfblock for universal terminals
  *
  * In kitty mode, the full-resolution RGBA buffer is transmitted directly to the terminal
- * via the Kitty graphics protocol. Labels are rendered on top using drawText (terminal
- * text layer renders above Kitty image placements in Ghostty).
+ * via the Kitty graphics protocol. Labels are rendered on top using drawText.
+ *
+ * In placeholder mode, the image is transmitted with a=t,q=2 (store only), a virtual
+ * placement is created with U=1, and U+10EEEE placeholder chars are written via drawText
+ * with fg color encoding the image ID. tmux treats these as normal text → pane-confined.
  *
  * In packed mode, the screen-pixel buffer is rasterized into per-cell quadrant/halfblock
  * results using area-averaged colors for optimal quality within the 2-color-per-cell limit.
@@ -17,10 +21,12 @@ import type { PixelBuffer } from "../paint/buffer"
 import { ptr } from "bun:ffi"
 import { RGBA, type OptimizedBuffer } from "@opentui/core"
 import { transmit as kittyTransmit, remove as kittyRemove } from "../backend/kitty/transmit"
-import { inTmux } from "../backend/kitty/passthrough"
+import { inTmux, supported as tmuxPassthrough } from "../backend/kitty/passthrough"
+import { transmit as phTransmit, remove as phRemove, grid as phGrid, fg as phFg } from "../backend/kitty/placeholder"
 
 const stdout = globalThis.process.stdout
-const useKitty = !inTmux() // Kitty images are global in tmux — fall back to packed
+const useKitty = !inTmux() // Kitty direct — pixel-perfect, no tmux
+const usePlaceholder = inTmux() && tmuxPassthrough() // Kitty via Unicode placeholders in tmux
 
 export type TextLabel = {
   content: string
@@ -322,6 +328,13 @@ export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "ha
   let packed: Uint8Array | null = null
   let curCells = 0
   let kittyActive = false
+  let phActive = false
+  // Cache placeholder grid strings — regenerated only when dimensions change
+  let phCols = 0
+  let phRows = 0
+  let phLines: string[] = []
+  // Track image hash to skip re-transmission when unchanged
+  let phHash = 0
 
   const proc = (buffer: OptimizedBuffer, _delta: number) => {
     for (const r of regions) {
@@ -341,42 +354,64 @@ export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "ha
     const cw = Math.max(1, Math.round(src.width / cols))
     const ch = Math.max(1, Math.round(src.height / rows))
 
-    // ── Kitty mode: transmit full-resolution image (direct terminal only) ──
+    // ── Kitty direct mode: transmit full-resolution image (no tmux) ──
     if (mode === "supersample" && useKitty) {
-      // Composite onto void black
       const img = composite(src, cols, rows, cw, ch)
-
-      // Transmit via Kitty protocol with virtual placement
-      // c=cols, r=rows tells the terminal how many cells the image covers
       try {
-        // Delete previous image first to avoid stacking
         if (kittyActive) kittyRemove(stdout, KITTY_ID)
-
-        // Transmit + display at cursor position
         const write = (s: string) => stdout.write(s)
-
-        // Save cursor, move to target position, transmit, restore cursor
         write(`\x1b7`) // save cursor
-        write(`\x1b[${region.row + 1};${region.col + 1}H`) // move to position (1-indexed)
-
-        kittyTransmit(stdout, img, KITTY_ID, {
-          action: "T",
-          format: 32,
-        })
-
+        write(`\x1b[${region.row + 1};${region.col + 1}H`) // move to position
+        kittyTransmit(stdout, img, KITTY_ID, { action: "T", format: 32 })
         write(`\x1b8`) // restore cursor
         kittyActive = true
       } catch {
-        // Fallback to packed mode
         renderPacked(buffer, region, cols, rows, cw, ch, cells)
       }
-
-      // Labels via drawText — rendered ON TOP of Kitty image by the terminal
       renderLabels(buffer, region)
       return
     }
 
-    // ── Packed mode: quadrant/halfblock hybrid ──
+    // ── Placeholder mode: Kitty Unicode Placeholders for tmux ──
+    if (mode === "supersample" && usePlaceholder) {
+      const img = composite(src, cols, rows, cw, ch)
+      try {
+        // Cheap hash of the pixel data — only re-transmit when content changes.
+        // Sample every 4096th byte to keep the hash fast (~250 samples for 1MB).
+        let hash = img.width ^ (img.height << 16) ^ (cols << 8) ^ rows
+        const step = Math.max(1, img.data.length >> 12) * 4
+        for (let i = 0; i < img.data.length; i += step) hash = (hash * 31 + img.data[i]) | 0
+
+        if (hash !== phHash || !phActive) {
+          // Image changed — re-transmit
+          if (phActive) phRemove(stdout, KITTY_ID)
+          phTransmit(stdout, img, KITTY_ID, cols, rows)
+          phHash = hash
+          phActive = true
+        }
+
+        // Regenerate grid strings if dimensions changed
+        if (cols !== phCols || rows !== phRows) {
+          phCols = cols
+          phRows = rows
+          phLines = phGrid(cols, rows)
+        }
+
+        // Always write placeholder chars — opentui redraws every frame
+        const [fr, fg, fb, fa] = phFg(KITTY_ID)
+        const color = RGBA.fromValues(fr, fg, fb, fa)
+        const bg = RGBA.fromInts(VR, VG, VB, 255)
+        for (let r = 0; r < rows; r++) {
+          buffer.drawText(phLines[r], region.col, region.row + r, color, bg)
+        }
+      } catch {
+        renderPacked(buffer, region, cols, rows, cw, ch, cells)
+      }
+      renderLabels(buffer, region)
+      return
+    }
+
+    // ── Packed mode: quadrant/halfblock hybrid (universal fallback) ──
     renderPacked(buffer, region, cols, rows, cw, ch, cells)
     renderLabels(buffer, region)
   }
@@ -417,6 +452,22 @@ export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "ha
     }
   }
 
+  function cleanup() {
+    if (kittyActive) {
+      try {
+        kittyRemove(stdout, KITTY_ID)
+      } catch {}
+      kittyActive = false
+    }
+    if (phActive) {
+      try {
+        phRemove(stdout, KITTY_ID)
+      } catch {}
+      phActive = false
+      phHash = 0
+    }
+  }
+
   return {
     submit(region) {
       const idx = regions.findIndex((r) => r.key === region.key)
@@ -424,12 +475,7 @@ export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "ha
       else regions.push(region)
     },
     clear() {
-      if (kittyActive) {
-        try {
-          kittyRemove(stdout, KITTY_ID)
-        } catch {}
-        kittyActive = false
-      }
+      cleanup()
       regions.length = 0
     },
     process: proc,
@@ -437,12 +483,7 @@ export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "ha
       render(buffer, region)
     },
     destroy() {
-      if (kittyActive) {
-        try {
-          kittyRemove(stdout, KITTY_ID)
-        } catch {}
-        kittyActive = false
-      }
+      cleanup()
       regions.length = 0
       packed = null
     },
