@@ -1,24 +1,24 @@
 /**
  * opentui pixel bridge — composites TGE PixelBuffers into opentui's render pipeline.
  *
- * Uses drawPackedBuffer with custom quadrant rendering for maximum quality.
- * Instead of drawSuperSampleBuffer (which downsamples to 2×2 then picks 2 colors
- * from 4 pixels), we area-average each quadrant from ~31+ source pixels each,
- * producing far superior color fidelity while keeping 2×2 spatial resolution.
+ * Supports two rendering modes:
+ *   - "kitty": Kitty graphics protocol for pixel-perfect rendering (Ghostty, Kitty, etc)
+ *   - "packed": drawPackedBuffer with hybrid quadrant/halfblock for universal terminals
  *
- * Per-cell pipeline:
- *   1. Map cell to source pixel region (cellW × cellH pixels, e.g. 7×18)
- *   2. Split into 4 quadrants (TL, TR, BL, BR) — each ~3.5×9 = ~31 pixels
- *   3. Area-average each quadrant → 4 true colors
- *   4. Pick optimal 2 colors + quadrant char (same Unicode chars as opentui)
- *   5. Pack into 48-byte cell result for drawPackedBuffer
+ * In kitty mode, the full-resolution RGBA buffer is transmitted directly to the terminal
+ * via the Kitty graphics protocol. Labels are rendered on top using drawText (terminal
+ * text layer renders above Kitty image placements in Ghostty).
  *
- * Text labels are written AFTER the packed buffer call via drawText.
+ * In packed mode, the screen-pixel buffer is rasterized into per-cell quadrant/halfblock
+ * results using area-averaged colors for optimal quality within the 2-color-per-cell limit.
  */
 
 import type { PixelBuffer } from "../paint/buffer"
 import { ptr } from "bun:ffi"
 import { RGBA, type OptimizedBuffer } from "@opentui/core"
+import { transmit as kittyTransmit, remove as kittyRemove } from "../backend/kitty/transmit"
+
+const stdout = globalThis.process.stdout
 
 export type TextLabel = {
   content: string
@@ -265,12 +265,63 @@ function rasterize(src: PixelBuffer, cols: number, rows: number, cw: number, ch:
   return buf
 }
 
-export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "halfblock" = "supersample"): Bridge {
+/**
+ * Composite the source pixel buffer onto void black, producing an opaque RGBA buffer
+ * ready for Kitty protocol transmission.
+ */
+function composite(src: PixelBuffer, cols: number, rows: number, cw: number, ch: number): PixelBuffer {
+  const w = cols * cw
+  const h = rows * ch
+  const out = new Uint8Array(w * h * 4)
+
+  const sd = src.data
+  const ss = src.stride
+  for (let y = 0; y < h; y++) {
+    const dr = y * w * 4
+    for (let x = 0; x < w; x++) {
+      const di = dr + x * 4
+      if (y < src.height && x < src.width) {
+        const si = y * ss + x * 4
+        const a = sd[si + 3]
+        if (a === 0xff) {
+          out[di] = sd[si]
+          out[di + 1] = sd[si + 1]
+          out[di + 2] = sd[si + 2]
+          out[di + 3] = 0xff
+        } else if (a === 0) {
+          out[di] = VR
+          out[di + 1] = VG
+          out[di + 2] = VB
+          out[di + 3] = 0xff
+        } else {
+          const inv = 255 - a
+          out[di] = (sd[si] * a + VR * inv + 127) / 255
+          out[di + 1] = (sd[si + 1] * a + VG * inv + 127) / 255
+          out[di + 2] = (sd[si + 2] * a + VB * inv + 127) / 255
+          out[di + 3] = 0xff
+        }
+      } else {
+        out[di] = VR
+        out[di + 1] = VG
+        out[di + 2] = VB
+        out[di + 3] = 0xff
+      }
+    }
+  }
+
+  return { data: out, width: w, height: h, stride: w * 4 }
+}
+
+// Kitty image ID for the atlas field
+const KITTY_ID = 200
+
+export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "halfblock" = "supersample"): Bridge {
   const regions: Region[] = []
   let packed: Uint8Array | null = null
   let curCells = 0
+  let kittyActive = false
 
-  const process = (buffer: OptimizedBuffer, _delta: number) => {
+  const proc = (buffer: OptimizedBuffer, _delta: number) => {
     for (const r of regions) {
       render(buffer, r)
     }
@@ -285,15 +336,61 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
     const cells = cols * rows
     if (cells <= 0) return
 
-    // Detect cell dimensions from source buffer / region cell count
     const cw = Math.max(1, Math.round(src.width / cols))
     const ch = Math.max(1, Math.round(src.height / rows))
 
-    // Rasterize: area-average quadrants → packed cell results
-    const buf = rasterize(src, cols, rows, cw, ch)
+    // ── Kitty mode: transmit full-resolution image ──
+    if (mode === "supersample") {
+      // Composite onto void black
+      const img = composite(src, cols, rows, cw, ch)
+
+      // Transmit via Kitty protocol with virtual placement
+      // c=cols, r=rows tells the terminal how many cells the image covers
+      try {
+        // Delete previous image first to avoid stacking
+        if (kittyActive) kittyRemove(stdout, KITTY_ID)
+
+        // Transmit + display at cursor position
+        const write = (s: string) => stdout.write(s)
+
+        // Save cursor, move to target position, transmit, restore cursor
+        write(`\x1b7`) // save cursor
+        write(`\x1b[${region.row + 1};${region.col + 1}H`) // move to position (1-indexed)
+
+        kittyTransmit(stdout, img, KITTY_ID, {
+          action: "T",
+          format: 32,
+        })
+
+        write(`\x1b8`) // restore cursor
+        kittyActive = true
+      } catch {
+        // Fallback to packed mode
+        renderPacked(buffer, region, cols, rows, cw, ch, cells)
+      }
+
+      // Labels via drawText — rendered ON TOP of Kitty image by the terminal
+      renderLabels(buffer, region)
+      return
+    }
+
+    // ── Packed mode: quadrant/halfblock hybrid ──
+    renderPacked(buffer, region, cols, rows, cw, ch, cells)
+    renderLabels(buffer, region)
+  }
+
+  function renderPacked(
+    buffer: OptimizedBuffer,
+    region: Region,
+    cols: number,
+    rows: number,
+    cw: number,
+    ch: number,
+    cells: number,
+  ) {
+    const buf = rasterize(region.buf, cols, rows, cw, ch)
     const bytes = new Uint8Array(buf)
 
-    // Reallocate packed buffer if size changed
     if (cells !== curCells || !packed) {
       curCells = cells
       packed = bytes
@@ -306,15 +403,15 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
     } catch {
       // silent
     }
+  }
 
-    // Write text labels AFTER packed buffer so they are not overwritten
-    if (region.labels) {
-      const bg = RGBA.fromInts(VR, VG, VB, 0)
-      for (const lbl of region.labels) {
-        const [r, g, b, a] = [(lbl.fg >>> 24) & 0xff, (lbl.fg >>> 16) & 0xff, (lbl.fg >>> 8) & 0xff, lbl.fg & 0xff]
-        const fg = RGBA.fromInts(r, g, b, a)
-        buffer.drawText(lbl.content, region.col + lbl.col, region.row + lbl.row, fg, bg)
-      }
+  function renderLabels(buffer: OptimizedBuffer, region: Region) {
+    if (!region.labels) return
+    const bg = RGBA.fromInts(VR, VG, VB, 0)
+    for (const lbl of region.labels) {
+      const [r, g, b, a] = [(lbl.fg >>> 24) & 0xff, (lbl.fg >>> 16) & 0xff, (lbl.fg >>> 8) & 0xff, lbl.fg & 0xff]
+      const fg = RGBA.fromInts(r, g, b, a)
+      buffer.drawText(lbl.content, region.col + lbl.col, region.row + lbl.row, fg, bg)
     }
   }
 
@@ -325,13 +422,25 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
       else regions.push(region)
     },
     clear() {
+      if (kittyActive) {
+        try {
+          kittyRemove(stdout, KITTY_ID)
+        } catch {}
+        kittyActive = false
+      }
       regions.length = 0
     },
-    process,
+    process: proc,
     paint(buffer: OptimizedBuffer, region: Region) {
       render(buffer, region)
     },
     destroy() {
+      if (kittyActive) {
+        try {
+          kittyRemove(stdout, KITTY_ID)
+        } catch {}
+        kittyActive = false
+      }
       regions.length = 0
       packed = null
     },
