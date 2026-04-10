@@ -15,6 +15,7 @@ import { writeHeapSnapshot } from "node:v8"
 import { WorkspaceID } from "@/control-plane/schema"
 import { Heap } from "@/cli/heap"
 import { userCwd } from "@/cli/bootstrap"
+import { Database } from "@/storage/db"
 
 await Log.init({
   print: process.argv.includes("--print-logs"),
@@ -163,6 +164,11 @@ export const rpc = {
     if (eventStream.abort) eventStream.abort.abort()
     await Instance.disposeAll()
     if (server) await server.stop(true)
+    await Database.close().catch((err) => {
+      Log.Default.warn("database close failed", {
+        error: err instanceof Error ? err.message : err,
+      })
+    })
   },
 }
 

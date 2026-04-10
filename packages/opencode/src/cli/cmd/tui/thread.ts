@@ -295,6 +295,13 @@ export const TuiThreadCommand = cmd({
     } finally {
       unguard?.()
     }
-    process.exit(0)
+    // Do NOT call process.exit(0) here. The worker shutdown dispatches
+    // async cleanup (Database.close(), NAPI destructor callbacks) that
+    // runs as microtasks after `stop()` returns. Forcing an immediate
+    // exit while those microtasks are pending causes a race in Bun's
+    // libpas allocator → "A C++ exception occurred" crash. Setting
+    // exitCode and letting the event loop drain naturally avoids the
+    // crash while producing the same exit code.
+    process.exitCode = 0
   },
 })
