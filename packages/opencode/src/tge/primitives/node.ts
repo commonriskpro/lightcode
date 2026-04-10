@@ -51,11 +51,6 @@ export function node(buf: PixelBuffer, nd: SceneNode) {
 
   // 3. Selection ring
   if (selected) {
-    stroked(buf, cx, cy, r + 2, palette.bright, 1.5)
-  }
-
-  // 4. Center node gets an inner highlight
-  if (ring === 0) {
-    filled(buf, cx, cy, r * 0.4, alpha(palette.bright, 0x60))
+    stroked(buf, cx, cy, r + 1, palette.bright, 1)
   }
 }
