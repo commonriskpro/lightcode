@@ -214,8 +214,8 @@ export function Session() {
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
   const [atlasVisible, setAtlasVisible] = createSignal(false)
 
-  const wide = createMemo(() => dimensions().width > 120)
-  const extraWide = createMemo(() => dimensions().width > 180)
+  const wide = createMemo(() => dimensions().width > 100)
+  const extraWide = createMemo(() => dimensions().width > 150)
   const sidebarVisible = createMemo(() => {
     if (session()?.parentID) return false
     if (sidebarOpen()) return true
@@ -229,7 +229,7 @@ export function Session() {
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
   const contentWidth = createMemo(
-    () => dimensions().width - (sidebarVisible() ? 42 : 0) - (contextVisible() ? 38 : 0) - 4,
+    () => dimensions().width - (sidebarVisible() ? 28 : 0) - (contextVisible() ? 34 : 0) - 4,
   )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
@@ -1138,28 +1138,51 @@ export function Session() {
         {/* Atlas Field — center */}
         <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
           <Show when={session()}>
-            {/* Field strip — thread path breadcrumb */}
+            {/* Field strip */}
             <box flexDirection="row" flexShrink={0} justifyContent="space-between" height={1}>
-              <text fg={theme.textMuted} wrapMode="none">
-                <span style={{ fg: theme.info }}>{"◈"}</span>{" "}
-                <span style={{ fg: theme.text }}>{Locale.truncate(session()!.title, 40)}</span>
+              <box flexDirection="row" gap={2}>
+                <text fg={theme.info} wrapMode="none">
+                  {atlasVisible() ? "ATLAS OPEN" : "◈"}
+                </text>
+                <text fg={theme.text} wrapMode="none">
+                  {Locale.truncate(session()!.title, 30)}
+                </text>
                 <Show when={atlasVisible()}>
-                  <span style={{ fg: theme.textMuted }}> · atlas</span>
+                  <text fg={theme.textMuted} wrapMode="none">
+                    CENTER LOCKED
+                  </text>
                 </Show>
-              </text>
-              <text fg={theme.textMuted} wrapMode="none">
-                {atlasVisible()
-                  ? "/atlas to close"
-                  : sync.data.session_status?.[route.sessionID]?.type === "idle"
-                    ? "idle"
-                    : "active"}
-              </text>
+              </box>
+              <box flexDirection="row" gap={2}>
+                <Show when={atlasVisible()}>
+                  <text fg={theme.textMuted} wrapMode="none">
+                    NODES:{" "}
+                    {(sync.data.message[route.sessionID] ?? []).filter((m) => m.role === "user").length +
+                      (sync.data.session_diff[route.sessionID] ?? []).length}
+                  </text>
+                  <text
+                    fg={
+                      (sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length > 0
+                        ? theme.warning
+                        : theme.textMuted
+                    }
+                    wrapMode="none"
+                  >
+                    QUEUE: {(sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length}
+                  </text>
+                </Show>
+                <Show when={!atlasVisible()}>
+                  <text fg={theme.textMuted} wrapMode="none">
+                    {sync.data.session_status?.[route.sessionID]?.type === "idle" ? "idle" : "active"}
+                  </text>
+                </Show>
+              </box>
             </box>
             <Show when={atlasVisible()}>
               <AtlasGraph
                 sessionID={route.sessionID}
                 width={contentWidth()}
-                height={Math.max(dimensions().height - 6, 10)}
+                height={Math.max(dimensions().height - 4, 12)}
               />
             </Show>
             <Show when={!atlasVisible()}>
