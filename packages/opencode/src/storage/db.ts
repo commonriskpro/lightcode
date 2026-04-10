@@ -238,10 +238,12 @@ export namespace Database {
         try {
           const client = await Client()
           const result = await ctx.provide({ effects, tx: client }, () => callback(client))
+          release()
           for (const fx of effects) await fx()
           return result
-        } finally {
+        } catch (err) {
           release()
+          throw err
         }
       }
       throw err
@@ -289,10 +291,12 @@ export namespace Database {
           const result = await client.transaction(txCallback, {
             behavior: options?.behavior,
           })
+          release()
           for (const fx of effects) await fx()
           return result as T
-        } finally {
+        } catch (err) {
           release()
+          throw err
         }
       }
       throw err

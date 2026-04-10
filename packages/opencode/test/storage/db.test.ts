@@ -55,4 +55,19 @@ describe("Database.Path", () => {
 
     expect(max).toBe(2)
   })
+
+  test("runs post-commit effects after releasing writer gate", async () => {
+    const out: string[] = []
+
+    await Database.write(async () => {
+      Database.effect(async () => {
+        await Database.read(async () => {
+          out.push("effect:read")
+        })
+      })
+      out.push("write:done")
+    })
+
+    expect(out).toEqual(["write:done", "effect:read"])
+  })
 })
