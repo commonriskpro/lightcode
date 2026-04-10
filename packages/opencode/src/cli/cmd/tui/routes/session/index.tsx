@@ -1290,14 +1290,14 @@ export function Session() {
                   <AtlasGraph
                     sessionID={route.sessionID}
                     width={contentWidth()}
-                    height={Math.max(dimensions().height - 26, 8)}
+                    height={Math.max(dimensions().height - 18, 8)}
                   />
                 }
               >
                 <AtlasGraphTGE
                   sessionID={route.sessionID}
                   width={contentWidth()}
-                  height={Math.max(dimensions().height - 26, 8)}
+                  height={Math.max(dimensions().height - 18, 8)}
                 />
               </Show>
               <AtlasPanels sessionID={route.sessionID} width={contentWidth()} />

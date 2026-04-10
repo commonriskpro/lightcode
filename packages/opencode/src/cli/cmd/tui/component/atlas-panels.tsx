@@ -50,13 +50,7 @@ export function AtlasPanels(props: { sessionID: string; width: number }) {
 
   return (
     <Show when={session()}>
-      <box
-        flexDirection={wide() ? "row" : "column"}
-        gap={1}
-        flexShrink={0}
-        paddingTop={1}
-        height={wide() ? 6 : undefined}
-      >
+      <box flexDirection="row" gap={1} flexShrink={0} height={4}>
         {/* Active narrative */}
         <box
           flexGrow={1}
@@ -66,8 +60,6 @@ export function AtlasPanels(props: { sessionID: string; width: number }) {
           borderColor={theme.info}
           paddingLeft={1}
           paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
         >
           <text fg={theme.info} wrapMode="none">
             <b>Active narrative</b>
@@ -86,13 +78,11 @@ export function AtlasPanels(props: { sessionID: string; width: number }) {
           borderColor={theme.info}
           paddingLeft={1}
           paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
         >
           <text fg={theme.info} wrapMode="none">
             <b>Path actions</b>
           </text>
-          <box flexDirection="row" gap={1} paddingTop={1} flexWrap="wrap">
+          <box flexDirection="row" gap={1} flexWrap="wrap">
             <text>
               <span style={{ bg: chips().signal.bg, fg: chips().signal.fg }}> inject signal </span>
             </text>
@@ -114,8 +104,6 @@ export function AtlasPanels(props: { sessionID: string; width: number }) {
           borderColor={drift().active ? theme.error : theme.borderSubtle}
           paddingLeft={1}
           paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
         >
           <text fg={drift().active ? theme.error : theme.textMuted} wrapMode="none">
             <b>Drift</b>
