@@ -1,22 +1,19 @@
 /**
  * opentui pixel bridge — composites TGE PixelBuffers into opentui's render pipeline.
  *
- * drawSuperSampleBuffer:
- *   - Expects stride aligned to 256 bytes
- *   - Paints ALL cells in the buffer (no alpha skip)
- *   - (x, y) is the destination cell position in the terminal
+ * drawSuperSampleBuffer expects 2×2 pixels per terminal cell (quadrant blocks).
+ * For a region of W×H cells, the pixel buffer must be (W*2)×(H*2) pixels.
+ * Stride must be aligned to 256 bytes.
  *
- * Strategy: build a region-sized buffer with 256-byte aligned stride,
- * filled with void black. Paint TGE pixels on top (alpha-blended).
- * Call drawSuperSampleBuffer at the region's cell position.
- * Void black background matches opentui's bg, so non-graphical cells
- * look identical to unpainted cells.
+ * The TGE paint system renders at arbitrary pixel resolution, so this bridge
+ * downsamples from the high-res TGE buffer to the 2x quadrant buffer before
+ * calling drawSuperSampleBuffer.
  *
- * Text labels are written AFTER the supersample call via drawText,
- * so they are not overwritten by pixel data.
+ * Text labels are written AFTER the supersample call via drawText.
  */
 
 import type { PixelBuffer } from "../paint/buffer"
+import { ptr } from "bun:ffi"
 import { RGBA, type OptimizedBuffer } from "@opentui/core"
 
 export type TextLabel = {
@@ -40,7 +37,6 @@ export type Bridge = {
   submit(region: Region): void
   clear(): void
   process: (buffer: OptimizedBuffer, delta: number) => void
-  /** Render a single region directly — for use in renderAfter callbacks. */
   paint(buffer: OptimizedBuffer, region: Region): void
   destroy(): void
 }
@@ -52,13 +48,12 @@ const VB = 0x0a
 
 export function bridge(cellW: number, cellH: number, _mode: "supersample" | "halfblock" = "supersample"): Bridge {
   const regions: Region[] = []
+  let aligned: Uint8Array | null = null
+  let curW = 0
+  let curH = 0
+  let stride = 0
 
   const process = (buffer: OptimizedBuffer, _delta: number) => {
-    if (regions.length === 0) return
-    // Clear any scissor rects left from opentui's component render pass.
-    // Without this, drawSuperSampleBuffer may be clipped to the last
-    // rendered component's bounds and produce invisible output.
-    buffer.clearScissorRects()
     for (const r of regions) {
       render(buffer, r, cellW, cellH)
     }
@@ -68,67 +63,92 @@ export function bridge(cellW: number, cellH: number, _mode: "supersample" | "hal
     const buf = region.buf
     if (buf.width <= 0 || buf.height <= 0) return
 
-    const d = buf.data
-    const cols = region.cols
-    const rows = region.rows
-    const voidBg = RGBA.fromInts(VR, VG, VB, 255)
+    // drawSuperSampleBuffer expects 2×2 pixels per cell (quadrant blocks)
+    const qw = region.cols * 2
+    const qh = region.rows * 2
 
-    // Manual supersample: average each cellW×cellH pixel block → one terminal cell.
-    // Uses setCellWithAlphaBlending which works reliably in postProcessFn
-    // (unlike drawSuperSampleBuffer which gets overwritten by opentui's render pass).
-    for (let cy = 0; cy < rows; cy++) {
-      for (let cx = 0; cx < cols; cx++) {
-        // Average the pixel block for this cell
+    // Reallocate aligned buffer if size changed
+    if (qw !== curW || qh !== curH || !aligned) {
+      curW = qw
+      curH = qh
+      stride = Math.ceil((qw * 4) / 256) * 256
+      aligned = new Uint8Array(stride * qh)
+    }
+
+    // Downsample: TGE buffer (cols*cellW × rows*cellH) → quadrant buffer (cols*2 × rows*2)
+    // Each quadrant pixel averages a block of (cellW/2 × cellH/2) TGE pixels
+    const bw = cw / 2 // TGE pixels per quadrant pixel, horizontal
+    const bh = ch / 2 // TGE pixels per quadrant pixel, vertical
+    const d = buf.data
+
+    for (let qy = 0; qy < qh; qy++) {
+      const dr = qy * stride
+      for (let qx = 0; qx < qw; qx++) {
+        // Source pixel region in TGE buffer
+        const sx0 = Math.floor(qx * bw)
+        const sy0 = Math.floor(qy * bh)
+        const sx1 = Math.min(Math.floor((qx + 1) * bw), buf.width)
+        const sy1 = Math.min(Math.floor((qy + 1) * bh), buf.height)
+
         let tr = 0,
           tg = 0,
           tb = 0,
           cnt = 0
-        const x0 = cx * cw
-        const y0 = cy * ch
-        const x1 = Math.min(x0 + cw, buf.width)
-        const y1 = Math.min(y0 + ch, buf.height)
-        for (let py = y0; py < y1; py++) {
-          const row = py * buf.stride
-          for (let px = x0; px < x1; px++) {
-            const i = row + px * 4
-            const a = d[i + 3]
+        for (let py = sy0; py < sy1; py++) {
+          const sr = py * buf.stride
+          for (let px = sx0; px < sx1; px++) {
+            const si = sr + px * 4
+            const a = d[si + 3]
             if (a === 0) {
               tr += VR
               tg += VG
               tb += VB
             } else if (a === 0xff) {
-              tr += d[i]
-              tg += d[i + 1]
-              tb += d[i + 2]
+              tr += d[si]
+              tg += d[si + 1]
+              tb += d[si + 2]
             } else {
               const inv = 255 - a
-              tr += (d[i] * a + VR * inv) / 255
-              tg += (d[i + 1] * a + VG * inv) / 255
-              tb += (d[i + 2] * a + VB * inv) / 255
+              tr += (d[si] * a + VR * inv) / 255
+              tg += (d[si + 1] * a + VG * inv) / 255
+              tb += (d[si + 2] * a + VB * inv) / 255
             }
             cnt++
           }
         }
-        if (cnt === 0) continue
-        const ar = Math.round(tr / cnt)
-        const ag = Math.round(tg / cnt)
-        const ab = Math.round(tb / cnt)
 
-        // Skip if indistinguishable from void black
-        if (Math.abs(ar - VR) < 2 && Math.abs(ag - VG) < 2 && Math.abs(ab - VB) < 2) continue
-
-        const bg = RGBA.fromInts(ar, ag, ab, 255)
-        buffer.setCell(region.col + cx, region.row + cy, " ", voidBg, bg)
+        const di = dr + qx * 4
+        if (cnt === 0) {
+          aligned[di] = VR
+          aligned[di + 1] = VG
+          aligned[di + 2] = VB
+          aligned[di + 3] = 0xff
+        } else {
+          aligned[di] = Math.round(tr / cnt)
+          aligned[di + 1] = Math.round(tg / cnt)
+          aligned[di + 2] = Math.round(tb / cnt)
+          aligned[di + 3] = 0xff
+        }
+      }
+      // Zero padding bytes
+      for (let x = qw * 4; x < stride; x++) {
+        aligned[dr + x] = 0
       }
     }
 
-    // Write text labels on top
+    try {
+      buffer.drawSuperSampleBuffer(region.col, region.row, ptr(aligned), aligned.length, "rgba8unorm", stride)
+    } catch {
+      // silent
+    }
+
+    // Write text labels AFTER supersample so they are not overwritten
     if (region.labels) {
-      const lblBg = RGBA.fromInts(VR, VG, VB, 0)
+      const bg = RGBA.fromInts(VR, VG, VB, 0)
       for (const lbl of region.labels) {
         const [r, g, b, a] = [(lbl.fg >>> 24) & 0xff, (lbl.fg >>> 16) & 0xff, (lbl.fg >>> 8) & 0xff, lbl.fg & 0xff]
         const fg = RGBA.fromInts(r, g, b, a)
-        buffer.drawText(lbl.content, region.col + lbl.col, region.row + lbl.row, fg, lblBg)
+        buffer.drawText(lbl.content, region.col + lbl.col, region.row + lbl.row, fg, bg)
       }
     }
   }
@@ -148,6 +168,7 @@ export function bridge(cellW: number, cellH: number, _mode: "supersample" | "hal
     },
     destroy() {
       regions.length = 0
+      aligned = null
     },
   }
 }
