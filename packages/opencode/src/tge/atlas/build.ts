@@ -57,6 +57,24 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
     })
   }
 
+  // Orbit ring guides — concentric ellipses behind everything
+  const cx = pg.width / 2
+  const cy = pg.height / 2
+  for (const [i, orbit] of pg.orbits.entries()) {
+    if (orbit.rx <= 0 || orbit.ry <= 0) continue
+    s.add("panel", {
+      tag: `orbit-${i + 1}`,
+      layout: {
+        position: "absolute",
+        left: cx - orbit.rx - graphTokens.orbitWidth,
+        top: cy - orbit.ry - graphTokens.orbitWidth,
+        width: (orbit.rx + graphTokens.orbitWidth) * 2,
+        height: (orbit.ry + graphTokens.orbitWidth) * 2,
+      },
+      data: { type: "orbit", rx: orbit.rx, ry: orbit.ry },
+    })
+  }
+
   // Graph container for z-ordering (edges before nodes)
   const container = s.add("graph", {
     tag: "graph-container",
@@ -72,11 +90,14 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
     const b = idx.get(e.to)
     if (!a || !b) continue
 
-    // Compute curvature based on distance and ring
+    // Compute curvature — all edges get some arc for organic feel.
+    // Alternate sign by edge index to avoid all curves bowing the same way.
     const dx = b.px - a.px
     const dy = b.py - a.py
     const dist = Math.sqrt(dx * dx + dy * dy)
-    const curve = dist > 200 ? dist * 0.15 : dist > 100 ? dist * 0.1 : 0
+    const mag = dist > 100 ? dist * 0.18 : dist * 0.12
+    const sign = pg.edges.indexOf(e) % 2 === 0 ? 1 : -1
+    const curve = mag * sign
 
     s.add(
       "panel",

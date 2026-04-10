@@ -20,6 +20,7 @@ import { panel } from "../primitives/panel"
 import { chip } from "../primitives/chip"
 import { node as graphNode } from "../primitives/node"
 import { edge as graphEdge } from "../primitives/edge"
+import { orbit as graphOrbit } from "../primitives/orbit"
 import { overlay } from "../primitives/overlay"
 import { divider } from "../primitives/divider"
 import { text } from "../primitives/text"
@@ -91,6 +92,7 @@ function paintNode(nd: SceneNode, buf: PixelBuffer) {
   const type = nd.data.type as string | undefined
   if (type === "node") return graphNode(buf, nd)
   if (type === "edge") return graphEdge(buf, nd)
+  if (type === "orbit") return graphOrbit(buf, nd)
   if (type === "chip") return chip(buf, nd)
   if (type === "divider") return divider(buf, nd)
 

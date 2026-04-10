@@ -5,6 +5,6 @@
  */
 
 export { extract, type GraphData, type GraphNode, type GraphEdge, type NodeKind, type EdgeWeight } from "./extract"
-export { ring, type PlacedGraph, type PlacedNode, type Cluster } from "./layout"
+export { ring, type PlacedGraph, type PlacedNode, type Cluster, type Orbit } from "./layout"
 export { build } from "./build"
 export { render, type AtlasFrame } from "./render"

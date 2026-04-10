@@ -23,12 +23,19 @@ export type Cluster = {
   cy: number
 }
 
+export type Orbit = {
+  rx: number
+  ry: number
+}
+
 export type PlacedGraph = {
   nodes: PlacedNode[]
   edges: GraphEdge[]
   width: number
   height: number
   clusters: Map<string, Cluster>
+  /** Ellipse radii for each ring (1-3), used to draw concentric orbit guides. */
+  orbits: Orbit[]
 }
 
 /** Deterministic jitter based on a seed value. */
@@ -59,13 +66,17 @@ export function ring(nodes: GraphNode[], edges: GraphEdge[], w: number, h: numbe
   // Rings 1-3: concentric ellipses with jitter
   // Margins and jitter scale with viewport size for resolution independence
   const margin = Math.max(4, Math.round(w * 0.04))
+  const orbits: Orbit[] = []
   for (const idx of [1, 2, 3]) {
     const group = rings.get(idx) ?? []
-    if (!group.length) continue
 
     // Ellipse radii scale with viewport, capped to avoid overflow
     const rx = Math.min(w * 0.22 * idx, w / 2 - margin * 2)
     const ry = Math.min(h * 0.22 * idx, h / 2 - margin)
+    // Always record the orbit even if empty — draws the guide ring
+    orbits.push({ rx, ry })
+
+    if (!group.length) continue
     const step = (2 * Math.PI) / Math.max(group.length, 1)
     const offset = idx * 0.7
 
@@ -98,5 +109,5 @@ export function ring(nodes: GraphNode[], edges: GraphEdge[], w: number, h: numbe
     clusters.set(key, { label: key, cx: avgX, cy: minY - 4 })
   }
 
-  return { nodes: placed, edges, width: w, height: h, clusters }
+  return { nodes: placed, edges, width: w, height: h, clusters, orbits }
 }
