@@ -1,16 +1,10 @@
 /**
  * TGE-powered Atlas Field graph component.
  *
- * Replaces the Unicode-art AtlasGraph with pixel-rendered graphics
- * via the Terminal Graphics Engine.
- *
- * Integration:
- *   1. Compute graph data from session state (same extract logic)
- *   2. Render to PixelBuffer via TGE
- *   3. Submit pixel buffer + text labels to TGE bridge
- *   4. Bridge calls drawSuperSampleBuffer, then drawText for labels
- *
- * Labels are rendered AFTER supersample so they are never overwritten.
+ * Renders the Atlas Field graph using pixel-level supersample rendering
+ * via opentui's drawSuperSampleBuffer. The pixel data is submitted to
+ * the TGE bridge which paints it in the postProcessFn (runs after all
+ * component rendering). Text labels are drawn on top via drawText.
  *
  * Same props interface as the original AtlasGraph = drop-in replacement.
  */
@@ -19,7 +13,8 @@ import { createMemo, createResource, createSignal, createEffect, onCleanup, onMo
 import { useSync } from "@tui/context/sync"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
-import { extract, render as renderAtlas, type AtlasFrame } from "@/tge/atlas"
+import { useRenderer } from "@opentui/solid"
+import { extract, render as renderAtlas } from "@/tge/atlas"
 import { useTGE } from "@/tge/bridge/context"
 import { type RGBA, type Renderable } from "@opentui/core"
 import type { TextLabel } from "@/tge/bridge/opentui"
@@ -56,6 +51,7 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
   const sync = useSync()
   const sdk = useSDK()
   const { theme } = useTheme()
+  const renderer = useRenderer()
   const tge = useTGE()
   let anchor: Renderable | undefined
 
@@ -66,7 +62,6 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
   const mcp = createMemo(() => Object.entries(sync.data.mcp).map(([name, item]) => ({ name, status: item.status })))
   const status = createMemo(() => sync.data.session_status?.[props.sessionID]?.type)
 
-  // Memory polling (same as original)
   const [tick, setTick] = createSignal(0)
   onMount(() => {
     const id = setInterval(() => setTick((t) => t + 1), 5000)
@@ -81,11 +76,6 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     }
   })
 
-  // Pixel dimensions for the graph region
-  const pixelW = createMemo(() => props.width * tge.cellW())
-  const pixelH = createMemo(() => props.height * tge.cellH())
-
-  // Extract graph data
   const data = createMemo(() => {
     const s = session()
     if (!s) return null
@@ -102,17 +92,6 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     )
   })
 
-  // Render to pixel buffer
-  const frame = createMemo((): AtlasFrame | null => {
-    const d = data()
-    if (!d) return null
-    const pw = pixelW()
-    const ph = pixelH()
-    if (pw <= 0 || ph <= 0) return null
-    return renderAtlas(d, pw, ph, tge.cellW(), tge.cellH())
-  })
-
-  // Color lookup for text labels (Void Black semantics)
   const color = (kind: string, ring: number): RGBA => {
     if (ring === 0) return theme.info
     if (ring <= 1) {
@@ -131,40 +110,44 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     return theme.textMuted
   }
 
-  // Build text labels for the bridge (rendered AFTER supersample)
-  const labels = createMemo((): TextLabel[] => {
-    const f = frame()
-    if (!f) return []
-    return f.texts.map((t) => ({
+  createEffect(() => {
+    const d = data()
+    if (!d || !tge.active() || !anchor) return
+
+    const pos = abs(anchor)
+    const c = Math.max(1, Math.min(props.width, renderer.width - pos.col))
+    const r = Math.max(1, Math.min(props.height, renderer.height - pos.row))
+    const cw = tge.cellW()
+    const ch = tge.cellH()
+    const pw = c * cw
+    const ph = r * ch
+    if (pw <= 0 || ph <= 0) return
+
+    const f = renderAtlas(d, pw, ph, cw, ch)
+
+    const labels: TextLabel[] = f.texts.map((t) => ({
       content: t.content,
       col: t.col,
       row: t.row,
       fg: pack(color((t.node.data.kind as string) ?? "", (t.node.data.ring as number) ?? 2)),
     }))
-  })
 
-  // Submit pixel buffer + labels to bridge on every frame update
-  createEffect(() => {
-    const f = frame()
-    if (!f || !tge.active() || !anchor) return
-    const pos = abs(anchor)
     tge.submit({
       key: "atlas-field",
       col: pos.col,
       row: pos.row,
-      cols: props.width,
-      rows: props.height,
+      cols: c,
+      rows: r,
       buf: f.buffer,
-      labels: labels(),
+      labels,
     })
   })
 
-  // Clean up pixel region on unmount
   onCleanup(() => tge.clear())
 
   return (
     <box ref={(r: Renderable) => (anchor = r)} width={props.width} height={props.height}>
-      <Show when={!frame()}>
+      <Show when={!data()}>
         <box flexGrow={1} alignItems="center" justifyContent="center">
           <text fg={theme.textMuted}>Loading atlas field…</text>
         </box>

@@ -7,25 +7,25 @@ import { palette, alpha } from "./color"
  * drawSuperSampleBuffer produces visible color in the cell average.
  */
 export const graph = {
-  /** Center (active thread) node radius in pixels */
-  centerRadius: 40,
-  /** Standard node radius (ring 1) — must cover at least 3x2 cells after supersample */
-  nodeRadius: 24,
-  /** Small node radius (ring 2-3) — must cover at least 2x1 cells after supersample */
-  smallRadius: 16,
+  /** Center (active thread) node radius in pixels (~4 cells wide, ~2 cells tall) */
+  centerRadius: 16,
+  /** Standard node radius (ring 1) — ~3 cells wide */
+  nodeRadius: 10,
+  /** Small node radius (ring 2-3) — ~2 cells wide */
+  smallRadius: 7,
 
-  /** Edge line widths — must survive supersample averaging (>= cellW/2) */
-  edgeStrong: 8,
-  edgeNormal: 6,
-  edgeWeak: 4,
+  /** Edge line widths — must survive supersample averaging */
+  edgeStrong: 6,
+  edgeNormal: 4,
+  edgeWeak: 3,
 
-  /** Halo glow around center node — high alpha to survive supersample */
-  haloRadius: 80,
-  haloColor: alpha(palette.thread, 0xa0),
+  /** Halo glow around center node */
+  haloRadius: 36,
+  haloColor: alpha(palette.thread, 0x70),
 
   /** Cluster halo */
-  clusterHaloRadius: 60,
-  clusterHaloColor: alpha(palette.borderStrong, 0x50),
+  clusterHaloRadius: 24,
+  clusterHaloColor: alpha(palette.borderStrong, 0x40),
 
   /** Node colors by kind */
   node: {

@@ -15,6 +15,8 @@ import { useRenderer } from "@opentui/solid"
 import { bridge, type Bridge, type Region } from "./opentui"
 import { detect, isPixel, label, type RenderMode } from "./detect"
 
+import type { OptimizedBuffer } from "@opentui/core"
+
 type TGEContext = {
   /** Cell width in pixels */
   cellW: () => number
@@ -26,6 +28,8 @@ type TGEContext = {
   ready: () => boolean
   /** Submit a pixel region for rendering (no-op in cell mode) */
   submit: (region: Region) => void
+  /** Paint a region directly onto a buffer — for use in renderAfter callbacks */
+  paint: (buffer: OptimizedBuffer, region: Region) => void
   /** Clear all pixel regions */
   clear: () => void
   /** Current rendering mode */
@@ -105,6 +109,9 @@ export function TGEProvider(props: { mode?: RenderMode | "auto"; children: JSX.E
       if (!ref) return
       ref.submit(region)
       renderer.requestRender()
+    },
+    paint(buffer, region) {
+      ref?.paint(buffer, region)
     },
     clear() {
       ref?.clear()
