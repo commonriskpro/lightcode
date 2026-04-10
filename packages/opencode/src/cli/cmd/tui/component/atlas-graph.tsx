@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, onCleanup, onMount, For } fro
 import { useSync } from "@tui/context/sync"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
-import type { Session, Todo, FileDiff, Message, AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { Session, Todo, FileDiff, Message, AssistantMessage, Part } from "@opencode-ai/sdk/v2"
 
 // --- Graph data model ---
 
@@ -196,6 +196,7 @@ function extract(
   session: Session,
   sessions: Session[],
   messages: Message[],
+  parts: Record<string, Part[]>,
   todos: Todo[],
   diffs: FileDiff[],
   mcp: { name: string; status: string }[],
@@ -230,10 +231,13 @@ function extract(
   const sampled = anchors.filter((_, i) => i % step === 0).slice(0, 5)
   for (const [i, msg] of sampled.entries()) {
     const id = `anchor-${i}`
-    // Use summary title, or extract first words from message parts
-    const parts = msg.summary?.title
-    const text = parts ?? `anchor ${i + 1}`
-    nodes.push({ id, kind: "anchor", label: truncate(text, 12), ring: 1 })
+    // Use summary title first, then extract first words from text parts
+    const title = msg.summary?.title
+    const text =
+      title ??
+      (parts[msg.id] ?? []).find((p) => p.type === "text" && "text" in p)?.text?.split("\n")[0] ??
+      `anchor ${i + 1}`
+    nodes.push({ id, kind: "anchor", label: truncate(text, 14), ring: 1 })
     edges.push({ from: session.id, to: id })
   }
 
@@ -298,10 +302,17 @@ function extract(
     edges.push({ from: session.id, to: id })
   }
 
-  // Ring 3: Sibling threads (recent threads with real titles, excluding self/parent/children/subagents)
+  // Ring 3: Sibling threads (recent threads with meaningful titles and activity)
   const exclude = new Set([session.id, session.parentID ?? "", ...children.map((c) => c.id)])
   const siblings = sessions
-    .filter((s) => !exclude.has(s.id) && !s.parentID && !DEFAULT_TITLE.test(s.title))
+    .filter((s) => {
+      if (exclude.has(s.id)) return false
+      if (s.parentID) return false
+      if (DEFAULT_TITLE.test(s.title)) return false
+      // Skip threads with very short titles (likely mode labels or auto-generated)
+      if (s.title.length < 8) return false
+      return true
+    })
     .sort((a, b) => b.time.updated - a.time.updated)
     .slice(0, 3)
   for (const [i, sib] of siblings.entries()) {
@@ -345,7 +356,17 @@ export function AtlasGraph(props: { sessionID: string; width: number; height: nu
   const graph = createMemo(() => {
     const s = session()
     if (!s) return null
-    const { nodes, edges } = extract(s, sync.data.session, messages(), todos(), diffs(), mcp(), status(), mem() ?? null)
+    const { nodes, edges } = extract(
+      s,
+      sync.data.session,
+      messages(),
+      sync.data.part,
+      todos(),
+      diffs(),
+      mcp(),
+      status(),
+      mem() ?? null,
+    )
     return layout(nodes, edges, props.width, props.height)
   })
 
