@@ -85,18 +85,19 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
   const idx = new Map(pg.nodes.map((n) => [n.id, n]))
 
   // Edges
-  for (const e of pg.edges) {
+  for (let ei = 0; ei < pg.edges.length; ei++) {
+    const e = pg.edges[ei]
     const a = idx.get(e.from)
     const b = idx.get(e.to)
     if (!a || !b) continue
 
-    // Compute curvature — all edges get some arc for organic feel.
-    // Alternate sign by edge index to avoid all curves bowing the same way.
+    // Compute curvature — all edges arc for organic constellation feel.
+    // Alternate sign so adjacent edges bow opposite directions.
     const dx = b.px - a.px
     const dy = b.py - a.py
     const dist = Math.sqrt(dx * dx + dy * dy)
-    const mag = dist > 100 ? dist * 0.18 : dist * 0.12
-    const sign = pg.edges.indexOf(e) % 2 === 0 ? 1 : -1
+    const mag = dist * 0.25
+    const sign = ei % 2 === 0 ? 1 : -1
     const curve = mag * sign
 
     s.add(

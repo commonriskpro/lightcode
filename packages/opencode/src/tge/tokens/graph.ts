@@ -28,8 +28,8 @@ export const graph = {
   haloColor: alpha(palette.thread, 0x70),
 
   /** Orbit ring guides (concentric ellipses behind nodes) */
-  orbitWidth: 2,
-  orbitColor: alpha(palette.borderWeak, 0x50),
+  orbitWidth: 3,
+  orbitColor: alpha(palette.borderBase, 0x45),
 
   /** Cluster halo */
   clusterHaloRadius: 24,
