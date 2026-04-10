@@ -1,282 +1,243 @@
-Sí — y justo estás en la parte divertida: **pasar de “herramienta funcional” a “producto con identidad”**.
+# LightCode — Identity Snapshot
 
-Viendo la captura, ahora mismo se siente **limpio, técnico y competente**, pero todavía transmite algo tipo *fork / derivado / interfaz genérica de coding assistant*. Para que se vea como **Lightcode** y no como “otro clon oscuro de terminal + AI”, yo trabajaría en 5 capas:
+Este documento resume la dirección oficial de identidad de LightCode.
 
-## 1. Definir una identidad clara
-Primero hay que decidir **qué personalidad** quieres que tenga Lightcode.
+Es la referencia más rápida para cualquier persona o agente que necesite entender **qué producto estamos construyendo** antes de tocar UI, copy o estructura visual.
 
-Tres direcciones que le quedarían muy bien:
-
-### A. **Lightcode / minimalista premium**
-Sensación: precisión, silencio, velocidad, elegancia.  
-Referencias: editor serio, sobrio, muy pulido.
-
-- Fondo oscuro menos plano, con un tono más propio
-- Tipografía monoespaciada + una secundaria más humana
-- Logo más fino, menos “pixel block”
-- Mucho espacio negativo
-- Microinteracciones suaves, no flashy
-
-### B. **Lightcode / futurista neon**
-Sensación: sistema vivo, energía, tool para builders intensos.
-
-- Acento fuerte en cyan, violeta o lima
-- Bordes luminosos sutiles
-- Estados activos más marcados
-- Cursor y foco con glow
-- Branding más memorable, más “hacker product”
-
-### C. **Lightcode / OS experimental**
-Sensación: parece un sistema operativo propio, no solo una app.
-
-- Paneles más estructurados
-- Sidebar o command rail
-- Session history / agents / tools visibles como módulos
-- Status bar con “mood” de sistema
-- Iconografía propia
-
-Mi sensación: **A o C** te pueden dar una identidad mucho más madura y duradera.
+No es un backlog ni un checklist técnico.  
+Es una **declaración de producto**.
 
 ---
 
-## 2. Cambiar lo que más “delata” que aún no es 100% tuyo
-En la captura, lo que más pesa visualmente es:
+## 1. Qué es LightCode
 
-- el **logo central**
-- la **caja de input**
-- los **tabs superiores**
-- el **lenguaje de interfaz** (“Ask anything…”, “tab agents”, “ctrl+p commands”)
-- la **paleta gris-azulada genérica**
+LightCode no debe presentarse como:
 
-Ahí está el mayor retorno.
+- un fork con theme
+- otro chat de código con dark mode
+- un wrapper genérico de LLM
+- una interfaz de dashboard con widgets intercambiables
 
-### Cambios concretos:
-#### Logo / wordmark
-El actual se ve muy bloqueado y recuerda bastante a branding existente de herramientas dev.  
-Podrías cambiarlo por uno de estos enfoques:
+LightCode debe presentarse como:
 
-- **Wordmark limpio**: `lightcode` en minúsculas con tracking amplio
-- **Monograma**: `lc`, `[]`, `<>`, `|/`
-- **Símbolo luminoso**: un cursor, rayo, haz, grid, o un “L” construido con terminal blocks
-- **Versión ASCII** para arranque CLI
+- un **persistent coding system**
+- un entorno para trabajo de software de larga duración
+- una interfaz donde la memoria es visible, navegable y útil
+- un sistema que preserva continuidad entre hilos, señales, anchors y contexto
 
-Ejemplo de tono visual:
-- `lightcode`
-- `LIGHTCODE`
-- `light/code`
-- `l c`
-- `▌lightcode`
+La frase más cercana a la categoría correcta es:
 
-#### Input principal
-Ahora parece una caja estándar.  
-Podrías convertirlo en **la pieza más distintiva del producto**:
-
-- borde izquierdo animado como cursor vivo
-- placeholder con voz propia
-- chips de modo arriba o abajo:
-  - `build`
-  - `patch`
-  - `explain`
-  - `agent`
-- “Enter to run · Tab for tools” en lugar de texto genérico
-- fondo del composer con un tono distinto al resto del canvas
-
-#### Tabs y navegación
-La barra de arriba hoy es muy utilitaria.  
-Haz que se sienta más tuya:
-
-- tabs con iconos o puntos de estado
-- nombres de workspace más humanos
-- color/acento en el tab activo más fuerte
-- separadores más finos y limpios
-- quizá una **session rail lateral** en vez de depender tanto del top bar
+> **LightCode is a persistent coding system for long-running software work.**
 
 ---
 
-## 3. Crear un lenguaje visual propio
-Aunque sigas en dark mode, necesitas una firma visual.
+## 2. North Star de identidad
 
-### Paletas que podrían funcionar muy bien
+### Concepto principal
+**Memory Atlas**
 
-#### Opción 1 — **Midnight + Ice**
-- Fondo: `#0E1320`
-- Superficie: `#151C2E`
-- Borde: `#26314A`
-- Texto principal: `#E6EDF7`
-- Texto secundario: `#8FA1BF`
-- Acento: `#7DD3FC`
+### Superficie principal
+**Atlas Field**
 
-Muy elegante, técnica, premium.
+### Idea de interacción
+La navegación no gira alrededor de listas o tabs tradicionales, sino alrededor de un **campo relacional de memoria**:
 
-#### Opción 2 — **Graphite + Lime**
-- Fondo: `#111315`
-- Superficie: `#1A1D21`
-- Borde: `#2A2F36`
-- Texto: `#ECEFF4`
-- Secundario: `#9AA4B2`
-- Acento: `#B8FF65`
+- el thread activo ocupa el centro
+- la memoria relacionada aparece como vecinos cercanos
+- las señales pendientes forman clusters
+- el drift muestra zonas de tensión o desalineación
+- el usuario navega por **relación**, no solo por jerarquía
 
-Más distinta, más memorable, más toolmaker.
+La inspiración funcional más útil es la lógica del graph de Obsidian, pero reinterpretada para producto:
 
-#### Opción 3 — **Deep Navy + Amber**
-- Fondo: `#0F1726`
-- Superficie: `#182132`
-- Borde: `#2A3A54`
-- Texto: `#F3F6FB`
-- Secundario: `#93A4BD`
-- Acento: `#FFB454`
-
-Se siente cálida, sofisticada, menos “AI genérica”.
-
-Yo evitaría quedarte en el **gris azulado neutro** porque ahí muchas apps se parecen.
+- menos “grafo de notas”
+- más “campo de trabajo relacional”
 
 ---
 
-## 4. Cambiar la voz del producto
-Muchísima identidad viene del texto.
+## 3. Qué no queremos construir
 
-Ahora mismo:
-- “Ask anything…”
-- “Tip Use {file:path} …”
-- “tab agents”
-- “ctrl+p commands”
+No queremos:
 
-Todo eso suena funcional, pero no necesariamente propio.
+- cyberpunk genérico
+- neón agresivo
+- planetas, cohetes o sci-fi decorativo
+- dashboards cargados
+- una app que “parezca espacial” pero no use la metáfora en la interacción
+- un layout que se sienta decorativo y no operativo
 
-### Puedes darle una voz más definida:
-#### Más sobria
-- “What are we building?”
-- “Describe the change”
-- “Patch a bug, scaffold a feature, inspect a file”
-
-#### Más de sistema
-- “Open a task”
-- “Invoke an agent”
-- “Attach context”
-- “Run a command”
-
-#### Más Lightcode
-- “Shape the next change”
-- “Point me at the code”
-- “Build from context”
-- “Trace, patch, refine”
-
-También renombraría conceptos internos:
-- **agents** → workers / flows / copilots / operators
-- **commands** → actions / tools / palette
-- **build** → craft / run / compose / ship
-
-Eso cambia mucho cómo se percibe el producto.
+### Regla clave
+**No usar espacio como adorno.**  
+**Usar espacio como modelo de memoria infinita.**
 
 ---
 
-## 5. Añadir 2 o 3 elementos únicos que solo tenga Lightcode
-Esto es clave. La identidad no sale solo del color.
+## 4. Personalidad
 
-### Algunas ideas fuertes:
-#### A. **Command composer inteligente**
-Que el input muestre bloques detectados al escribir:
-- archivo
-- símbolo
-- branch
-- agent
-- diff target
+LightCode debe sentirse:
 
-Eso lo vuelve reconocible.
+- preciso
+- silencioso
+- profundo
+- durable
+- técnico
+- calmado
+- orientado a builders
 
-#### B. **Status strip viva**
-Abajo o arriba:
-- repo
-- branch
-- files indexed
-- agents online
-- task state
+Debe evitar sentirse:
 
-Con diseño muy limpio, tipo cockpit.
+- hype
+- juguetón
+- demasiado literal
+- flashy
+- derivado
+- recargado
 
-#### C. **Timeline de sesión**
-En vez de una experiencia solo “prompt → respuesta”, una línea de trabajo:
-- ask
-- inspect
-- edit
-- run
-- diff
-- apply
+La combinación correcta es:
 
-Eso le da identidad propia al flujo.
-
-#### D. **Theme signature**
-Un detalle pequeño pero memorable:
-- glow vertical en el cursor
-- línea de enfoque tipo scanner
-- pulso en el borde del composer
-- grid muy sutil en el fondo
+> **seriedad de herramienta + profundidad de atlas + claridad operativa**
 
 ---
 
-## Mi propuesta concreta para la próxima iteración
-Yo haría este rediseño:
+## 5. Dirección visual oficial
 
-### Mantener
-- dark mode
-- enfoque centrado
-- estética dev/terminal
-- simplicidad general
+### Tema visual base
+**Void Black**
 
-### Cambiar
-- **logo completo**
-- **paleta**
-- **tipografía del branding**
-- **composer**
-- **microcopy**
-- **tabs**
-- **status bar**
-- **nombres de modos**
+### Sistema visual
+- fondo casi negro, tipo espacio real
+- superficies oscuras, densas y sobrias
+- brillo mínimo y controlado
+- contraste alto, pero elegante
+- metáfora cósmica sutil, no literal
 
-### Resultado buscado
-Que alguien lo vea y piense:
+### Firma visual
+- espacio negativo
+- profundidad
+- nodos y conexiones
+- clusters
+- halos suaves
+- jerarquía espacial
 
-> “esto no es un wrapper genérico de LLM; esto es Lightcode.”
-
----
-
-## Una dirección visual bastante sólida para ti
-Basado en la captura, haría algo así:
-
-**Concepto:** *Lightcode = quiet power*  
-**Tono:** preciso, calmado, muy builder  
-**Paleta:** midnight + ice o graphite + lime  
-**Marca:** wordmark limpio + cursor/barra como símbolo  
-**UI:** menos bloque central, más estructura de sistema  
-**Voz:** menos “ask anything”, más “shape the next change”
-
-Ejemplo:
-
-- Logo arriba más pequeño
-- Composer más ancho y más bajo
-- Chips: `Build  Patch  Explain  Agent`
-- Hint debajo: `Enter to run · Tab to attach context · Ctrl+P for actions`
-- Barra inferior:
-  - repo
-  - branch
-  - files
-  - model
-  - agent state
-
-Eso ya lo separa bastante.
+### Lo que queda descartado
+- esquemas muy morados
+- gradientes demasiado visibles
+- glow constante
+- cards genéricas con look dashboard
+- exceso de barras de progreso y métricas en bloques repetitivos
 
 ---
 
-## Prioridad realista
-Si quieres impacto sin rehacer todo, haría esto en este orden:
+## 6. Paleta oficial
 
-1. **nuevo logo + wordmark**
-2. **nueva paleta**
-3. **nuevo composer**
-4. **nuevo microcopy**
-5. **tabs/status bar**
-6. **iconografía y motion**
+### Base
+- **Background / deep void**: negro espacial casi absoluto
+- **Surface**: gris negro con leve tinte frío
+- **Border**: azul grisáceo oscuro
 
-Con solo esos 6 puntos, el producto ya puede sentirse totalmente distinto.
+### Roles de color
+- **Thread activo**: cian frío
+- **Anchors / memory**: azul frío
+- **Signals**: ámbar suave
+- **Drift**: rojo apagado
 
-Puedo proponerte ahora mismo **3 conceptos completos de identidad para Lightcode** con nombre visual, paleta, tipografía, microcopy y layout.
+### Principio
+La UI no debe depender del morado para verse cósmica.  
+La sensación espacial debe venir del fondo, la profundidad y la topología.
+
+---
+
+## 7. Vocabulario de producto
+
+### Términos canónicos
+- **Thread**
+- **Anchor**
+- **Signal**
+- **Drift**
+- **Telemetry**
+- **Memory Atlas**
+- **Atlas Field**
+
+### Términos a evitar como eje principal
+- session
+- status
+- generic memory
+- ask anything
+- commands como único lenguaje visible
+
+### Traducción funcional deseada
+- `Session` → **Thread**
+- `Status` → **Telemetry**
+- `Memory` → **Memory Atlas**
+- `Steer current turn` → **Inject signal**
+
+No todo tiene que renombrarse a nivel técnico interno ahora mismo, pero a nivel visible estos son los términos objetivo.
+
+---
+
+## 8. Estructura de interfaz deseada
+
+### Izquierda
+Índice del atlas:
+- filtros
+- leyenda
+- lectura rápida del campo
+- acceso a paths o threads
+
+### Centro
+Superficie principal:
+- grafo vivo
+- thread activo en el centro
+- clusters cercanos
+- anchors, signals y drift alrededor
+- acciones mínimas de trabajo
+
+### Derecha
+Panel contextual:
+- nodo seleccionado
+- relaciones más cercanas
+- interpretación del campo
+- acciones sobre la selección
+
+### Regla
+La interfaz debe sentirse como un **workspace relacional**, no como un dashboard de paneles intercambiables.
+
+---
+
+## 9. Prompt surface
+
+El composer no debe ser una textarea genérica.
+
+Debe sentirse como:
+
+- una superficie operativa
+- una entrada dentro del atlas
+- el lugar donde el usuario emite el siguiente cambio o señal
+
+A futuro, el composer debe convivir con la lógica del atlas, no romperla.
+
+---
+
+## 10. Criterio de éxito
+
+La identidad está bien implementada si alguien ve LightCode y piensa:
+
+> esto no es OpenCode con otro tema; esto es un sistema propio con una idea clara de memoria y continuidad.
+
+Y está mal implementada si la reacción es:
+
+> se ve bonito, pero sigue pareciendo el mismo producto con otro skin.
+
+---
+
+## 11. Orden de prioridad entre documentos
+
+Cuando haya conflicto, usar esta prioridad:
+
+1. `IDENTITY_DESIGN_BRIEF.md`
+2. `IDENTITY_IMPLEMENTATION_PLAN.md`
+3. `IDENTITY_PR_CHECKLIST.md`
+4. `IDENTITY_ROADMAP.md`
+5. `IDENTITY.md`
+
+Este documento debe mantenerse corto, estable y útil como resumen ejecutivo.

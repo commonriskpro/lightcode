@@ -1,283 +1,285 @@
-# Lightcode — Design Brief
+# LightCode — Design Brief
 
-Este documento existe para que cualquier implementador (humano o agente) tenga una **fuente compacta y autoritativa** de decisiones de diseño al ejecutar la nueva identidad de Lightcode.
+Este documento es la fuente compacta y autoritativa para implementar la identidad actual de LightCode.
 
-No reemplaza el roadmap ni el plan técnico. Los complementa.
-
----
-
-# 1. Qué estamos construyendo
-
-Lightcode no debe sentirse como:
-
-- otro wrapper genérico de LLM
-- otro clon oscuro de terminal + AI
-- una UI funcional pero sin firma propia
-
-Lightcode debe sentirse como:
-
-- una herramienta seria para builders
-- un sistema de trabajo calmado y preciso
-- una interfaz con identidad propia
-- un producto original, no derivado
+No describe alternativas.  
+Describe la dirección **ya elegida**.
 
 ---
 
-# 2. Idea central de marca
+## 1. Declaración de producto
 
-## Concepto
-**Lightcode = quiet power**
+LightCode es un **persistent coding system**.
 
-## Personalidad
-- precisa
-- calmada
-- técnica
-- intencional
-- sobria
-- builder-first
+No se debe diseñar como:
 
-## Evitar
-- futurismo recargado
-- demasiados glows
-- tono demasiado “AI hype”
-- copy genérico estilo “ask anything”
-- detalles visuales que se sientan prestados de otro producto
+- otro assistant chat oscuro
+- otro dashboard de productividad
+- otro fork con branding nuevo
+- otro producto sci-fi decorativo
+
+Sí se debe diseñar como:
+
+- un sistema de trabajo para software de larga duración
+- una interfaz donde la memoria tiene forma y estructura
+- un producto que hace visible la continuidad entre trabajo actual y contexto persistente
 
 ---
 
-# 3. Dirección visual oficial
+## 2. Metáfora rectora
 
-## Base estética
-**Minimalista premium**
+### Metáfora elegida
+**Memory Atlas**
 
-## Capa estructural
-**OS experimental**
+### Superficie central
+**Atlas Field**
 
-## Acentos permitidos
-Solo sutiles:
-- foco claro
-- glow leve si es muy controlado
-- status cues discretos
+### Traducción visual de la metáfora
+La memoria infinita no se representa como una lista interminable.  
+Se representa como un **campo relacional**:
 
-## Acentos prohibidos
-- borde brillante en todos lados
-- neón constante
-- efectos agresivos
-- fondos muy decorativos
+- centro = thread activo
+- órbita cercana = anchors y memoria relacionada
+- clusters = zonas semánticas o funcionales
+- signals = trabajo pendiente o relación operativa
+- drift = tensión o desalineación
 
----
-
-# 4. Paleta recomendada
-
-## Canon recomendado
-### Midnight + Ice
-- Fondo: `#0E1320`
-- Superficie: `#151C2E`
-- Borde: `#26314A`
-- Texto principal: `#E6EDF7`
-- Texto secundario: `#8FA1BF`
-- Acento: `#7DD3FC`
-
-## Alternativa secundaria
-### Graphite + Lime
-- Fondo: `#111315`
-- Superficie: `#1A1D21`
-- Borde: `#2A2F36`
-- Texto: `#ECEFF4`
-- Secundario: `#9AA4B2`
-- Acento: `#B8FF65`
-
-## Regla
-Si no hay instrucción nueva, implementar **Midnight + Ice** como tema canon.
+### Regla
+La metáfora debe afectar la interacción, no solo el look.
 
 ---
 
-# 5. Regla visual principal
+## 3. Dirección visual oficial
 
-La identidad de Lightcode no depende solo del logo.
+### Base
+**Void Black**
 
-Debe salir de la combinación de:
+### Intención visual
+- más espacio real que ciencia ficción estilizada
+- más profundidad que brillo
+- más silencio que espectáculo
+- más estructura que decoración
 
-- paleta
-- contraste
-- espacio negativo
-- composer
-- tabs
-- status surfaces
-- copy
-- motion discreta
+### Debe sentirse
+- preciso
+- oscuro
+- profundo
+- premium
+- operativo
+- enfocado
 
----
-
-# 6. Logo y marca
-
-## Objetivo del logo
-Debe sentirse:
-- limpio
-- propio
-- legible
-- modular
-- usable en app, terminal, splash y favicon
-
-## Objetivo del mark
-Debe servir como:
-- favicon
-- empty state mark
-- splash icon
-- firma lateral o compacta
-
-## Restricción
-No usar una forma que recuerde demasiado al branding anterior.
-
-## Principio
-Mejor un mark simple y fuerte que un logo complejo y derivativo.
+### Debe evitar
+- fondos morados dominantes
+- neon cyberpunk
+- recursos espaciales literales
+- demasiadas cards
+- “dashboard para métricas”
+- exceso de barras, pills y widgets repetidos
 
 ---
 
-# 7. Tono de interfaz
+## 4. Color system oficial
 
-## Voz deseada
-- clara
-- útil
-- sobria
-- más de herramienta que de asistente conversacional genérico
+### Background
+Negro espacial casi absoluto.
 
-## Ejemplos de tono correcto
-- `Describe the change`
-- `Shape the next change`
-- `Build from context`
-- `Open a task`
-- `Run a command`
+### Surface
+Negro grisáceo frío.
 
-## Ejemplos de tono a evitar
-- `Ask anything...`
-- frases demasiado vagas
-- frases genéricas de chatbot
-- exageraciones de marketing
+### Borders
+Azul grisáceo oscuro.
 
----
+### Color roles
+- **Thread activo** → cian frío
+- **Anchors / memory** → azul frío
+- **Signals** → ámbar suave
+- **Drift** → rojo apagado
 
-# 8. Composer
+### Restricción
+El morado puede existir como atmósfera de soporte, pero **no** debe dominar la interfaz.
 
-## Rol del composer
-Debe ser la pieza más reconocible del producto.
-
-## Debe sentirse como
-- una command surface
-- una herramienta operativa
-- una superficie de trabajo, no solo una caja de texto
-
-## Debe evitar
-- verse como textarea genérica
-- exceso de controles visuales
-- ruido alrededor del input
-
-## Señales visuales correctas
-- buen foco
-- separación clara del canvas
-- jerarquía limpia entre input y controles
-- hint line útil
+### Regla
+El color debe ordenar la semántica del campo, no volverlo decorativo.
 
 ---
 
-# 9. Navegación y estructura
+## 5. Composición oficial del TUI principal
 
-## La app debe sentirse como
-- un workspace
-- un entorno operativo
-- un sistema liviano pero intencional
+### Izquierda — Atlas Index
+Rol:
+- filtros
+- leyenda
+- lectura rápida del campo
+- acceso a paths
 
-## No debe sentirse como
-- una sola caja de prompt con paneles pegados alrededor
+No debe convertirse en un segundo dashboard.
 
-## Prioridades
-- tabs claras
-- status strip útil
-- panel lateral con jerarquía
-- empty states sobrios
+### Centro — Atlas Field
+Rol:
+- superficie principal
+- grafo vivo
+- thread activo en el centro
+- nodos cercanos por relevancia
+- clusters legibles
+- topología útil
 
----
+Esta es la pieza principal del producto.
 
-# 10. Motion
+### Derecha — Context Panel
+Rol:
+- detalle del nodo seleccionado
+- relaciones más cercanas
+- interpretación del campo
+- acciones
 
-## Regla
-Motion discreta, nunca protagonista.
-
-## Permitido
-- suavizar focus
-- transiciones de panel moderadas
-- feedback de hover limpio
-- estados activos más claros
-
-## No permitido
-- animaciones llamativas
-- demasiados rebotes
-- glow pulsante constante
-- transiciones que ralenticen percepción
+Debe ser secundaria frente al centro, no competir con él.
 
 ---
 
-# 11. Qué no debe hacer un implementador
+## 6. Gramática visual del grafo
 
-- no inventar una paleta nueva si ya hay una definida
-- no cambiar naming técnico profundo sin estar pedido
-- no mezclar rebrand visual con migración de identifiers delicados
-- no introducir efectos futuristas porque “se ven cool”
-- no dejar copy vieja si ya cambió el branding
-- no rediseñar arquitectura profunda cuando el objetivo es identidad visual
+### Debe tener
+- nodo central claro
+- gradiente de relevancia hacia la periferia
+- clusters legibles
+- edge density entendible
+- etiquetas legibles cerca del foco
+- periferia más tenue
+- halos muy controlados
 
----
+### No debe tener
+- ruido de cientos de nodos sin jerarquía
+- conexiones aleatorias
+- etiquetas compitiendo por atención
+- exceso de glow
+- apariencia de wallpaper de constelaciones
 
-# 12. Qué sí debe hacer un implementador
+### Inspiración útil
+La lógica del graph de Obsidian:
+- proximidad
+- relación
+- cluster
+- foco
 
-- respetar el concepto `quiet power`
-- mantener simplicidad
-- priorizar claridad y consistencia
-- usar el nuevo sistema de color como base
-- revisar contraste en pantallas reales
-- limpiar branding viejo visible
-- mejorar la percepción de calidad sin sobrecargar la interfaz
-
----
-
-# 13. Criterio de éxito
-
-Una implementación está bien hecha si alguien ve Lightcode y piensa:
-
-> esto se siente como una herramienta propia, seria y bien diseñada
-
-Y está mal hecha si la reacción es:
-
-> se nota que solo cambiaron el logo
-
----
-
-# 14. Fuentes de verdad para implementar
-
-Al implementar, este documento debe leerse junto con:
-
-- `IDENTITY.md`
-- `IDENTITY_ROADMAP.md`
-- `IDENTITY_IMPLEMENTATION_PLAN.md`
-- `IDENTITY_PR_CHECKLIST.md`
-
-## Prioridad entre documentos
-1. `IDENTITY_DESIGN_BRIEF.md`
-2. `IDENTITY_PR_CHECKLIST.md`
-3. `IDENTITY_IMPLEMENTATION_PLAN.md`
-4. `IDENTITY_ROADMAP.md`
-5. `IDENTITY.md`
-
-Si hay conflicto, gana el documento más arriba.
+### Diferencia esencial
+LightCode no muestra notas.  
+Muestra:
+- threads
+- anchors
+- signals
+- drift
+- memory fragments
 
 ---
 
-# 15. Instrucción explícita para agentes de implementación
+## 7. Vocabulario visible
 
-Al implementar Lightcode:
+### Términos oficiales
+- **Memory Atlas**
+- **Atlas Field**
+- **Thread**
+- **Anchor**
+- **Signal**
+- **Drift**
+- **Telemetry**
 
-- no improvises identidad
-- no optimices solo por velocidad
-- no cambies más de lo necesario por PR
-- deja cada PR visualmente coherente
-- si una decisión no está cerrada, conserva la estructura actual y documenta el bloqueo en vez de inventar una solución arbitraria
+### Términos a relegar
+- session
+- status
+- generic memory
+- ask anything
+
+### Reglas
+- el lenguaje visible debe moverse hacia el vocabulario del atlas
+- los términos técnicos internos pueden mantenerse temporalmente si renombrarlos rompe compatibilidad
+- el lenguaje del usuario y el lenguaje interno no tienen por qué cambiar al mismo ritmo
+
+---
+
+## 8. Voz del producto
+
+### Tono
+- claro
+- sobrio
+- técnico
+- seguro
+- no promocional
+- no hype
+
+### Debe sonar como
+una herramienta de trabajo seria.
+
+### No debe sonar como
+un chatbot genérico o una demo de IA.
+
+---
+
+## 9. Componentes distintivos
+
+Los elementos visuales que deben volverse firma de LightCode son:
+
+1. **Atlas Field**
+2. **Context Panel**
+3. **Atlas Index**
+4. **Prompt surface**
+
+Estos cuatro elementos deben sentirse parte del mismo sistema.
+
+---
+
+## 10. Decisiones cerradas
+
+Estas decisiones ya no están abiertas:
+
+- categoría: **persistent coding system**
+- metáfora: **Memory Atlas**
+- superficie principal: **Atlas Field**
+- paleta base: **Void Black**
+- lógica del campo: **graph-driven**
+- inspiración de interacción: **Obsidian graph logic adaptada**
+- color del thread activo: **cian frío**
+- color de anchors/memory: **azul frío**
+- color de signals: **ámbar**
+- color de drift: **rojo apagado**
+
+---
+
+## 11. Qué no debe hacer un implementador
+
+- no inventar nuevas metáforas
+- no volver a una UI de cards genéricas
+- no usar morado como color dominante
+- no introducir sci-fi literal
+- no usar glow fuerte como recurso principal
+- no cambiar la composición aprobada sin una razón clara
+- no degradar el grafo a simple adorno
+
+---
+
+## 12. Qué sí debe hacer un implementador
+
+- reforzar el Atlas Field
+- mejorar la legibilidad del grafo
+- refinar jerarquía y contraste
+- preservar la composición validada
+- hacer la interfaz más usable sin quitarle identidad
+- traducir memoria infinita a navegación útil
+
+---
+
+## 13. Definición de éxito
+
+La implementación es correcta si:
+
+- el centro se percibe claramente como el corazón del producto
+- la metáfora de atlas se entiende sin explicarla demasiado
+- el producto se ve propio
+- el color ayuda a leer relaciones
+- la interfaz no se siente como OpenCode con otro tema
+
+La implementación es incorrecta si:
+
+- la metáfora queda solo decorativa
+- el grafo parece un fondo bonito sin utilidad
+- la derecha y la izquierda vuelven a parecer dashboards genéricos
+- el color compite con la legibilidad
