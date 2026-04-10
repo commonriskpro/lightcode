@@ -19,6 +19,8 @@ import { OM } from "@/session/om"
 
 const log = Log.create({ service: "task" })
 
+const waits = new Map<string, Promise<void>>()
+
 async function retry(run: () => Promise<void>) {
   for (const wait of [0, 25, 100]) {
     if (wait > 0) await Bun.sleep(wait)
@@ -30,6 +32,22 @@ async function retry(run: () => Promise<void>) {
     }
   }
   await run()
+}
+
+async function queue<T>(id: string, run: () => Promise<T>) {
+  const prev = waits.get(id) ?? Promise.resolve()
+  let release = () => {}
+  const lock = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  waits.set(id, lock)
+  await prev
+  try {
+    return await run()
+  } finally {
+    release()
+    if (waits.get(id) === lock) waits.delete(id)
+  }
 }
 
 const parameters = z.object({
@@ -82,196 +100,188 @@ export const TaskTool = Tool.define("task", async (ctx) => {
       const hasTaskPermission = agent.permission.some((rule) => rule.permission === "task")
       const hasTodoWritePermission = agent.permission.some((rule) => rule.permission === "todowrite")
 
-      const session = await iife(async () => {
-        if (params.task_id) {
-          const found = await Session.get(SessionID.make(params.task_id)).catch(() => {})
-          if (found) return found
+      return queue(ctx.sessionID, async () => {
+        const session = await iife(async () => {
+          if (params.task_id) {
+            const found = await Session.get(SessionID.make(params.task_id)).catch(() => {})
+            if (found) return found
+          }
+
+          return await Session.create({
+            parentID: ctx.sessionID,
+            title: params.description + ` (@${agent.name} subagent)`,
+            permission: [
+              ...(hasTodoWritePermission
+                ? []
+                : [
+                    {
+                      permission: "todowrite" as const,
+                      pattern: "*" as const,
+                      action: "deny" as const,
+                    },
+                  ]),
+              ...(hasTaskPermission
+                ? []
+                : [
+                    {
+                      permission: "task" as const,
+                      pattern: "*" as const,
+                      action: "deny" as const,
+                    },
+                  ]),
+              ...(config.experimental?.primary_tools?.map((t) => ({
+                pattern: "*",
+                action: "allow" as const,
+                permission: t,
+              })) ?? []),
+            ],
+          })
+        })
+        const msg = await MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID })
+        if (msg.info.role !== "assistant") throw new Error("Not an assistant message")
+
+        let stop = false
+        function cancel() {
+          stop = true
+          void SessionPrompt.cancel(session.id)
+        }
+        ctx.abort.addEventListener("abort", cancel)
+        using _ = defer(() => ctx.abort.removeEventListener("abort", cancel))
+        const check = () => {
+          if (stop || ctx.abort.aborted) throw new DOMException("Aborted", "AbortError")
+        }
+        check()
+
+        const model = agent.model ?? {
+          modelID: msg.info.modelID,
+          providerID: msg.info.providerID,
         }
 
-        return await Session.create({
-          parentID: ctx.sessionID,
-          title: params.description + ` (@${agent.name} subagent)`,
-          permission: [
-            ...(hasTodoWritePermission
-              ? []
-              : [
-                  {
-                    permission: "todowrite" as const,
-                    pattern: "*" as const,
-                    action: "deny" as const,
-                  },
-                ]),
-            ...(hasTaskPermission
-              ? []
-              : [
-                  {
-                    permission: "task" as const,
-                    pattern: "*" as const,
-                    action: "deny" as const,
-                  },
-                ]),
-            ...(config.experimental?.primary_tools?.map((t) => ({
-              pattern: "*",
-              action: "allow" as const,
-              permission: t,
-            })) ?? []),
-          ],
+        const sameModel = model.modelID === msg.info.modelID && model.providerID === msg.info.providerID
+        const isFork = sameModel && !ctx.extra?.isFork
+        if (isFork) {
+          const parent = SessionPrompt.getActiveContext(ctx.sessionID)
+          if (parent) {
+            log.info("fork subagent", { parent: ctx.sessionID, child: session.id })
+            SessionPrompt.setForkContext(session.id, parent)
+            try {
+              check()
+              const parentOm = await OM.get(ctx.sessionID as SessionID)
+              const wmSnapshot = (await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })).map(
+                (r) => ({
+                  key: r.key,
+                  value: r.value,
+                }),
+              )
+              const data = {
+                parentAgent: ctx.agent,
+                projectId: Instance.project.id,
+                taskDescription: params.description,
+                currentTask: parentOm?.current_task ?? null,
+                suggestedContinuation: parentOm?.suggested_continuation ?? null,
+                workingMemorySnapshot: wmSnapshot,
+              }
+              const payload = {
+                session_id: session.id,
+                parent_session_id: ctx.sessionID,
+                context: JSON.stringify(data),
+              }
+              await retry(() => Memory.writeForkContext(payload))
+            } catch (err) {
+              const payload = {
+                session_id: session.id,
+                parent_session_id: ctx.sessionID,
+                context: JSON.stringify({ taskDescription: params.description }),
+              }
+              await HandoffFallback.append("fork", payload, err)
+            }
+          }
+        }
+
+        ctx.metadata({
+          title: params.description,
+          metadata: {
+            sessionId: session.id,
+            model,
+          },
         })
-      })
-      const msg = await MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID })
-      if (msg.info.role !== "assistant") throw new Error("Not an assistant message")
 
-      let stop = false
-      function cancel() {
-        stop = true
-        void SessionPrompt.cancel(session.id)
-      }
-      ctx.abort.addEventListener("abort", cancel)
-      using _ = defer(() => ctx.abort.removeEventListener("abort", cancel))
-      const check = () => {
-        if (stop || ctx.abort.aborted) throw new DOMException("Aborted", "AbortError")
-      }
-      check()
-
-      const model = agent.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
-
-      // Fork mode: when using same model as parent, share context for cache hits
-      const sameModel = model.modelID === msg.info.modelID && model.providerID === msg.info.providerID
-      const isFork = sameModel && !ctx.extra?.isFork
-      if (isFork) {
-        const parent = SessionPrompt.getActiveContext(ctx.sessionID)
-        if (parent) {
-          log.info("fork subagent", { parent: ctx.sessionID, child: session.id })
-          SessionPrompt.setForkContext(session.id, parent)
-          // Persist fork context to DB for durable restart-safe continuity.
-          // The in-memory forks map is the primary path; DB is the durable fallback.
-          // Final: enriched snapshot includes OM continuation metadata and project WM keys
-          // so a restarted process can reconstruct useful child context without fresh LLM calls.
+        if (!isFork) {
           try {
             check()
             const parentOm = await OM.get(ctx.sessionID as SessionID)
-            const wmSnapshot = (await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })).map(
-              (r) => ({
-                key: r.key,
-                value: r.value,
-              }),
-            )
+            const wmRecords = await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })
             const data = {
-              parentAgent: ctx.agent,
-              projectId: Instance.project.id,
-              taskDescription: params.description,
-              currentTask: parentOm?.current_task ?? null,
-              suggestedContinuation: parentOm?.suggested_continuation ?? null,
-              workingMemorySnapshot: wmSnapshot,
+              context: params.description,
+              workingMemory: wmRecords.map((r) => ({ key: r.key, value: r.value })),
+              observation: parentOm?.current_task ?? parentOm?.suggested_continuation ?? null,
+              metadata: { parentAgent: ctx.agent, projectId: Instance.project.id },
             }
             const payload = {
-              session_id: session.id,
-              parent_session_id: ctx.sessionID,
-              context: JSON.stringify(data),
-            }
-            await retry(() => Memory.writeForkContext(payload))
-          } catch (err) {
-            const payload = {
-              session_id: session.id,
-              parent_session_id: ctx.sessionID,
-              context: JSON.stringify({ taskDescription: params.description }),
-            }
-            await HandoffFallback.append("fork", payload, err)
-            // Non-fatal — in-memory fork context still works for this process lifetime
-          }
-        }
-      }
-
-      ctx.metadata({
-        title: params.description,
-        metadata: {
-          sessionId: session.id,
-          model,
-        },
-      })
-
-      // Wire agent handoff record for non-fork task sessions.
-      // This populates memory_agent_handoffs with the task description, parent OM state,
-      // and project WM snapshot — providing a durable handoff record that survives restart.
-      if (!isFork) {
-        try {
-          check()
-          const parentOm = await OM.get(ctx.sessionID as SessionID)
-          const wmRecords = await Memory.getWorkingMemory({ type: "project", id: Instance.project.id })
-          const data = {
-            context: params.description,
-            workingMemory: wmRecords.map((r) => ({ key: r.key, value: r.value })),
-            observation: parentOm?.current_task ?? parentOm?.suggested_continuation ?? null,
-            metadata: { parentAgent: ctx.agent, projectId: Instance.project.id },
-          }
-          const payload = {
-            parent_session_id: ctx.sessionID,
-            child_session_id: session.id,
-            context: data.context,
-            working_memory_snap: data.workingMemory.length ? JSON.stringify(data.workingMemory) : null,
-            observation_snap: data.observation,
-            metadata: JSON.stringify(data.metadata),
-          }
-          await retry(() => Memory.writeHandoff(payload).then(() => {}))
-        } catch (err) {
-          await HandoffFallback.append(
-            "handoff",
-            {
               parent_session_id: ctx.sessionID,
               child_session_id: session.id,
-              context: params.description,
-              working_memory_snap: null,
-              observation_snap: null,
-              metadata: JSON.stringify({ parentAgent: ctx.agent, projectId: Instance.project.id }),
-            },
-            err,
-          )
-          // Non-fatal — task still runs without handoff record
+              context: data.context,
+              working_memory_snap: data.workingMemory.length ? JSON.stringify(data.workingMemory) : null,
+              observation_snap: data.observation,
+              metadata: JSON.stringify(data.metadata),
+            }
+            await retry(() => Memory.writeHandoff(payload).then(() => {}))
+          } catch (err) {
+            await HandoffFallback.append(
+              "handoff",
+              {
+                parent_session_id: ctx.sessionID,
+                child_session_id: session.id,
+                context: params.description,
+                working_memory_snap: null,
+                observation_snap: null,
+                metadata: JSON.stringify({ parentAgent: ctx.agent, projectId: Instance.project.id }),
+              },
+              err,
+            )
+          }
         }
-      }
 
-      const messageID = MessageID.ascending()
-      check()
-      const promptParts = await SessionPrompt.resolvePromptParts(params.prompt)
-      check()
+        const messageID = MessageID.ascending()
+        check()
+        const promptParts = await SessionPrompt.resolvePromptParts(params.prompt)
+        check()
 
-      const result = await SessionPrompt.prompt({
-        messageID,
-        sessionID: session.id,
-        model: {
-          modelID: model.modelID,
-          providerID: model.providerID,
-        },
-        agent: agent.name,
-        tools: {
-          ...(hasTodoWritePermission ? {} : { todowrite: false }),
-          ...(hasTaskPermission ? {} : { task: false }),
-          ...Object.fromEntries((config.experimental?.primary_tools ?? []).map((t) => [t, false])),
-        },
-        parts: promptParts,
+        const result = await SessionPrompt.prompt({
+          messageID,
+          sessionID: session.id,
+          model: {
+            modelID: model.modelID,
+            providerID: model.providerID,
+          },
+          agent: agent.name,
+          tools: {
+            ...(hasTodoWritePermission ? {} : { todowrite: false }),
+            ...(hasTaskPermission ? {} : { task: false }),
+            ...Object.fromEntries((config.experimental?.primary_tools ?? []).map((t) => [t, false])),
+          },
+          parts: promptParts,
+        })
+
+        const text = result.parts.findLast((x) => x.type === "text")?.text ?? ""
+
+        const output = [
+          `task_id: ${session.id} (for resuming to continue this task if needed)`,
+          "",
+          "<task_result>",
+          text,
+          "</task_result>",
+        ].join("\n")
+
+        return {
+          title: params.description,
+          metadata: {
+            sessionId: session.id,
+            model,
+          },
+          output,
+        }
       })
-
-      const text = result.parts.findLast((x) => x.type === "text")?.text ?? ""
-
-      const output = [
-        `task_id: ${session.id} (for resuming to continue this task if needed)`,
-        "",
-        "<task_result>",
-        text,
-        "</task_result>",
-      ].join("\n")
-
-      return {
-        title: params.description,
-        metadata: {
-          sessionId: session.id,
-          model,
-        },
-        output,
-      }
     },
   }
 })
