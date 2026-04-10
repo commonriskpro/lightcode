@@ -115,14 +115,22 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     if (!d || !tge.active() || !anchor) return
 
     const pos = abs(anchor)
-    const c = Math.max(1, Math.min(props.width, renderer.width - pos.col))
-    const r = Math.max(1, Math.min(props.height, renderer.height - pos.row))
+    // drawSuperSampleBuffer iterates from posX to terminal width,
+    // so the pixel buffer must cover the FULL remaining terminal area.
+    // We render the graph into the atlas field portion and fill the
+    // rest with void black (transparent pixels → void black in bridge).
+    const c = Math.max(1, renderer.width - pos.col)
+    const r = Math.max(1, renderer.height - pos.row)
+    // Clamp the graph area to the atlas field box size
+    const gc = Math.min(props.width, c)
+    const gr = Math.min(props.height, r)
     // Render at 2x scale: drawSuperSampleBuffer expects 2×2 pixels per cell
     const pw = c * 2
     const ph = r * 2
     if (pw <= 0 || ph <= 0) return
 
-    const f = renderAtlas(d, pw, ph, 2, 2)
+    // Render graph into the atlas field portion only
+    const f = renderAtlas(d, gc * 2, gr * 2, 2, 2)
 
     const labels: TextLabel[] = f.texts.map((t) => ({
       content: t.content,

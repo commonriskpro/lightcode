@@ -60,9 +60,11 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
     const buf = region.buf
     if (buf.width <= 0 || buf.height <= 0) return
 
-    // Buffer is already at 2x scale (cols*2 × rows*2)
-    const pw = buf.width
-    const ph = buf.height
+    // drawSuperSampleBuffer iterates from posX/posY to terminal width/height,
+    // so the aligned buffer must cover the FULL remaining terminal area at 2x.
+    // The TGE buf may be smaller (graph area only) — the rest stays void black.
+    const pw = region.cols * 2
+    const ph = region.rows * 2
 
     // Reallocate aligned buffer if size changed
     if (pw !== curW || ph !== curH || !aligned) {
@@ -72,21 +74,35 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
       aligned = new Uint8Array(stride * ph)
     }
 
-    // Copy pixels to aligned buffer, alpha-blending onto void black
-    const d = buf.data
+    // Fill entire buffer with void black
     for (let y = 0; y < ph; y++) {
-      const sr = y * buf.stride
       const dr = y * stride
       for (let x = 0; x < pw; x++) {
-        const si = sr + x * 4
         const di = dr + x * 4
+        aligned[di] = VR
+        aligned[di + 1] = VG
+        aligned[di + 2] = VB
+        aligned[di + 3] = 0xff
+      }
+      // Zero padding bytes
+      for (let x = pw * 4; x < stride; x++) {
+        aligned[dr + x] = 0
+      }
+    }
+
+    // Blit TGE pixels into the top-left portion (graph area)
+    const d = buf.data
+    const maxX = Math.min(buf.width, pw)
+    const maxY = Math.min(buf.height, ph)
+    for (let y = 0; y < maxY; y++) {
+      const sr = y * buf.stride
+      const dr = y * stride
+      for (let x = 0; x < maxX; x++) {
+        const si = sr + x * 4
         const a = d[si + 3]
-        if (a === 0) {
-          aligned[di] = VR
-          aligned[di + 1] = VG
-          aligned[di + 2] = VB
-          aligned[di + 3] = 0xff
-        } else if (a === 0xff) {
+        if (a === 0) continue
+        const di = dr + x * 4
+        if (a === 0xff) {
           aligned[di] = d[si]
           aligned[di + 1] = d[si + 1]
           aligned[di + 2] = d[si + 2]
@@ -98,10 +114,6 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
           aligned[di + 2] = (d[si + 2] * a + VB * inv + 127) / 255
           aligned[di + 3] = 0xff
         }
-      }
-      // Zero padding bytes
-      for (let x = pw * 4; x < stride; x++) {
-        aligned[dr + x] = 0
       }
     }
 
