@@ -1,15 +1,19 @@
 /**
  * opentui pixel bridge — composites TGE PixelBuffers into opentui's render pipeline.
  *
- * drawSuperSampleBuffer expects 2×2 pixels per terminal cell (quadrant blocks).
- * The TGE paint system renders at 8x scale (8 pixels per cell dimension) for
- * high-quality anti-aliasing. The bridge downsamples 4:1 (8x → 2x) by averaging
- * 4×4 pixel blocks, then copies to a 256-byte aligned buffer for drawSuperSampleBuffer.
+ * Uses drawPackedBuffer with custom quadrant rendering for maximum quality.
+ * Instead of drawSuperSampleBuffer (which downsamples to 2×2 then picks 2 colors
+ * from 4 pixels), we area-average each quadrant from ~31+ source pixels each,
+ * producing far superior color fidelity while keeping 2×2 spatial resolution.
  *
- * The 4:1 downsample pre-blends gradients so renderQuadrantBlock (which only picks
- * 2 colors per cell) receives clean, pre-mixed pixels — eliminating 3-color artifacts.
+ * Per-cell pipeline:
+ *   1. Map cell to source pixel region (cellW × cellH pixels, e.g. 7×18)
+ *   2. Split into 4 quadrants (TL, TR, BL, BR) — each ~3.5×9 = ~31 pixels
+ *   3. Area-average each quadrant → 4 true colors
+ *   4. Pick optimal 2 colors + quadrant char (same Unicode chars as opentui)
+ *   5. Pack into 48-byte cell result for drawPackedBuffer
  *
- * Text labels are written AFTER the supersample call via drawText.
+ * Text labels are written AFTER the packed buffer call via drawText.
  */
 
 import type { PixelBuffer } from "../paint/buffer"
@@ -46,84 +50,186 @@ const VR = 0x04
 const VG = 0x04
 const VB = 0x0a
 
+// Quadrant block Unicode characters (same as opentui's renderQuadrantBlock)
+// Index = 4-bit pattern: bit3=TL, bit2=TR, bit1=BL, bit0=BR (1=dark, 0=light)
+const QCHARS: number[] = [
+  0x20 /*      */, 0x2597 /* ▗ */, 0x2596 /* ▖ */, 0x2584 /* ▄ */, 0x259d /* ▝ */, 0x2590 /* ▐ */, 0x259e /* ▞ */,
+  0x259f /* ▟ */, 0x2598 /* ▘ */, 0x259a /* ▚ */, 0x258c /* ▌ */, 0x2599 /* ▙ */, 0x2580 /* ▀ */, 0x259c /* ▜ */,
+  0x259b /* ▛ */, 0x2588 /* █ */,
+]
+
 /**
- * Area-sample downsample: resizes a high-res PixelBuffer to dstW×dstH.
- *
- * Supports non-integer scale ratios (e.g. screen-pixel buffer to 2x cells
- * where cellW ≠ cellH). Each destination pixel averages ALL source pixels
- * in its corresponding rectangular area, with alpha-compositing onto void black.
- *
- * This is the key to aspect-correct rendering: the TGE renders in screen-pixel
- * coordinates (square pixels, circles are circular), then this downsamples
- * to the 2x buffer that drawSuperSampleBuffer expects.
+ * Area-average a rectangular region of source pixels, compositing alpha onto void black.
+ * Returns [r, g, b] as 0-255 integers.
  */
-function downsample(src: PixelBuffer, dstW: number, dstH: number): PixelBuffer {
-  const out = new Uint8Array(dstW * dstH * 4)
+function avg(
+  sd: Uint8Array,
+  ss: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  sw: number,
+  sh: number,
+): [number, number, number] {
+  let tr = 0,
+    tg = 0,
+    tb = 0,
+    cnt = 0
+  const ex = Math.min(x1, sw)
+  const ey = Math.min(y1, sh)
+  for (let py = y0; py < ey; py++) {
+    const row = py * ss
+    for (let px = x0; px < ex; px++) {
+      const si = row + px * 4
+      const a = sd[si + 3]
+      if (a === 0) {
+        tr += VR
+        tg += VG
+        tb += VB
+      } else if (a === 0xff) {
+        tr += sd[si]
+        tg += sd[si + 1]
+        tb += sd[si + 2]
+      } else {
+        const inv = 255 - a
+        tr += (sd[si] * a + VR * inv + 127) / 255
+        tg += (sd[si + 1] * a + VG * inv + 127) / 255
+        tb += (sd[si + 2] * a + VB * inv + 127) / 255
+      }
+      cnt++
+    }
+  }
+  if (cnt === 0) return [VR, VG, VB]
+  return [(tr / cnt + 0.5) | 0, (tg / cnt + 0.5) | 0, (tb / cnt + 0.5) | 0]
+}
+
+/** Squared color distance (perceptual weighting). */
+function dist(a: [number, number, number], b: [number, number, number]): number {
+  const dr = a[0] - b[0],
+    dg = a[1] - b[1],
+    db = a[2] - b[2]
+  // Weighted: green has highest perceptual weight
+  return dr * dr * 2 + dg * dg * 4 + db * db * 3
+}
+
+/** Luminance (0-255). */
+function lum(c: [number, number, number]): number {
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/** Write a float32 to a DataView. */
+function f32(dv: DataView, off: number, v: number) {
+  dv.setFloat32(off, v, true) // little-endian
+}
+
+/**
+ * Rasterize the screen-pixel buffer into packed cell results for drawPackedBuffer.
+ *
+ * For each terminal cell, area-averages 4 quadrants from the source pixels,
+ * picks the optimal 2-color + quadrant char combination, and writes the
+ * 48-byte packed result (bg f32×4 + fg f32×4 + char u32 + padding).
+ */
+function rasterize(src: PixelBuffer, cols: number, rows: number, cw: number, ch: number): ArrayBuffer {
+  const cells = cols * rows
+  const buf = new ArrayBuffer(cells * 48)
+  const dv = new DataView(buf)
   const sd = src.data
   const ss = src.stride
-  // Scale factors: how many source pixels per destination pixel
-  const sx = src.width / dstW
-  const sy = src.height / dstH
+  const hw = (cw / 2) | 0 // half cell width
+  const hh = (ch / 2) | 0 // half cell height
 
-  for (let dy = 0; dy < dstH; dy++) {
-    const srcY0 = (dy * sy) | 0
-    const srcY1 = Math.min(((dy + 1) * sy) | 0, src.height)
-    const dr = dy * dstW * 4
-    for (let dx = 0; dx < dstW; dx++) {
-      const srcX0 = (dx * sx) | 0
-      const srcX1 = Math.min(((dx + 1) * sx) | 0, src.width)
-      let tr = 0,
-        tg = 0,
-        tb = 0
-      let cnt = 0
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const sx = cx * cw
+      const sy = cy * ch
+      const mx = sx + hw
+      const my = sy + hh
 
-      for (let py = srcY0; py < srcY1; py++) {
-        const row = py * ss
-        for (let px = srcX0; px < srcX1; px++) {
-          const si = row + px * 4
-          const a = sd[si + 3]
-          if (a === 0) {
-            tr += VR
-            tg += VG
-            tb += VB
-          } else if (a === 0xff) {
-            tr += sd[si]
-            tg += sd[si + 1]
-            tb += sd[si + 2]
-          } else {
-            const inv = 255 - a
-            tr += (sd[si] * a + VR * inv + 127) / 255
-            tg += (sd[si + 1] * a + VG * inv + 127) / 255
-            tb += (sd[si + 2] * a + VB * inv + 127) / 255
+      // Area-average 4 quadrants from ~(cw/2 × ch/2) pixels each
+      const tl = avg(sd, ss, sx, sy, mx, my, src.width, src.height)
+      const tr = avg(sd, ss, mx, sy, sx + cw, my, src.width, src.height)
+      const bl = avg(sd, ss, sx, my, mx, sy + ch, src.width, src.height)
+      const br = avg(sd, ss, mx, my, sx + cw, sy + ch, src.width, src.height)
+
+      const quads: [number, number, number][] = [tl, tr, bl, br]
+
+      // Find the 2 most different colors (same algo as opentui but on averaged colors)
+      let ai = 0,
+        bi = 1,
+        best = dist(tl, tr)
+      for (let i = 0; i < 4; i++) {
+        for (let j = i + 1; j < 4; j++) {
+          const d = dist(quads[i], quads[j])
+          if (d > best) {
+            ai = i
+            bi = j
+            best = d
           }
-          cnt++
         }
       }
 
-      const di = dr + dx * 4
-      if (cnt > 0) {
-        out[di] = (tr / cnt + 0.5) | 0
-        out[di + 1] = (tg / cnt + 0.5) | 0
-        out[di + 2] = (tb / cnt + 0.5) | 0
-        out[di + 3] = 0xff
-      } else {
-        out[di] = VR
-        out[di + 1] = VG
-        out[di + 2] = VB
-        out[di + 3] = 0xff
+      // Dark = lower luminance, light = higher luminance
+      let dark = quads[ai],
+        light = quads[bi]
+      if (lum(dark) > lum(light)) {
+        const t = dark
+        dark = light
+        light = t
       }
+
+      // Classify each quadrant as dark (1) or light (0)
+      let bits = 0
+      const bv = [8, 4, 2, 1]
+      for (let i = 0; i < 4; i++) {
+        if (dist(quads[i], dark) <= dist(quads[i], light)) bits |= bv[i]
+      }
+
+      // When all same color, use space with averaged bg
+      let fg: [number, number, number], bg: [number, number, number], ch32: number
+      if (bits === 0) {
+        // All light — average all for bg, dark for fg (unused but required)
+        const a = avg(sd, ss, sx, sy, sx + cw, sy + ch, src.width, src.height)
+        fg = dark
+        bg = a
+        ch32 = 0x20
+      } else if (bits === 15) {
+        // All dark — average all for fg, light for bg (unused)
+        const a = avg(sd, ss, sx, sy, sx + cw, sy + ch, src.width, src.height)
+        fg = a
+        bg = light
+        ch32 = QCHARS[15]
+      } else {
+        fg = dark
+        bg = light
+        ch32 = QCHARS[bits]
+      }
+
+      // Pack 48 bytes: bg(f32×4) + fg(f32×4) + char(u32) + pad(u32×3)
+      const off = (cy * cols + cx) * 48
+      // bg RGBA as floats (0.0-1.0)
+      f32(dv, off, bg[0] / 255)
+      f32(dv, off + 4, bg[1] / 255)
+      f32(dv, off + 8, bg[2] / 255)
+      f32(dv, off + 12, 1.0)
+      // fg RGBA as floats
+      f32(dv, off + 16, fg[0] / 255)
+      f32(dv, off + 20, fg[1] / 255)
+      f32(dv, off + 24, fg[2] / 255)
+      f32(dv, off + 28, 1.0)
+      // char as u32
+      dv.setUint32(off + 32, ch32, true)
+      // padding zeros (already 0 from ArrayBuffer)
     }
   }
 
-  return { data: out, width: dstW, height: dstH, stride: dstW * 4 }
+  return buf
 }
 
 export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "halfblock" = "supersample"): Bridge {
   const regions: Region[] = []
-  let aligned: Uint8Array | null = null
-  let curW = 0
-  let curH = 0
-  let stride = 0
+  let packed: Uint8Array | null = null
+  let curCells = 0
 
   const process = (buffer: OptimizedBuffer, _delta: number) => {
     for (const r of regions) {
@@ -135,44 +241,34 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
     const src = region.buf
     if (src.width <= 0 || src.height <= 0) return
 
-    // Output size for drawSuperSampleBuffer: 2 pixels per cell
-    const pw = region.cols * 2
-    const ph = region.rows * 2
+    const cols = region.cols
+    const rows = region.rows
+    const cells = cols * rows
+    if (cells <= 0) return
 
-    // Reallocate aligned buffer if size changed
-    if (pw !== curW || ph !== curH || !aligned) {
-      curW = pw
-      curH = ph
-      stride = Math.ceil((pw * 4) / 256) * 256
-      aligned = new Uint8Array(stride * ph)
-    }
+    // Detect cell dimensions from source buffer / region cell count
+    const cw = Math.max(1, Math.round(src.width / cols))
+    const ch = Math.max(1, Math.round(src.height / rows))
 
-    // Downsample 8x → 2x (4:1 block average, composited onto void black).
-    // The downsample produces opaque pixels for the full pw×ph area —
-    // pixels outside the source buffer become void black automatically.
-    // No separate void-black fill needed.
-    const ds = downsample(src, pw, ph)
+    // Rasterize: area-average quadrants → packed cell results
+    const buf = rasterize(src, cols, rows, cw, ch)
+    const bytes = new Uint8Array(buf)
 
-    // Copy downsampled pixels into stride-aligned buffer
-    const dd = ds.data
-    for (let y = 0; y < ph; y++) {
-      const sr = y * pw * 4
-      const dr = y * stride
-      // Copy pixel data
-      aligned.set(dd.subarray(sr, sr + pw * 4), dr)
-      // Zero stride padding bytes (required for drawSuperSampleBuffer)
-      for (let x = pw * 4; x < stride; x++) {
-        aligned[dr + x] = 0
-      }
+    // Reallocate packed buffer if size changed
+    if (cells !== curCells || !packed) {
+      curCells = cells
+      packed = bytes
+    } else {
+      packed.set(bytes)
     }
 
     try {
-      buffer.drawSuperSampleBuffer(region.col, region.row, ptr(aligned), aligned.length, "rgba8unorm", stride)
+      buffer.drawPackedBuffer(ptr(packed), packed.length, region.col, region.row, cols, rows)
     } catch {
       // silent
     }
 
-    // Write text labels AFTER supersample so they are not overwritten
+    // Write text labels AFTER packed buffer so they are not overwritten
     if (region.labels) {
       const bg = RGBA.fromInts(VR, VG, VB, 0)
       for (const lbl of region.labels) {
@@ -198,7 +294,7 @@ export function bridge(_cellW: number, _cellH: number, _mode: "supersample" | "h
     },
     destroy() {
       regions.length = 0
-      aligned = null
+      packed = null
     },
   }
 }
