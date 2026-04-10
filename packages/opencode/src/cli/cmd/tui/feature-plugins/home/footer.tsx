@@ -38,7 +38,7 @@ function Mcp(props: { api: TuiPluginApi }) {
           </Switch>
           {count()} MCP
         </text>
-        <text fg={theme().textMuted}>/status</text>
+        <text fg={theme().textMuted}>/telemetry</text>
       </box>
     </Show>
   )

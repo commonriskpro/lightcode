@@ -22,7 +22,7 @@ export function DialogMemoryAgents() {
 
   return (
     <DialogSelect
-      title="Async Memory Agents"
+      title="Memory Atlas Agents"
       skipFilter={true}
       flat={true}
       options={[

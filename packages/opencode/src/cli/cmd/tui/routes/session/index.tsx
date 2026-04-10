@@ -239,7 +239,7 @@ export function Session() {
       .catch((e) => {
         console.error(e)
         toast.show({
-          message: `Session not found: ${route.sessionID}`,
+          message: `Thread not found: ${route.sessionID}`,
           variant: "error",
         })
         return navigate({ type: "home" })
@@ -296,8 +296,8 @@ export function Session() {
         `${logo[2] ?? ""}`,
         `${logo[3] ?? ""}`,
         ``,
-        `  ${weak("Session")}${UI.Style.TEXT_NORMAL_BOLD}${title}${UI.Style.TEXT_NORMAL}`,
-        `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}opencode -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
+        `  ${weak("Thread")}${UI.Style.TEXT_NORMAL_BOLD}${title}${UI.Style.TEXT_NORMAL}`,
+        `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}lightcode -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
         ``,
       ].join("\n"),
     )
@@ -402,11 +402,11 @@ export function Session() {
   const command = useCommandDialog()
   command.register(() => [
     {
-      title: session()?.share?.url ? "Copy share link" : "Share session",
+      title: session()?.share?.url ? "Copy share link" : "Share thread",
       value: "session.share",
       suggested: route.type === "session",
       keybind: "session_share",
-      category: "Session",
+      category: "Thread",
       enabled: sync.data.config.share !== "disabled",
       slash: {
         name: "share",
@@ -423,7 +423,7 @@ export function Session() {
           return
         }
         if (!kv.get("share_consent", false)) {
-          const ok = await DialogConfirm.show(dialog, "Share Session", "Are you sure you want to share it?")
+          const ok = await DialogConfirm.show(dialog, "Share Thread", "Are you sure you want to share it?")
           if (ok !== true) return
           kv.set("share_consent", true)
         }
@@ -434,7 +434,7 @@ export function Session() {
           .then((res) => copy(res.data!.share!.url))
           .catch((error) => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to share session",
+              message: error instanceof Error ? error.message : "Failed to share thread",
               variant: "error",
             })
           })
@@ -442,10 +442,10 @@ export function Session() {
       },
     },
     {
-      title: "Rename session",
+      title: "Rename thread",
       value: "session.rename",
       keybind: "session_rename",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "rename",
       },
@@ -457,7 +457,7 @@ export function Session() {
       title: "Jump to message",
       value: "session.timeline",
       keybind: "session_timeline",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "timeline",
       },
@@ -480,7 +480,7 @@ export function Session() {
       title: "Fork from message",
       value: "session.fork",
       keybind: "session_fork",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "fork",
       },
@@ -499,10 +499,10 @@ export function Session() {
       },
     },
     {
-      title: "Compact session",
+      title: "Compact thread",
       value: "session.compact",
       keybind: "session_compact",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "compact",
         aliases: ["summarize"],
@@ -512,7 +512,7 @@ export function Session() {
         if (!selectedModel) {
           toast.show({
             variant: "warning",
-            message: "Connect a provider to summarize this session",
+            message: "Connect a provider to summarize this thread",
             duration: 3000,
           })
           return
@@ -526,10 +526,10 @@ export function Session() {
       },
     },
     {
-      title: "Unshare session",
+      title: "Unshare thread",
       value: "session.unshare",
       keybind: "session_unshare",
-      category: "Session",
+      category: "Thread",
       enabled: !!session()?.share?.url,
       slash: {
         name: "unshare",
@@ -539,10 +539,10 @@ export function Session() {
           .unshare({
             sessionID: route.sessionID,
           })
-          .then(() => toast.show({ message: "Session unshared successfully", variant: "success" }))
+          .then(() => toast.show({ message: "Thread unshared successfully", variant: "success" }))
           .catch((error) => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
+              message: error instanceof Error ? error.message : "Failed to unshare thread",
               variant: "error",
             })
           })
@@ -553,7 +553,7 @@ export function Session() {
       title: "Undo previous message",
       value: "session.undo",
       keybind: "messages_undo",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "undo",
       },
@@ -591,7 +591,7 @@ export function Session() {
       title: "Redo",
       value: "session.redo",
       keybind: "messages_redo",
-      category: "Session",
+      category: "Thread",
       enabled: !!session()?.revert?.messageID,
       slash: {
         name: "redo",
@@ -615,10 +615,10 @@ export function Session() {
       },
     },
     {
-      title: sidebarVisible() ? "Hide sidebar" : "Show sidebar",
+      title: sidebarVisible() ? "Hide atlas index" : "Show atlas index",
       value: "session.sidebar.toggle",
       keybind: "sidebar_toggle",
-      category: "Session",
+      category: "Thread",
       onSelect: (dialog) => {
         batch(() => {
           const isVisible = sidebarVisible()
@@ -632,7 +632,7 @@ export function Session() {
       title: conceal() ? "Disable code concealment" : "Enable code concealment",
       value: "session.toggle.conceal",
       keybind: "messages_toggle_conceal" as any,
-      category: "Session",
+      category: "Thread",
       onSelect: (dialog) => {
         setConceal((prev) => !prev)
         dialog.clear()
@@ -641,7 +641,7 @@ export function Session() {
     {
       title: showTimestamps() ? "Hide timestamps" : "Show timestamps",
       value: "session.toggle.timestamps",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "timestamps",
         aliases: ["toggle-timestamps"],
@@ -655,7 +655,7 @@ export function Session() {
       title: showThinking() ? "Hide thinking" : "Show thinking",
       value: "session.toggle.thinking",
       keybind: "display_thinking",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "thinking",
         aliases: ["toggle-thinking"],
@@ -669,17 +669,17 @@ export function Session() {
       title: showDetails() ? "Hide tool details" : "Show tool details",
       value: "session.toggle.actions",
       keybind: "tool_details",
-      category: "Session",
+      category: "Thread",
       onSelect: (dialog) => {
         setShowDetails((prev) => !prev)
         dialog.clear()
       },
     },
     {
-      title: "Toggle session scrollbar",
+      title: "Toggle thread scrollbar",
       value: "session.toggle.scrollbar",
       keybind: "scrollbar_toggle",
-      category: "Session",
+      category: "Thread",
       onSelect: (dialog) => {
         setShowScrollbar((prev) => !prev)
         dialog.clear()
@@ -688,7 +688,7 @@ export function Session() {
     {
       title: showGenericToolOutput() ? "Hide generic tool output" : "Show generic tool output",
       value: "session.toggle.generic_tool_output",
-      category: "Session",
+      category: "Thread",
       onSelect: (dialog) => {
         setShowGenericToolOutput((prev) => !prev)
         dialog.clear()
@@ -698,7 +698,7 @@ export function Session() {
       title: "Page up",
       value: "session.page.up",
       keybind: "messages_page_up",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         scroll.scrollBy(-scroll.height / 2)
@@ -709,7 +709,7 @@ export function Session() {
       title: "Page down",
       value: "session.page.down",
       keybind: "messages_page_down",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         scroll.scrollBy(scroll.height / 2)
@@ -720,7 +720,7 @@ export function Session() {
       title: "Line up",
       value: "session.line.up",
       keybind: "messages_line_up",
-      category: "Session",
+      category: "Thread",
       disabled: true,
       onSelect: (dialog) => {
         scroll.scrollBy(-1)
@@ -731,7 +731,7 @@ export function Session() {
       title: "Line down",
       value: "session.line.down",
       keybind: "messages_line_down",
-      category: "Session",
+      category: "Thread",
       disabled: true,
       onSelect: (dialog) => {
         scroll.scrollBy(1)
@@ -742,7 +742,7 @@ export function Session() {
       title: "Half page up",
       value: "session.half.page.up",
       keybind: "messages_half_page_up",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         scroll.scrollBy(-scroll.height / 4)
@@ -753,7 +753,7 @@ export function Session() {
       title: "Half page down",
       value: "session.half.page.down",
       keybind: "messages_half_page_down",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         scroll.scrollBy(scroll.height / 4)
@@ -764,7 +764,7 @@ export function Session() {
       title: "First message",
       value: "session.first",
       keybind: "messages_first",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         scroll.scrollTo(0)
@@ -775,7 +775,7 @@ export function Session() {
       title: "Last message",
       value: "session.last",
       keybind: "messages_last",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         scroll.scrollTo(scroll.scrollHeight)
@@ -786,7 +786,7 @@ export function Session() {
       title: "Jump to last user message",
       value: "session.messages_last_user",
       keybind: "messages_last_user",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: () => {
         const messages = sync.data.message[route.sessionID]
@@ -818,7 +818,7 @@ export function Session() {
       title: "Next message",
       value: "session.message.next",
       keybind: "messages_next",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => scrollToMessage("next", dialog),
     },
@@ -826,7 +826,7 @@ export function Session() {
       title: "Previous message",
       value: "session.message.previous",
       keybind: "messages_previous",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => scrollToMessage("prev", dialog),
     },
@@ -834,7 +834,7 @@ export function Session() {
       title: "Copy last assistant message",
       value: "messages.copy",
       keybind: "messages_copy",
-      category: "Session",
+      category: "Thread",
       onSelect: (dialog) => {
         const revertID = session()?.revert?.messageID
         const lastAssistantMessage = messages().findLast(
@@ -874,9 +874,9 @@ export function Session() {
       },
     },
     {
-      title: "Copy session transcript",
+      title: "Copy thread transcript",
       value: "session.copy",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "copy",
       },
@@ -896,18 +896,18 @@ export function Session() {
             },
           )
           await Clipboard.copy(transcript)
-          toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
+          toast.show({ message: "Thread transcript copied to clipboard!", variant: "success" })
         } catch (error) {
-          toast.show({ message: "Failed to copy session transcript", variant: "error" })
+          toast.show({ message: "Failed to copy thread transcript", variant: "error" })
         }
         dialog.clear()
       },
     },
     {
-      title: "Export session transcript",
+      title: "Export thread transcript",
       value: "session.export",
       keybind: "session_export",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "export",
       },
@@ -957,19 +957,19 @@ export function Session() {
               await Filesystem.write(filepath, result)
             }
 
-            toast.show({ message: `Session exported to ${filename}`, variant: "success" })
+            toast.show({ message: `Thread exported to ${filename}`, variant: "success" })
           }
         } catch (error) {
-          toast.show({ message: "Failed to export session", variant: "error" })
+          toast.show({ message: "Failed to export thread", variant: "error" })
         }
         dialog.clear()
       },
     },
     {
-      title: "Go to child session",
+      title: "Go to child thread",
       value: "session.child.first",
       keybind: "session_child_first",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       onSelect: (dialog) => {
         moveFirstChild()
@@ -977,10 +977,10 @@ export function Session() {
       },
     },
     {
-      title: "Go to parent session",
+      title: "Go to parent thread",
       value: "session.parent",
       keybind: "session_parent",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       enabled: !!session()?.parentID,
       onSelect: childSessionHandler((dialog) => {
@@ -995,10 +995,10 @@ export function Session() {
       }),
     },
     {
-      title: "Next child session",
+      title: "Next child thread",
       value: "session.child.next",
       keybind: "session_child_cycle",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       enabled: !!session()?.parentID,
       onSelect: childSessionHandler((dialog) => {
@@ -1007,10 +1007,10 @@ export function Session() {
       }),
     },
     {
-      title: "Previous child session",
+      title: "Previous child thread",
       value: "session.child.previous",
       keybind: "session_child_cycle_reverse",
-      category: "Session",
+      category: "Thread",
       hidden: true,
       enabled: !!session()?.parentID,
       onSelect: childSessionHandler((dialog) => {
@@ -1309,7 +1309,7 @@ function UserMessage(props: {
     const part = text()
     if (!part?.text.trim()) return
     if (files().length > 0) {
-      toast.show({ message: "Queued steer supports text-only prompts for now", variant: "warning" })
+      toast.show({ message: "Queued signal supports text-only prompts for now", variant: "warning" })
       return
     }
     const url = new URL(`/session/${props.message.sessionID}/steer_async`, sdk.url)
@@ -1322,7 +1322,7 @@ function UserMessage(props: {
         body: JSON.stringify({ messageID: props.message.id }),
       })
       .catch(() => {
-        toast.show({ message: "Failed to steer queued prompt", variant: "error" })
+        toast.show({ message: "Failed to inject signal", variant: "error" })
       })
   }
 
@@ -1376,7 +1376,7 @@ function UserMessage(props: {
                 <Switch>
                   <Match when={isSteered()}>
                     <text fg={theme.textMuted}>
-                      <span style={{ bg: theme.primary, fg: steeredFg(), bold: true }}> STEERED </span>
+                      <span style={{ bg: theme.primary, fg: steeredFg(), bold: true }}> SIGNALED </span>
                     </text>
                   </Match>
                   <Match when={ctx.showTimestamps()}>
@@ -1394,7 +1394,7 @@ function UserMessage(props: {
                   <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
                 </text>
                 <text fg={theme.textMuted} onMouseUp={steer}>
-                  <span style={{ bg: theme.primary, fg: steeredFg(), bold: true }}> ⎈ STEER </span>
+                  <span style={{ bg: theme.primary, fg: steeredFg(), bold: true }}> ⎈ SIGNAL </span>
                 </text>
               </box>
             </Show>

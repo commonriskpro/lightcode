@@ -238,7 +238,7 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Steer current turn",
+        title: "Inject signal",
         value: "prompt.steer",
         category: "Prompt",
         enabled: status().type !== "idle",
@@ -266,10 +266,10 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Interrupt session",
+        title: "Interrupt thread",
         value: "session.interrupt",
         keybind: "session_interrupt",
-        category: "Session",
+        category: "Thread",
         hidden: true,
         enabled: status().type !== "idle",
         onSelect: (dialog) => {
@@ -299,7 +299,7 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Open editor",
-        category: "Session",
+        category: "Thread",
         keybind: "editor_open",
         value: "prompt.editor",
         slash: {
@@ -639,7 +639,7 @@ export function Prompt(props: PromptProps) {
         console.log("Creating a session failed:", res.error)
 
         toast.show({
-          message: "Creating a session failed. Open console for more details.",
+          message: "Creating a thread failed. Open console for more details.",
           variant: "error",
         })
 
@@ -673,7 +673,7 @@ export function Prompt(props: PromptProps) {
 
     if (mode === "steer" && nonTextParts.length > 0) {
       toast.show({
-        message: "Steer currently supports text only",
+        message: "Signal injection supports text only",
         variant: "warning",
       })
       return
@@ -879,7 +879,7 @@ export function Prompt(props: PromptProps) {
       return `Run a command... "${example}"`
     }
     if (!list().length) return undefined
-    return `Ask anything... "${list()[store.placeholder % list().length]}"`
+    return `Describe the change... "${list()[store.placeholder % list().length]}"`
   })
 
   const spinnerDef = createMemo(() => {
@@ -1277,7 +1277,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                   </Switch>
                   <text fg={theme.text}>
-                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>commands</span>
+                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>actions</span>
                   </text>
                 </Match>
                 <Match when={store.mode === "shell"}>

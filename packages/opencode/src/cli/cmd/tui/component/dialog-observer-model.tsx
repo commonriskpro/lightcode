@@ -79,7 +79,7 @@ export function DialogObserverModel() {
 
   return (
     <DialogSelect
-      title="Observer Memory Model"
+      title="Observer Atlas Model"
       options={options()}
       onSelect={(option) => onSelect(option.value)}
       onFilter={setQuery}

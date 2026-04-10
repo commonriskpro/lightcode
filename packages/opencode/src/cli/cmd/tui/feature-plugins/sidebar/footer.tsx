@@ -166,7 +166,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
                 ✕
               </text>
             </box>
-            <text fg={theme().textMuted}>OpenCode includes free models so you can start immediately.</text>
+            <text fg={theme().textMuted}>LightCode includes free models so you can start immediately.</text>
             <text fg={theme().textMuted}>
               Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
             </text>
@@ -191,7 +191,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <text fg={theme().accent}>{DREAM_FRAMES[frame()]}</text>
       </Show>
       <text fg={theme().textMuted}>
-        <span style={{ fg: theme().success }}>•</span> <b>Open</b>
+        <span style={{ fg: theme().success }}>•</span> <b>Light</b>
         <span style={{ fg: theme().text }}>
           <b>Code</b>
         </span>{" "}

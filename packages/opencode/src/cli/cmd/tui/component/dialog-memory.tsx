@@ -88,7 +88,7 @@ export function DialogMemory(props: { sessionID: string }) {
       <box paddingLeft={4} paddingRight={4}>
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.text} attributes={TextAttributes.BOLD}>
-            Session Memory
+            Thread Memory Atlas
           </text>
           <text fg={theme.textMuted} onMouseUp={() => dialog.clear()}>
             esc

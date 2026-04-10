@@ -355,24 +355,24 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle("LightCode")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle("LightCode")
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`LC | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`LC | ${route.data.id}`)
     }
   })
 
@@ -414,7 +414,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           if (result.data?.id) {
             route.navigate({ type: "session", sessionID: result.data.id })
           } else {
-            toast.show({ message: "Failed to fork session", variant: "error" })
+            toast.show({ message: "Failed to fork thread", variant: "error" })
           }
         })
       } else {
@@ -434,7 +434,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       if (result.data?.id) {
         route.navigate({ type: "session", sessionID: result.data.id })
       } else {
-        toast.show({ message: "Failed to fork session", variant: "error" })
+        toast.show({ message: "Failed to fork thread", variant: "error" })
       }
     })
   })
@@ -453,10 +453,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const connected = useConnected()
   command.register(() => [
     {
-      title: "Switch session",
+      title: "Switch thread",
       value: "session.list",
       keybind: "session_list",
-      category: "Session",
+      category: "Thread",
       suggested: sync.data.session.length > 0,
       slash: {
         name: "sessions",
@@ -483,11 +483,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         ]
       : []),
     {
-      title: "New session",
+      title: "New thread",
       suggested: route.data.type === "session",
       value: "session.new",
       keybind: "session_new",
-      category: "Session",
+      category: "Thread",
       slash: {
         name: "new",
         aliases: ["clear"],
@@ -636,11 +636,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       category: "Provider",
     },
     {
-      title: "View status",
+      title: "View telemetry",
       keybind: "status_view",
       value: "opencode.status",
       slash: {
-        name: "status",
+        name: "telemetry",
+        aliases: ["status"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogStatus />)
@@ -708,7 +709,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         aliases: ["mem"],
       },
       enabled: route.data.type === "session",
-      description: "View session memory state (Observer observations + Reflector)",
+      description: "View thread memory atlas (Observer observations + Reflector)",
       onSelect: () => {
         const r = route.data
         if (r.type !== "session") return
@@ -776,7 +777,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       title: "Open docs",
       value: "docs.open",
       onSelect: () => {
-        open("https://opencode.ai/docs").catch(() => {})
+        open("https://lightcode.ai/docs").catch(() => {})
         dialog.clear()
       },
       category: "System",
@@ -900,7 +901,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       route.navigate({ type: "home" })
       toast.show({
         variant: "info",
-        message: "The current session was deleted",
+        message: "The current thread was deleted",
       })
     }
   })
@@ -958,7 +959,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     await DialogAlert.show(
       dialog,
       "Update Complete",
-      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
+      `Successfully updated to LightCode v${result.data.version}. Please restart the application.`,
     )
 
     exit()
