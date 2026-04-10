@@ -13,7 +13,6 @@ import { ring as ringLayout, type PlacedGraph } from "./layout"
 import { build } from "./build"
 import { buffer as createBuffer, clear, paint, textRegions, type PixelBuffer } from "../paint"
 import { layout as resolveLayout } from "../layout"
-import { surface } from "../tokens"
 import type { SceneNode } from "../scene"
 
 export type AtlasFrame = {
@@ -38,21 +37,6 @@ export function render(data: GraphData, width: number, height: number, cellW: nu
   const buf = createBuffer(width, height)
   clear(buf, 0x00000000)
   paint(scene.root, buf)
-
-  // DEBUG: count non-transparent pixels in buffer
-  let visible = 0
-  for (let i = 3; i < buf.data.length; i += 4) {
-    if (buf.data[i] > 0) visible++
-  }
-  // Log to stderr so it doesn't break the TUI
-  if (typeof process !== "undefined") {
-    const nodes = placed.nodes.length
-    const edges = placed.edges.length
-    const children = scene.root.children.length
-    process.stderr.write(
-      `[TGE] buf=${width}x${height} nodes=${nodes} edges=${edges} scene_children=${children} visible_px=${visible}\n`,
-    )
-  }
 
   // 5. Collect text regions for cell-layer rendering
   const texts = textRegions(scene.root)

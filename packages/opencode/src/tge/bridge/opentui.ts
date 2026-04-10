@@ -11,11 +11,21 @@
  * Call drawSuperSampleBuffer at the region's cell position.
  * Void black background matches opentui's bg, so non-graphical cells
  * look identical to unpainted cells.
+ *
+ * Text labels are written AFTER the supersample call via drawText,
+ * so they are not overwritten by pixel data.
  */
 
 import type { PixelBuffer } from "../paint/buffer"
 import { ptr } from "bun:ffi"
-import { type OptimizedBuffer } from "@opentui/core"
+import { RGBA, type OptimizedBuffer } from "@opentui/core"
+
+export type TextLabel = {
+  content: string
+  col: number
+  row: number
+  fg: number // packed RGBA u32
+}
 
 export type Region = {
   col: number
@@ -24,6 +34,7 @@ export type Region = {
   rows: number
   buf: PixelBuffer
   key: string
+  labels?: TextLabel[]
 }
 
 export type Bridge = {
@@ -113,6 +124,16 @@ export function bridge(cellW: number, cellH: number, _mode: "supersample" | "hal
       buffer.drawSuperSampleBuffer(region.col, region.row, ptr(aligned), aligned.length, "rgba8unorm", stride)
     } catch {
       // silent
+    }
+
+    // Write text labels AFTER supersample so they are not overwritten
+    if (region.labels) {
+      const bg = RGBA.fromInts(VR, VG, VB, 0)
+      for (const lbl of region.labels) {
+        const [r, g, b, a] = [(lbl.fg >>> 24) & 0xff, (lbl.fg >>> 16) & 0xff, (lbl.fg >>> 8) & 0xff, lbl.fg & 0xff]
+        const fg = RGBA.fromInts(r, g, b, a)
+        buffer.drawText(lbl.content, region.col + lbl.col, region.row + lbl.row, fg, bg)
+      }
     }
   }
 

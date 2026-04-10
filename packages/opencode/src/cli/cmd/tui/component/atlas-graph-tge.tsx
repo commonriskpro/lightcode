@@ -7,18 +7,22 @@
  * Integration:
  *   1. Compute graph data from session state (same extract logic)
  *   2. Render to PixelBuffer via TGE
- *   3. Submit pixel buffer to TGE bridge (→ postProcessFn → OptimizedBuffer)
- *   4. Overlay text labels in cell layer via opentui's normal text rendering
+ *   3. Submit pixel buffer + text labels to TGE bridge
+ *   4. Bridge calls drawSuperSampleBuffer, then drawText for labels
+ *
+ * Labels are rendered AFTER supersample so they are never overwritten.
  *
  * Same props interface as the original AtlasGraph = drop-in replacement.
  */
 
-import { createMemo, createResource, createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js"
+import { createMemo, createResource, createSignal, createEffect, onCleanup, onMount, Show } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
 import { extract, render as renderAtlas, type AtlasFrame } from "@/tge/atlas"
 import { useTGE } from "@/tge/bridge/context"
+import { type RGBA, type Renderable } from "@opentui/core"
+import type { TextLabel } from "@/tge/bridge/opentui"
 
 type Memory = {
   observations: string | null
@@ -29,11 +33,31 @@ type Memory = {
   is_reflecting: boolean
 }
 
+/** Pack an opentui RGBA into a u32 0xRRGGBBAA. */
+function pack(c: RGBA): number {
+  const [r, g, b, a] = c.toInts()
+  return ((r << 24) | (g << 16) | (b << 8) | a) >>> 0
+}
+
+/** Walk up the renderable tree to compute absolute terminal position. */
+function abs(r: Renderable): { col: number; row: number } {
+  let col = 0
+  let row = 0
+  let cur: Renderable | null = r
+  while (cur) {
+    col += cur.x
+    row += cur.y
+    cur = cur.parent
+  }
+  return { col, row }
+}
+
 export function AtlasGraphTGE(props: { sessionID: string; width: number; height: number }) {
   const sync = useSync()
   const sdk = useSDK()
   const { theme } = useTheme()
   const tge = useTGE()
+  let anchor: Renderable | undefined
 
   const session = createMemo(() => sync.session.get(props.sessionID))
   const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
@@ -88,28 +112,11 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     return renderAtlas(d, pw, ph, tge.cellW(), tge.cellH())
   })
 
-  // Submit pixel buffer to bridge on every frame update
-  createEffect(() => {
-    const f = frame()
-    if (!f || !tge.active()) return
-    tge.submit({
-      key: "atlas-field",
-      col: 0,
-      row: 0,
-      cols: props.width,
-      rows: props.height,
-      buf: f.buffer,
-    })
-  })
-
-  // Clean up pixel region on unmount
-  onCleanup(() => tge.clear())
-
   // Color lookup for text labels (Void Black semantics)
-  const labelColor = (kind: string, ring: number) => {
+  const color = (kind: string, ring: number): RGBA => {
     if (ring === 0) return theme.info
     if (ring <= 1) {
-      const map: Record<string, typeof theme.text> = {
+      const map: Record<string, RGBA> = {
         thread: theme.info,
         parent: theme.secondary,
         child: theme.secondary,
@@ -124,24 +131,39 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     return theme.textMuted
   }
 
+  // Build text labels for the bridge (rendered AFTER supersample)
+  const labels = createMemo((): TextLabel[] => {
+    const f = frame()
+    if (!f) return []
+    return f.texts.map((t) => ({
+      content: t.content,
+      col: t.col,
+      row: t.row,
+      fg: pack(color((t.node.data.kind as string) ?? "", (t.node.data.ring as number) ?? 2)),
+    }))
+  })
+
+  // Submit pixel buffer + labels to bridge on every frame update
+  createEffect(() => {
+    const f = frame()
+    if (!f || !tge.active() || !anchor) return
+    const pos = abs(anchor)
+    tge.submit({
+      key: "atlas-field",
+      col: pos.col,
+      row: pos.row,
+      cols: props.width,
+      rows: props.height,
+      buf: f.buffer,
+      labels: labels(),
+    })
+  })
+
+  // Clean up pixel region on unmount
+  onCleanup(() => tge.clear())
+
   return (
-    <box width={props.width} height={props.height}>
-      <Show when={frame()}>
-        {(f) => (
-          <For each={f().texts}>
-            {(region) => (
-              <box position="absolute" left={region.col} top={region.row} width={region.cols} height={region.rows}>
-                <text
-                  fg={labelColor((region.node.data.kind as string) ?? "", (region.node.data.ring as number) ?? 2)}
-                  wrapMode="none"
-                >
-                  {region.content}
-                </text>
-              </box>
-            )}
-          </For>
-        )}
-      </Show>
+    <box ref={(r: Renderable) => (anchor = r)} width={props.width} height={props.height}>
       <Show when={!frame()}>
         <box flexGrow={1} alignItems="center" justifyContent="center">
           <text fg={theme.textMuted}>Loading atlas field…</text>

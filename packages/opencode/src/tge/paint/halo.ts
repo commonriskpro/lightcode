@@ -9,7 +9,13 @@ import type { PixelBuffer } from "./buffer"
 import { blend } from "./buffer"
 import { rgba } from "../tokens/color"
 
-/** Draw a soft radial halo glow. */
+/**
+ * Draw a soft radial halo glow.
+ *
+ * Falloff uses a plateau-then-drop curve: full intensity in the inner 40%,
+ * then steep quadratic falloff. This ensures the halo survives supersample
+ * averaging where each terminal cell averages ~10x20 pixels.
+ */
 export function halo(buf: PixelBuffer, cx: number, cy: number, r: number, color: number, intensity = 1) {
   const [cr, cg, cb, ca] = rgba(color)
   if (ca === 0 || r <= 0 || intensity <= 0) return
@@ -19,13 +25,15 @@ export function halo(buf: PixelBuffer, cx: number, cy: number, r: number, color:
   const x1 = Math.min(buf.width, Math.ceil(cx + r))
   const y1 = Math.min(buf.height, Math.ceil(cy + r))
 
+  // Inner 40% of radius is full intensity, then quadratic falloff
+  const inner = r * 0.4
+  const outer = r - inner
+
   for (let py = y0; py < y1; py++) {
     for (let px = x0; px < x1; px++) {
       const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
       if (dist >= r) continue
-      // Smooth falloff: cubic ease-out
-      const t = 1 - dist / r
-      const falloff = t * t * (3 - 2 * t) // smoothstep
+      const falloff = dist <= inner ? 1 : 1 - ((dist - inner) / outer) ** 2
       const a = Math.round(ca * falloff * intensity)
       if (a <= 0) continue
       blend(buf, px, py, ((cr << 24) | (cg << 16) | (cb << 8) | a) >>> 0)
