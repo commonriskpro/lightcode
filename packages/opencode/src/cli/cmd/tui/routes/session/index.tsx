@@ -212,10 +212,10 @@ export function Session() {
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [animationsEnabled, setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
-  const [atlasVisible, setAtlasVisible] = createSignal(false)
+  const [atlasVisible, setAtlasVisible] = createSignal(true)
 
-  const wide = createMemo(() => dimensions().width > 100)
-  const extraWide = createMemo(() => dimensions().width > 150)
+  const wide = createMemo(() => dimensions().width > 90)
+  const extraWide = createMemo(() => dimensions().width > 140)
   const sidebarVisible = createMemo(() => {
     if (session()?.parentID) return false
     if (sidebarOpen()) return true
@@ -224,12 +224,13 @@ export function Session() {
   })
   const contextVisible = createMemo(() => {
     if (session()?.parentID) return false
-    if (!sidebarVisible()) return false
     return extraWide()
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
+  const sidebarWidth = 24
+  const contextWidth = 36
   const contentWidth = createMemo(
-    () => dimensions().width - (sidebarVisible() ? 28 : 0) - (contextVisible() ? 34 : 0) - 4,
+    () => dimensions().width - (sidebarVisible() ? sidebarWidth : 0) - (contextVisible() ? contextWidth : 0) - 4,
   )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
@@ -1117,7 +1118,7 @@ export function Session() {
         <Show when={sidebarVisible()}>
           <Switch>
             <Match when={wide()}>
-              <Sidebar sessionID={route.sessionID} />
+              <Sidebar sessionID={route.sessionID} width={sidebarWidth} />
             </Match>
             <Match when={!wide()}>
               <box
@@ -1129,60 +1130,106 @@ export function Session() {
                 alignItems="flex-start"
                 backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
               >
-                <Sidebar sessionID={route.sessionID} />
+                <Sidebar sessionID={route.sessionID} width={sidebarWidth} />
               </box>
             </Match>
           </Switch>
         </Show>
 
-        {/* Atlas Field — center */}
-        <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+        {/* Atlas Field — center (protagonist) */}
+        <box flexGrow={1} paddingBottom={1} paddingLeft={1} paddingRight={1}>
           <Show when={session()}>
-            {/* Field strip */}
-            <box flexDirection="row" flexShrink={0} justifyContent="space-between" height={1}>
+            {/* Field strip — always visible header */}
+            <box
+              flexDirection="row"
+              flexShrink={0}
+              justifyContent="space-between"
+              height={1}
+              paddingLeft={1}
+              paddingRight={1}
+            >
               <box flexDirection="row" gap={2}>
-                <text fg={theme.info} wrapMode="none">
-                  {atlasVisible() ? "ATLAS OPEN" : "◈"}
-                </text>
                 <text fg={theme.text} wrapMode="none">
-                  {Locale.truncate(session()!.title, 30)}
+                  <b>
+                    <span style={{ fg: theme.success }}>◈</span> LIGHTCODE
+                  </b>
                 </text>
-                <Show when={atlasVisible()}>
-                  <text fg={theme.textMuted} wrapMode="none">
-                    CENTER LOCKED
-                  </text>
-                </Show>
+                <text fg={theme.textMuted} wrapMode="none">
+                  memory atlas
+                </text>
               </box>
-              <box flexDirection="row" gap={2}>
-                <Show when={atlasVisible()}>
-                  <text fg={theme.textMuted} wrapMode="none">
-                    NODES:{" "}
-                    {(sync.data.message[route.sessionID] ?? []).filter((m) => m.role === "user").length +
-                      (sync.data.session_diff[route.sessionID] ?? []).length}
-                  </text>
-                  <text
-                    fg={
-                      (sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length > 0
-                        ? theme.warning
-                        : theme.textMuted
-                    }
-                    wrapMode="none"
+              <box flexDirection="row" gap={1}>
+                <text wrapMode="none">
+                  <span
+                    style={{
+                      bg: atlasVisible() ? theme.info : theme.backgroundElement,
+                      fg: atlasVisible() ? theme.background : theme.textMuted,
+                    }}
                   >
-                    QUEUE: {(sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length}
-                  </text>
-                </Show>
-                <Show when={!atlasVisible()}>
-                  <text fg={theme.textMuted} wrapMode="none">
-                    {sync.data.session_status?.[route.sessionID]?.type === "idle" ? "idle" : "active"}
-                  </text>
-                </Show>
+                    {" "}
+                    ATLAS{" "}
+                  </span>
+                </text>
+                <text wrapMode="none">
+                  <span
+                    style={{
+                      bg: !atlasVisible() ? theme.info : theme.backgroundElement,
+                      fg: !atlasVisible() ? theme.background : theme.textMuted,
+                    }}
+                  >
+                    {" "}
+                    THREAD{" "}
+                  </span>
+                </text>
               </box>
             </box>
+
+            {/* Field context bar — thread + stats */}
+            <box
+              flexDirection="row"
+              flexShrink={0}
+              justifyContent="space-between"
+              height={1}
+              paddingLeft={1}
+              paddingRight={1}
+              backgroundColor={theme.backgroundPanel}
+            >
+              <box flexDirection="row" gap={2}>
+                <text fg={theme.info} wrapMode="none">
+                  THREAD: {Locale.truncate(session()!.title, 24).toUpperCase()}
+                </text>
+                <text fg={theme.textMuted} wrapMode="none">
+                  {atlasVisible() ? "CENTER LOCKED" : ""}
+                </text>
+              </box>
+              <box flexDirection="row" gap={2}>
+                <text fg={theme.textMuted} wrapMode="none">
+                  NODES:{" "}
+                  {(sync.data.message[route.sessionID] ?? []).filter((m) => m.role === "user").length +
+                    (sync.data.session_diff[route.sessionID] ?? []).length}
+                </text>
+                <text
+                  fg={
+                    (sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length > 0
+                      ? theme.warning
+                      : theme.textMuted
+                  }
+                  wrapMode="none"
+                >
+                  QUEUE: {(sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length}
+                </text>
+                <text fg={theme.textMuted} wrapMode="none">
+                  {sync.data.session_status?.[route.sessionID]?.type === "idle" ? "IDLE" : "ACTIVE"}
+                </text>
+              </box>
+            </box>
+
+            {/* Main surface — atlas graph OR message thread */}
             <Show when={atlasVisible()}>
               <AtlasGraph
                 sessionID={route.sessionID}
                 width={contentWidth()}
-                height={Math.max(dimensions().height - 4, 12)}
+                height={Math.max(dimensions().height - 8, 10)}
               />
             </Show>
             <Show when={!atlasVisible()}>
@@ -1303,6 +1350,8 @@ export function Session() {
                 </For>
               </scrollbox>
             </Show>
+
+            {/* Prompt zone — compressed at bottom */}
             <box flexShrink={0}>
               <Show when={permissions().length > 0}>
                 <PermissionPrompt request={permissions()[0]} />
@@ -1339,9 +1388,10 @@ export function Session() {
           </Show>
           <Toast />
         </box>
+
         {/* Context Panel — right panel */}
         <Show when={contextVisible()}>
-          <ContextPanel sessionID={route.sessionID} />
+          <ContextPanel sessionID={route.sessionID} width={contextWidth} />
         </Show>
       </box>
     </context.Provider>

@@ -939,14 +939,14 @@ export function Prompt(props: PromptProps) {
             bottomLeft: "╹",
           }}
         >
-          <box paddingLeft={2} paddingRight={2} flexShrink={0} backgroundColor={pp().shell} flexGrow={1}>
+          <box paddingLeft={1} paddingRight={1} flexShrink={0} backgroundColor={pp().shell} flexGrow={1}>
             <textarea
               placeholder={placeholderText()}
               placeholderColor={pp().placeholder}
               textColor={keybind.leader ? theme.textMuted : theme.text}
               focusedTextColor={keybind.leader ? theme.textMuted : theme.text}
               minHeight={1}
-              maxHeight={4}
+              maxHeight={3}
               onContentChange={() => {
                 const value = input.plainText
                 setStore("prompt", "input", value)

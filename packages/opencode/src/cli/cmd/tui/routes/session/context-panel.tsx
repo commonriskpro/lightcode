@@ -18,7 +18,7 @@ function named(title: string, max: number, fallback: string): string {
   return title.slice(0, max - 1) + "…"
 }
 
-export function ContextPanel(props: { sessionID: string }) {
+export function ContextPanel(props: { sessionID: string; width?: number }) {
   const sync = useSync()
   const { theme } = useTheme()
   const config = useTuiConfig()
@@ -27,6 +27,7 @@ export function ContextPanel(props: { sessionID: string }) {
   const sb = createMemo(() => sidebarPrimitives(theme))
   const chips = createMemo(() => tags(theme))
   const bd = createMemo(() => borderPrimitives(theme))
+  const w = () => props.width ?? 36
 
   const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
   const last = createMemo(() =>
@@ -91,7 +92,7 @@ export function ContextPanel(props: { sessionID: string }) {
     <Show when={session()}>
       <box
         backgroundColor={sb().bg}
-        width={34}
+        width={w()}
         height="100%"
         paddingTop={1}
         paddingBottom={1}
@@ -100,65 +101,69 @@ export function ContextPanel(props: { sessionID: string }) {
       >
         <scrollbox flexGrow={1} scrollAcceleration={accel()}>
           <box flexShrink={0} gap={1}>
-            {/* Selected node header */}
+            {/* Panel header */}
             <box>
               <text fg={sb().title}>
                 <b>Context panel</b>
               </text>
-              <text fg={sb().muted}>Selected node / {named(session()!.title, 18, "thread")}</text>
+              <text fg={sb().muted}>Selected node / {named(session()!.title, w() - 20, "thread")}</text>
             </box>
 
-            {/* Node detail card */}
+            {/* Selected node card */}
             <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
               <text fg={sb().title}>
-                <b>{named(session()!.title, 24, "Active thread")}</b>
+                <b>{named(session()!.title, w() - 6, "Active thread")}</b>
               </text>
-              <box flexDirection="row" gap={1}>
-                <text fg={chips().thread.fg}>
+              <box flexDirection="row" gap={1} paddingTop={1}>
+                <text>
                   <span style={{ bg: chips().thread.bg, fg: chips().thread.fg }}> THREAD </span>
                 </text>
-                <text fg={badge().color}>
+                <text>
                   <span style={{ bg: badge().color, fg: theme.background }}> {badge().text} </span>
                 </text>
               </box>
               <Show when={model()}>
-                <text fg={sb().muted}>
+                <text fg={sb().muted} paddingTop={1}>
                   {model()} · {agent()}
                 </text>
               </Show>
+              <text fg={sb().muted} wrapMode="word" paddingTop={1}>
+                Primary thread for current work.{" "}
+                {related() > 0 ? `Highest edge density in the visible atlas field.` : "No edges connected yet."}
+              </text>
             </box>
 
             {/* Closest related nodes */}
             <Show when={related() > 0}>
               <box>
                 <text fg={sb().title}>
-                  <b>Related nodes</b>
+                  <b>Closest related nodes</b>
                 </text>
                 <Show when={parent()}>
                   <text fg={sb().muted}>
-                    <span style={{ fg: chips().anchor.bg }}>◇</span> {named(parent()!.title, 22, "parent")}
+                    <span style={{ fg: chips().anchor.bg }}>◇</span> {named(parent()!.title, w() - 8, "parent")}
                   </text>
                 </Show>
-                <For each={children().slice(0, 3)}>
+                <For each={children().slice(0, 4)}>
                   {(child) => (
                     <text fg={sb().muted}>
-                      <span style={{ fg: chips().anchor.bg }}>◆</span> {named(child.title, 22, "fork")}
+                      <span style={{ fg: chips().thread.bg }}>◆</span> {named(child.title, w() - 8, "fork")}
                     </text>
                   )}
                 </For>
-                <For each={todos().slice(0, 3)}>
+                <For each={todos().slice(0, 4)}>
                   {(todo) => (
                     <text fg={sb().muted}>
-                      <span style={{ fg: chips().signal.bg }}>▲</span> {Locale.truncate(todo.content, 22)}
+                      <span style={{ fg: chips().signal.bg }}>▲</span> {Locale.truncate(todo.content, w() - 8)}
                     </text>
                   )}
                 </For>
-                <For each={diffs().slice(0, 3)}>
+                <For each={diffs().slice(0, 4)}>
                   {(diff) => {
                     const name = diff.file.split("/").pop() ?? diff.file
                     return (
                       <text fg={sb().muted}>
-                        <span style={{ fg: sb().body }}>□</span> {Locale.truncate(name, 22)}
+                        <span style={{ fg: sb().body }}>□</span> {Locale.truncate(name, w() - 8)}
                       </text>
                     )
                   }}
@@ -166,13 +171,17 @@ export function ContextPanel(props: { sessionID: string }) {
               </box>
             </Show>
 
-            {/* Field interpretation */}
+            {/* Field interpretation — narrative */}
             <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
               <text fg={sb().title}>
                 <b>Field interpretation</b>
               </text>
               <text fg={sb().muted} wrapMode="word">
                 {interpretation()}
+              </text>
+              <text fg={sb().muted} wrapMode="word" paddingTop={1}>
+                The graph shows which anchors, memories and signals sit nearest to the active thread. Relationship
+                remains the main navigation model.
               </text>
             </box>
 
@@ -182,12 +191,15 @@ export function ContextPanel(props: { sessionID: string }) {
         </scrollbox>
 
         {/* Actions footer */}
-        <box flexShrink={0} paddingTop={1} flexDirection="row" gap={1}>
+        <box flexShrink={0} paddingTop={1} flexDirection="row" gap={1} flexWrap="wrap">
           <text>
-            <span style={{ bg: chips().anchor.bg, fg: chips().anchor.fg }}> /atlas </span>
+            <span style={{ bg: chips().anchor.bg, fg: chips().anchor.fg }}> focus neighborhood </span>
           </text>
           <text>
-            <span style={{ bg: chips().signal.bg, fg: chips().signal.fg }}> /signal </span>
+            <span style={{ bg: chips().signal.bg, fg: chips().signal.fg }}> save anchor </span>
+          </text>
+          <text>
+            <span style={{ bg: chips().thread.bg, fg: chips().thread.fg }}> inject signal </span>
           </text>
         </box>
       </box>
