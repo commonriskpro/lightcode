@@ -17,8 +17,10 @@ import type { PixelBuffer } from "../paint/buffer"
 import { ptr } from "bun:ffi"
 import { RGBA, type OptimizedBuffer } from "@opentui/core"
 import { transmit as kittyTransmit, remove as kittyRemove } from "../backend/kitty/transmit"
+import { inTmux } from "../backend/kitty/passthrough"
 
 const stdout = globalThis.process.stdout
+const useKitty = !inTmux() // Kitty images are global in tmux — fall back to packed
 
 export type TextLabel = {
   content: string
@@ -339,8 +341,8 @@ export function bridge(_cellW: number, _cellH: number, mode: "supersample" | "ha
     const cw = Math.max(1, Math.round(src.width / cols))
     const ch = Math.max(1, Math.round(src.height / rows))
 
-    // ── Kitty mode: transmit full-resolution image ──
-    if (mode === "supersample") {
+    // ── Kitty mode: transmit full-resolution image (direct terminal only) ──
+    if (mode === "supersample" && useKitty) {
       // Composite onto void black
       const img = composite(src, cols, rows, cw, ch)
 
