@@ -63,7 +63,7 @@ import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { ContextPanel } from "./context-panel"
 import { AtlasGraph } from "../../component/atlas-graph"
-import { AtlasGraphTGE } from "../../component/atlas-graph-tge"
+import { AtlasGraphTGE, type PlacedNode } from "../../component/atlas-graph-tge"
 import { AtlasPanels } from "../../component/atlas-panels"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
@@ -215,6 +215,7 @@ export function Session() {
   const [animationsEnabled, setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
   const [atlasVisible, setAtlasVisible] = createSignal(true)
+  const [selectedNode, setSelectedNode] = createSignal<PlacedNode | null>(null)
 
   const wide = createMemo(() => dimensions().width > 90)
   const extraWide = createMemo(() => dimensions().width > 140)
@@ -1298,6 +1299,8 @@ export function Session() {
                   sessionID={route.sessionID}
                   width={contentWidth()}
                   height={Math.max(dimensions().height - 14, 8)}
+                  selectedId={selectedNode()?.id}
+                  onSelect={setSelectedNode}
                 />
               </Show>
 
@@ -1463,7 +1466,7 @@ export function Session() {
 
         {/* Context Panel — right panel */}
         <Show when={contextVisible()}>
-          <ContextPanel sessionID={route.sessionID} width={contextWidth} />
+          <ContextPanel sessionID={route.sessionID} width={contextWidth} selectedNode={selectedNode()} />
         </Show>
       </box>
     </context.Provider>

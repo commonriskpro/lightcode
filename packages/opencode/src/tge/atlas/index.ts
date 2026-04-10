@@ -8,3 +8,4 @@ export { extract, type GraphData, type GraphNode, type GraphEdge, type NodeKind,
 export { ring, type PlacedGraph, type PlacedNode, type Cluster, type Orbit } from "./layout"
 export { build } from "./build"
 export { render, type AtlasFrame } from "./render"
+export { hit, nearest } from "./hit"

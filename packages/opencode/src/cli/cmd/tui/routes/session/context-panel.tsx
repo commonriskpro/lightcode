@@ -7,8 +7,31 @@ import { getScrollAcceleration } from "../../util/scroll"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "@/util/locale"
 import { sidebar as sidebarPrimitives, tags, border as borderPrimitives } from "../../ui/primitives"
+import type { PlacedNode } from "../../component/atlas-graph-tge"
 
 const DEFAULT_TITLE = /^(New session|Child session) - \d{4}-\d{2}-\d{2}T/
+
+const SYMBOL: Record<string, string> = {
+  thread: "◈",
+  parent: "◇",
+  child: "◆",
+  anchor: "●",
+  signal: "▲",
+  file: "□",
+  mcp: "⊙",
+  drift: "⚠",
+}
+
+const KIND_LABEL: Record<string, string> = {
+  thread: "THREAD",
+  parent: "PARENT",
+  child: "FORK",
+  anchor: "ANCHOR",
+  signal: "SIGNAL",
+  file: "FILE",
+  mcp: "MCP",
+  drift: "DRIFT",
+}
 
 function named(title: string, max: number, fallback: string): string {
   if (DEFAULT_TITLE.test(title)) return fallback
@@ -18,7 +41,7 @@ function named(title: string, max: number, fallback: string): string {
   return title.slice(0, max - 1) + "…"
 }
 
-export function ContextPanel(props: { sessionID: string; width?: number }) {
+export function ContextPanel(props: { sessionID: string; width?: number; selectedNode?: PlacedNode | null }) {
   const sync = useSync()
   const { theme } = useTheme()
   const config = useTuiConfig()
@@ -88,6 +111,47 @@ export function ContextPanel(props: { sessionID: string; width?: number }) {
     return "Field is quiet. Emit a signal to activate."
   })
 
+  /** Whether a non-center node is selected */
+  const sel = createMemo(() => {
+    const n = props.selectedNode
+    if (!n || n.ring === 0) return null
+    return n
+  })
+
+  /** Description for the selected node based on kind */
+  const desc = createMemo(() => {
+    const n = sel()
+    if (!n) return null
+    if (n.kind === "thread" || n.kind === "parent" || n.kind === "child")
+      return "Thread in the session tree. Connected to the active thread via parent-child relationship."
+    if (n.kind === "anchor")
+      return n.cluster
+        ? `Memory anchor in ${n.cluster}. Anchors form the navigation backbone of the field.`
+        : "User message anchor. Represents a conversation turn in the thread."
+    if (n.kind === "signal") return "Pending signal (todo). Queued for processing by the active thread."
+    if (n.kind === "file") return "Modified file. This artifact was produced or changed during the thread."
+    if (n.kind === "mcp") return "Connected MCP server. Provides external tool capabilities to the thread."
+    if (n.kind === "drift") return "Drift indicator. The thread encountered errors or retries."
+    return "Node in the atlas field."
+  })
+
+  /** Chip color for the selected node kind */
+  const chip = createMemo(() => {
+    const n = sel()
+    if (!n) return chips().thread
+    const map: Record<string, ReturnType<typeof chips>[keyof ReturnType<typeof chips>]> = {
+      thread: chips().thread,
+      parent: chips().anchor,
+      child: chips().thread,
+      anchor: chips().anchor,
+      signal: chips().signal,
+      file: chips().anchor,
+      mcp: chips().anchor,
+      drift: chips().signal,
+    }
+    return map[n.kind] ?? chips().thread
+  })
+
   return (
     <Show when={session()}>
       <box
@@ -106,32 +170,63 @@ export function ContextPanel(props: { sessionID: string; width?: number }) {
               <text fg={sb().title}>
                 <b>Context panel</b>
               </text>
-              <text fg={sb().muted}>Selected node / {named(session()!.title, w() - 20, "thread")}</text>
+              <text fg={sb().muted}>
+                Selected node / {sel() ? sel()!.label : named(session()!.title, w() - 20, "thread")}
+              </text>
             </box>
 
-            {/* Selected node card */}
-            <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
-              <text fg={sb().title}>
-                <b>{named(session()!.title, w() - 6, "Active thread")}</b>
-              </text>
-              <box flexDirection="row" gap={1} paddingTop={1}>
-                <text>
-                  <span style={{ bg: chips().thread.bg, fg: chips().thread.fg }}> THREAD </span>
+            {/* ── Selected non-center node card ── */}
+            <Show when={sel()}>
+              <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+                <text fg={sb().title}>
+                  <b>
+                    {SYMBOL[sel()!.kind] ?? "·"} {sel()!.label}
+                  </b>
                 </text>
-                <text>
-                  <span style={{ bg: badge().color, fg: theme.background }}> {badge().text} </span>
+                <box flexDirection="row" gap={1} paddingTop={1}>
+                  <text>
+                    <span style={{ bg: chip().bg, fg: chip().fg }}> {KIND_LABEL[sel()!.kind] ?? "NODE"} </span>
+                  </text>
+                  <text>
+                    <span style={{ bg: theme.backgroundElement, fg: theme.textMuted }}> ring {sel()!.ring} </span>
+                  </text>
+                </box>
+                <Show when={sel()!.cluster}>
+                  <text fg={sb().muted} paddingTop={1}>
+                    cluster: {sel()!.cluster}
+                  </text>
+                </Show>
+                <text fg={sb().muted} wrapMode="word" paddingTop={1}>
+                  {desc()}
                 </text>
               </box>
-              <Show when={model()}>
-                <text fg={sb().muted} paddingTop={1}>
-                  {model()} · {agent()}
+            </Show>
+
+            {/* ── Default: active thread card (when no node or center selected) ── */}
+            <Show when={!sel()}>
+              <box backgroundColor={sb().card} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1}>
+                <text fg={sb().title}>
+                  <b>{named(session()!.title, w() - 6, "Active thread")}</b>
                 </text>
-              </Show>
-              <text fg={sb().muted} wrapMode="word" paddingTop={1}>
-                Primary thread for current work.{" "}
-                {related() > 0 ? `Highest edge density in the visible atlas field.` : "No edges connected yet."}
-              </text>
-            </box>
+                <box flexDirection="row" gap={1} paddingTop={1}>
+                  <text>
+                    <span style={{ bg: chips().thread.bg, fg: chips().thread.fg }}> THREAD </span>
+                  </text>
+                  <text>
+                    <span style={{ bg: badge().color, fg: theme.background }}> {badge().text} </span>
+                  </text>
+                </box>
+                <Show when={model()}>
+                  <text fg={sb().muted} paddingTop={1}>
+                    {model()} · {agent()}
+                  </text>
+                </Show>
+                <text fg={sb().muted} wrapMode="word" paddingTop={1}>
+                  Primary thread for current work.{" "}
+                  {related() > 0 ? `Highest edge density in the visible atlas field.` : "No edges connected yet."}
+                </text>
+              </box>
+            </Show>
 
             {/* Closest related nodes */}
             <Show when={related() > 0}>

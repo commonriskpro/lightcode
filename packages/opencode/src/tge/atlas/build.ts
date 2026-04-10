@@ -20,8 +20,10 @@ import type { EdgeWeight } from "./extract"
 
 /** Build a TGE scene graph from a placed graph.
  * In screen-pixel mode, cellW and cellH are the actual terminal cell pixel sizes.
+ *
+ * @param selectedId — ID of the selected node (gets glow, others get dimmed)
  */
-export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
+export function build(pg: PlacedGraph, cellW: number, cellH: number, selectedId?: string | null): Scene {
   const s = createScene(pg.width, pg.height)
 
   // Root is transparent — only graphical elements paint pixels.
@@ -83,6 +85,7 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
 
   // Build node index for edge lookup
   const idx = new Map(pg.nodes.map((n) => [n.id, n]))
+  const hasSelection = !!selectedId
 
   // Edges
   for (let ei = 0; ei < pg.edges.length; ei++) {
@@ -100,11 +103,15 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
     const sign = ei % 2 === 0 ? 1 : -1
     const curve = mag * sign
 
+    // Dim edges not connected to the selected node
+    const connected = hasSelection && (e.from === selectedId || e.to === selectedId)
+    const edgeDim = hasSelection && !connected
+
     s.add(
       "panel",
       {
         tag: `edge-${e.from}-${e.to}`,
-        data: { type: "edge", x0: a.px, y0: a.py, x1: b.px, y1: b.py, weight: e.weight, curve },
+        data: { type: "edge", x0: a.px, y0: a.py, x1: b.px, y1: b.py, weight: e.weight, curve, dimmed: edgeDim },
       },
       container,
     )
@@ -112,8 +119,10 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
 
   // Nodes
   for (const n of pg.nodes) {
+    const selected = n.id === selectedId
+    const dimmed = hasSelection && !selected
     const r = n.ring === 0 ? graphTokens.centerRadius : n.ring <= 1 ? graphTokens.nodeRadius : graphTokens.smallRadius
-    const extent = r + (n.ring === 0 ? graphTokens.haloRadius : r * 2)
+    const extent = r + (selected ? r * 5 : n.ring === 0 ? graphTokens.haloRadius : r * 2)
     const size = extent * 2
 
     s.add(
@@ -127,7 +136,7 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
           width: size,
           height: size,
         },
-        data: { type: "node", kind: n.kind, ring: n.ring, selected: false, hover: false },
+        data: { type: "node", kind: n.kind, ring: n.ring, selected, dimmed, hover: false },
       },
       container,
     )

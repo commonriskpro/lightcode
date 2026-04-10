@@ -24,13 +24,22 @@ export type AtlasFrame = {
 /** Render the Atlas Field to a pixel buffer.
  * When called with actual terminal cell dimensions (cellW/cellH), the buffer
  * is in screen-pixel coordinates and circles are naturally circular.
+ *
+ * @param selectedId — ID of the selected node (highlights it, dims others)
  */
-export function render(data: GraphData, width: number, height: number, cellW: number, cellH: number): AtlasFrame {
+export function render(
+  data: GraphData,
+  width: number,
+  height: number,
+  cellW: number,
+  cellH: number,
+  selectedId?: string | null,
+): AtlasFrame {
   // 1. Layout nodes in concentric rings
   const placed = ringLayout(data.nodes, data.edges, width, height)
 
   // 2. Build TGE scene graph
-  const scene = build(placed, cellW, cellH)
+  const scene = build(placed, cellW, cellH, selectedId)
 
   // 3. Resolve layout (positions absolute nodes)
   resolveLayout(scene.root, { width, height })

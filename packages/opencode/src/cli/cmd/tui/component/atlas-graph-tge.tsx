@@ -1,12 +1,14 @@
 /**
  * TGE-powered Atlas Field graph component.
  *
- * Renders the Atlas Field graph using pixel-level supersample rendering
- * via opentui's drawSuperSampleBuffer. The pixel data is submitted to
- * the TGE bridge which paints it in the postProcessFn (runs after all
- * component rendering). Text labels are drawn on top via drawText.
+ * Renders the Atlas Field graph using pixel-level rendering via the TGE bridge.
+ * Supports node selection via mouse click and keyboard navigation.
  *
- * Same props interface as the original AtlasGraph = drop-in replacement.
+ * Selection model (progressive disclosure):
+ *   - Single click: select node → highlight + context panel updates
+ *   - Click empty space: deselect → context panel shows active thread
+ *   - Arrow keys: cycle through nodes (TODO)
+ *   - Enter/double-click: action (navigate thread, open file, etc.) (TODO)
  */
 
 import { createMemo, createResource, createSignal, createEffect, onCleanup, onMount, Show } from "solid-js"
@@ -14,10 +16,12 @@ import { useSync } from "@tui/context/sync"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
 import { useRenderer } from "@opentui/solid"
-import { extract, render as renderAtlas } from "@/tge/atlas"
+import { extract, render as renderAtlas, hit, type PlacedNode } from "@/tge/atlas"
 import { useTGE } from "@/tge/bridge/context"
 import { type RGBA, type Renderable } from "@opentui/core"
 import type { TextLabel } from "@/tge/bridge/opentui"
+
+export type { PlacedNode } from "@/tge/atlas"
 
 type Memory = {
   observations: string | null
@@ -47,13 +51,27 @@ function abs(r: Renderable): { col: number; row: number } {
   return { col, row }
 }
 
-export function AtlasGraphTGE(props: { sessionID: string; width: number; height: number }) {
+export function AtlasGraphTGE(props: {
+  sessionID: string
+  width: number
+  height: number
+  selectedId?: string | null
+  onSelect?: (node: PlacedNode | null) => void
+}) {
   const sync = useSync()
   const sdk = useSDK()
   const { theme } = useTheme()
   const renderer = useRenderer()
   const tge = useTGE()
   let anchor: Renderable | undefined
+
+  // Last rendered frame — needed for hit testing against node positions
+  let frame: ReturnType<typeof renderAtlas> | null = null
+  // Cached layout dimensions for pixel conversion
+  let graphCol = 0
+  let graphRow = 0
+  let cellW = 7
+  let cellH = 18
 
   const session = createMemo(() => sync.session.get(props.sessionID))
   const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
@@ -110,28 +128,40 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
     return theme.textMuted
   }
 
+  /** Handle mouse click — hit test against graph nodes. */
+  function click(evt: { x: number; y: number }) {
+    if (!frame) return
+    // Convert terminal cell coords → pixel coords relative to graph origin
+    const px = (evt.x - graphCol) * cellW + cellW / 2
+    const py = (evt.y - graphRow) * cellH + cellH / 2
+    const node = hit(frame.graph.nodes, px, py)
+    props.onSelect?.(node)
+  }
+
   createEffect(() => {
     const d = data()
     if (!d || !tge.active() || !anchor) return
 
     const pos = abs(anchor)
-    // Clamp graph so it never extends past its parent's content area.
-    // The parent box (flexGrow=1, pL=1, pR=1) occupies the center column;
-    // its right edge = renderer.width - contextPanelWidth (36 when visible,
-    // i.e. renderer.width > 140). Subtract pos.col to get max columns.
     const right = renderer.width > 140 ? renderer.width - 36 : renderer.width
     const maxCols = Math.max(1, right - pos.col)
     const gc = Math.max(1, Math.min(props.width, maxCols))
     const gr = Math.max(1, Math.min(props.height, renderer.height - pos.row))
-    // Screen pixel dimensions: cells × cell pixel size
     const cw = Math.max(1, tge.cellW())
     const ch = Math.max(1, tge.cellH())
     const pw = gc * cw
     const ph = gr * ch
     if (pw <= 0 || ph <= 0) return
 
-    // Render graph in screen-pixel space — circles are circular here.
-    const f = renderAtlas(d, pw, ph, cw, ch)
+    // Cache for hit testing
+    graphCol = pos.col
+    graphRow = pos.row
+    cellW = cw
+    cellH = ch
+
+    // Render graph in screen-pixel space (pass selected node for visual highlight)
+    const f = renderAtlas(d, pw, ph, cw, ch, props.selectedId)
+    frame = f
 
     const labels: TextLabel[] = f.texts.map((t) => ({
       content: t.content,
@@ -154,7 +184,12 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
   onCleanup(() => tge.clear())
 
   return (
-    <box ref={(r: Renderable) => (anchor = r)} width={props.width} height={props.height}>
+    <box
+      ref={(r: Renderable) => (anchor = r)}
+      width={props.width}
+      height={props.height}
+      onMouseUp={(evt: { x: number; y: number }) => click(evt)}
+    >
       <Show when={!data()}>
         <box flexGrow={1} alignItems="center" justifyContent="center">
           <text fg={theme.textMuted}>Loading atlas field…</text>
