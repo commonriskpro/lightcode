@@ -1,6 +1,6 @@
 import type { AssistantMessage, StepFinishPart } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { createMemo } from "solid-js"
+import { createMemo, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
 
@@ -8,6 +8,11 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 })
+
+function bar(pct: number, width: number): string {
+  const filled = Math.round(Math.min(1, pct) * width)
+  return "█".repeat(filled) + "░".repeat(width - filled)
+}
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
@@ -24,13 +29,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       }
     }
 
-    // Get tokens from the last step-finish part to show the actual context for this step,
-    // not the accumulated tokens from multi-step streaming.
     const msgParts = parts(last.id)
     const lastStepFinish = msgParts.findLast((p): p is StepFinishPart => p.type === "step-finish")
-
-    // Context usage should include cached reads because those tokens still occupy
-    // model context even when they were reused from cache.
     const step = lastStepFinish ?? last
     const tokens =
       step.tokens.input + step.tokens.cache.read + step.tokens.cache.write + step.tokens.output + step.tokens.reasoning
@@ -42,14 +42,34 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }
   })
 
+  const pct = createMemo(() => (state().percent ?? 0) / 100)
+  const color = createMemo(() => {
+    const p = pct()
+    if (p >= 0.9) return theme().error
+    if (p >= 0.7) return theme().warning
+    return theme().info
+  })
+
   return (
     <box>
       <text fg={theme().text}>
-        <b>Context</b>
+        <b>
+          <span style={{ fg: theme().info }}>{"⊡"}</span> Telemetry
+        </b>
       </text>
-      <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-      <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
-      <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={theme().textMuted}>tokens</text>
+        <text fg={theme().text}>{state().tokens.toLocaleString()}</text>
+      </box>
+      <Show when={state().percent !== null}>
+        <text fg={color()}>
+          {bar(pct(), 18)} {state().percent}%
+        </text>
+      </Show>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={theme().textMuted}>cost</text>
+        <text fg={theme().text}>{money.format(cost())}</text>
+      </box>
     </box>
   )
 }

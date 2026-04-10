@@ -8,6 +8,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const list = createMemo(() => props.api.state.session.diff(props.session_id))
 
+  const icon = (status?: string) => {
+    if (status === "added") return { char: "+", fg: theme().success }
+    if (status === "deleted") return { char: "−", fg: theme().error }
+    return { char: "~", fg: theme().info }
+  }
+
   return (
     <Show when={list().length > 0}>
       <box>
@@ -16,26 +22,33 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
             <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
           </Show>
           <text fg={theme().text}>
-            <b>Modified Files</b>
+            <b>
+              <span style={{ fg: theme().secondary }}>{"●"}</span> Anchored
+            </b>
+            <span style={{ fg: theme().textMuted }}> {list().length}</span>
           </text>
         </box>
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>
-            {(item) => (
-              <box flexDirection="row" gap={1} justifyContent="space-between">
-                <text fg={theme().textMuted} wrapMode="none">
-                  {item.file}
-                </text>
-                <box flexDirection="row" gap={1} flexShrink={0}>
-                  <Show when={item.additions}>
-                    <text fg={theme().diffAdded}>+{item.additions}</text>
-                  </Show>
-                  <Show when={item.deletions}>
-                    <text fg={theme().diffRemoved}>-{item.deletions}</text>
-                  </Show>
+            {(item) => {
+              const name = item.file.split("/").pop() ?? item.file
+              const i = icon(item.status)
+              return (
+                <box flexDirection="row" gap={1} justifyContent="space-between">
+                  <text fg={theme().textMuted} wrapMode="none">
+                    <span style={{ fg: i.fg }}>{i.char}</span> {name}
+                  </text>
+                  <box flexDirection="row" gap={1} flexShrink={0}>
+                    <Show when={item.additions}>
+                      <text fg={theme().diffAdded}>+{item.additions}</text>
+                    </Show>
+                    <Show when={item.deletions}>
+                      <text fg={theme().diffRemoved}>-{item.deletions}</text>
+                    </Show>
+                  </box>
                 </box>
-              </box>
-            )}
+              )
+            }}
           </For>
         </Show>
       </box>
