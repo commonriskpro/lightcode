@@ -114,7 +114,7 @@ export namespace SyncEvent {
 
     // idempotent: need to ignore any events already logged
 
-    await Database.transaction(async (tx) => {
+    await Database.tx(async (tx) => {
       await projector(tx, event.data)
 
       if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
@@ -198,7 +198,7 @@ export namespace SyncEvent {
     // Note that this is an "immediate" transaction which is critical.
     // We need to make sure we can safely read and write with nothing
     // else changing the data from under us
-    await Database.transaction(
+    await Database.tx(
       async (tx) => {
         const id = EventID.ascending()
         const row = await tx.select().from(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, agg)).get()
@@ -214,7 +214,7 @@ export namespace SyncEvent {
   }
 
   export async function remove(aggregateID: string) {
-    await Database.transaction(async (tx) => {
+    await Database.tx(async (tx) => {
       await tx.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, aggregateID)).run()
       await tx.delete(EventTable).where(eq(EventTable.aggregate_id, aggregateID)).run()
     })

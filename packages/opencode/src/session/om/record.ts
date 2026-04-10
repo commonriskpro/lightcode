@@ -26,7 +26,7 @@ export namespace OM {
   }
 
   export async function upsert(rec: ObservationRecord): Promise<void> {
-    await Database.use((db) =>
+    await Database.write((db) =>
       db.insert(ObservationTable).values(rec).onConflictDoUpdate({ target: ObservationTable.id, set: rec }).run(),
     )
   }
@@ -47,7 +47,7 @@ export namespace OM {
   // addBufferSafe() is the canonical write path — prefer it over addBuffer() in production.
   // activate() is called when the "activate" or "block" signal fires to condense buffers.
   export async function addBuffer(buf: ObservationBuffer): Promise<void> {
-    await Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+    await Database.write((db) => db.insert(ObservationBufferTable).values(buf).run())
   }
 
   /**
@@ -70,8 +70,8 @@ export namespace OM {
     task?: string | null,
     continuation?: string | null,
   ): Promise<void> {
-    await Database.transaction(async () => {
-      await Database.use((db) => db.insert(ObservationBufferTable).values(buf).run())
+    await Database.tx(async () => {
+      await Database.write((db) => db.insert(ObservationBufferTable).values(buf).run())
 
       const rec = await Database.use((db) =>
         db.select().from(ObservationTable).where(eq(ObservationTable.session_id, sid)).get(),
@@ -83,7 +83,7 @@ export namespace OM {
         }
         if (task != null) patch.current_task = task
         if (continuation != null) patch.suggested_continuation = continuation
-        await Database.use((db) =>
+        await Database.write((db) =>
           db.update(ObservationTable).set(patch).where(eq(ObservationTable.session_id, sid)).run(),
         )
       } else {
@@ -104,7 +104,7 @@ export namespace OM {
           time_created: Date.now(),
           time_updated: Date.now(),
         }
-        await Database.use((db) => db.insert(ObservationTable).values(placeholder).run())
+        await Database.write((db) => db.insert(ObservationTable).values(placeholder).run())
       }
     })
     await publish(sid)
@@ -144,7 +144,7 @@ export namespace OM {
           observed_message_ids: mergeIds(rec.observed_message_ids ?? null, ids),
           time_updated: Date.now(),
         }
-        await Database.use((db) =>
+        await Database.write((db) =>
           db.update(ObservationTable).set(updated).where(eq(ObservationTable.id, rec.id)).run(),
         )
       } else {
@@ -163,10 +163,10 @@ export namespace OM {
           time_created: Date.now(),
           time_updated: Date.now(),
         }
-        await Database.use((db) => db.insert(ObservationTable).values(next).run())
+        await Database.write((db) => db.insert(ObservationTable).values(next).run())
       }
 
-      await Database.use((db) =>
+      await Database.write((db) =>
         db.delete(ObservationBufferTable).where(eq(ObservationBufferTable.session_id, sid)).run(),
       )
       await publish(sid)
@@ -175,7 +175,7 @@ export namespace OM {
 
   export async function reflect(sid: SessionID, txt: string): Promise<void> {
     return withSessionLock(sid, async () => {
-      await Database.use((db) =>
+      await Database.write((db) =>
         db
           .update(ObservationTable)
           .set({ reflections: txt, time_updated: Date.now() })
@@ -190,7 +190,7 @@ export namespace OM {
     const rec = await get(sid)
     if (!rec) return
     const merged = mergeIds(rec.observed_message_ids ?? null, ids)
-    await Database.use((db) =>
+    await Database.write((db) =>
       db
         .update(ObservationTable)
         .set({ observed_message_ids: merged, time_updated: Date.now() })

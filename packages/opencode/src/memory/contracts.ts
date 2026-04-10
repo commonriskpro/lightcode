@@ -234,13 +234,13 @@ export interface EmbedderBackend {
 
 export interface MemoryProvider {
   buildContext(opts: ContextBuildOptions): Promise<MemoryContext>
-  getWorkingMemory(scope: ScopeRef, key?: string): WorkingMemoryRecord[]
-  setWorkingMemory(scope: ScopeRef, key: string, value: string, format?: "markdown" | "json"): void
-  getObservations(sessionId: string): ObservationRecord | undefined
+  getWorkingMemory(scope: ScopeRef, key?: string): Promise<WorkingMemoryRecord[]>
+  setWorkingMemory(scope: ScopeRef, key: string, value: string, format?: "markdown" | "json"): Promise<void>
+  getObservations(sessionId: string): Promise<ObservationRecord | undefined>
   searchArtifacts(query: string, scopes: ScopeRef[], limit?: number): Promise<MemoryArtifact[]>
   indexArtifact(artifact: Omit<MemoryArtifact, "id" | "time_created" | "time_updated">): Promise<string>
-  getHandoff(childSessionId: string): AgentHandoff | undefined
-  writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): string
-  getForkContext(sessionId: string): ForkContext | undefined
-  writeForkContext(ctx: Omit<ForkContext, "id" | "time_created">): void
+  getHandoff(childSessionId: string): Promise<AgentHandoff | undefined>
+  writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): Promise<string>
+  getForkContext(sessionId: string): Promise<ForkContext | undefined>
+  writeForkContext(ctx: Omit<ForkContext, "id" | "time_created">): Promise<void>
 }

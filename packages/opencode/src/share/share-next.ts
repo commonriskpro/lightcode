@@ -78,7 +78,11 @@ export namespace ShareNext {
 
   const db = <T>(
     fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
-  ) => Effect.promise(() => Database.use(fn))
+  ) => Effect.promise(() => Database.read(fn))
+
+  const write = <T>(
+    fn: (d: Parameters<typeof Database.write>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
+  ) => Effect.promise(() => Database.write(fn))
 
   function api(resource: string): Api {
     return {
@@ -295,7 +299,7 @@ export namespace ShareNext {
           Effect.flatMap((r) => httpOk.execute(r)),
           Effect.flatMap(HttpClientResponse.schemaBodyJson(ShareSchema)),
         )
-        yield* db((db) =>
+        yield* write((db) =>
           db
             .insert(SessionShareTable)
             .values({ session_id: sessionID, id: result.id, secret: result.secret, url: result.url })
@@ -330,7 +334,7 @@ export namespace ShareNext {
           Effect.flatMap((r) => httpOk.execute(r)),
         )
 
-        yield* db((db) => db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run())
+        yield* write((db) => db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run())
       })
 
       return Service.of({ init, url, request, create, remove })

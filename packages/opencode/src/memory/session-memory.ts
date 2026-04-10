@@ -81,7 +81,7 @@ export namespace SessionMemory {
       if (cleared.has(sid)) return
       const vec = vecs[i]
       if (!vec) continue
-      await Database.use((db) =>
+      await Database.write((db) =>
         db
           .insert(MemorySessionChunkTable)
           .values({
@@ -181,7 +181,7 @@ export namespace SessionMemory {
     if (!(await available())) return
 
     cleared.add(sid)
-    await Database.use((db) =>
+    await Database.write((db) =>
       db.delete(MemorySessionChunkTable).where(eq(MemorySessionChunkTable.session_id, sid)).run(),
     )
   }

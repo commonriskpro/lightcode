@@ -45,13 +45,19 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
 
       const query = <A>(f: DbTransactionCallback<A>) =>
         Effect.tryPromise({
-          try: () => Database.use(f),
+          try: () => Database.read(f),
+          catch: (cause) => new AccountRepoError({ message: "Database operation failed", cause }),
+        })
+
+      const write = <A>(f: DbTransactionCallback<A>) =>
+        Effect.tryPromise({
+          try: () => Database.write(f),
           catch: (cause) => new AccountRepoError({ message: "Database operation failed", cause }),
         })
 
       const tx = <A>(f: DbTransactionCallback<A>) =>
         Effect.tryPromise({
-          try: () => Database.transaction(f),
+          try: () => Database.tx(f),
           catch: (cause) => new AccountRepoError({ message: "Database operation failed", cause }),
         })
 
@@ -99,7 +105,7 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
       )
 
       const use = Effect.fn("AccountRepo.use")((accountID: AccountID, orgID: Option.Option<OrgID>) =>
-        query((db) => state(db, accountID, orgID)).pipe(Effect.asVoid),
+        write((db) => state(db, accountID, orgID)).pipe(Effect.asVoid),
       )
 
       const getRow = Effect.fn("AccountRepo.getRow")((accountID: AccountID) =>
@@ -109,7 +115,7 @@ export class AccountRepo extends ServiceMap.Service<AccountRepo, AccountRepo.Ser
       )
 
       const persistToken = Effect.fn("AccountRepo.persistToken")((input) =>
-        query((db) =>
+        write((db) =>
           db
             .update(AccountTable)
             .set({

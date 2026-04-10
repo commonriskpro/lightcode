@@ -25,37 +25,61 @@ function newId(prefix: string): string {
 }
 
 export namespace Handoff {
+  async function fork(
+    db: Database.TxOrDb,
+    ctx: { id: string; sessionId: string; parentSessionId: string; context: string; now: number },
+  ) {
+    await db
+      .insert(ForkContextTable)
+      .values({
+        id: ctx.id,
+        session_id: ctx.sessionId,
+        parent_session_id: ctx.parentSessionId,
+        context: ctx.context,
+        time_created: ctx.now,
+      })
+      .onConflictDoUpdate({
+        target: ForkContextTable.session_id,
+        set: {
+          parent_session_id: ctx.parentSessionId,
+          context: ctx.context,
+          time_created: ctx.now,
+        },
+      })
+      .run()
+  }
+
+  async function handoff(db: Database.TxOrDb, input: Omit<AgentHandoff, "time_created"> & { time_created: number }) {
+    await db
+      .insert(AgentHandoffTable)
+      .values(input)
+      .onConflictDoUpdate({
+        target: AgentHandoffTable.child_session_id,
+        set: {
+          parent_session_id: input.parent_session_id,
+          context: input.context,
+          working_memory_snap: input.working_memory_snap,
+          observation_snap: input.observation_snap,
+          metadata: input.metadata,
+          time_created: input.time_created,
+        },
+      })
+      .run()
+  }
+
   /**
    * Write durable fork context.
    * Transactional — the fork is only live after this write succeeds.
    * Upsert on session_id: safe to call multiple times.
    */
-  export async function writeFork(ctx: { sessionId: string; parentSessionId: string; context: string }): Promise<void> {
+  export async function writeFork(
+    ctx: { sessionId: string; parentSessionId: string; context: string },
+    opts?: { db?: Database.TxOrDb },
+  ): Promise<void> {
     const id = newId("fork")
     const now = Date.now()
-
-    await Database.transaction(async () => {
-      await Database.use((db) =>
-        db
-          .insert(ForkContextTable)
-          .values({
-            id,
-            session_id: ctx.sessionId,
-            parent_session_id: ctx.parentSessionId,
-            context: ctx.context,
-            time_created: now,
-          })
-          .onConflictDoUpdate({
-            target: ForkContextTable.session_id,
-            set: {
-              parent_session_id: ctx.parentSessionId,
-              context: ctx.context,
-              time_created: now,
-            },
-          })
-          .run(),
-      )
-    })
+    if (opts?.db) return fork(opts.db, { id, now, ...ctx })
+    await Database.write((db) => fork(db, { id, now, ...ctx }))
   }
 
   /**
@@ -72,38 +96,18 @@ export namespace Handoff {
    * Transactional — the handoff is only live after this write succeeds.
    * Returns the handoff ID.
    */
-  export async function writeHandoff(h: Omit<AgentHandoff, "id" | "time_created">): Promise<string> {
+  export async function writeHandoff(
+    h: Omit<AgentHandoff, "id" | "time_created">,
+    opts?: { db?: Database.TxOrDb },
+  ): Promise<string> {
     const id = newId("handoff")
     const now = Date.now()
-
-    await Database.transaction(async () => {
-      await Database.use((db) =>
-        db
-          .insert(AgentHandoffTable)
-          .values({
-            id,
-            parent_session_id: h.parent_session_id,
-            child_session_id: h.child_session_id,
-            context: h.context,
-            working_memory_snap: h.working_memory_snap,
-            observation_snap: h.observation_snap,
-            metadata: h.metadata,
-            time_created: now,
-          })
-          .onConflictDoUpdate({
-            target: AgentHandoffTable.child_session_id,
-            set: {
-              parent_session_id: h.parent_session_id,
-              context: h.context,
-              working_memory_snap: h.working_memory_snap,
-              observation_snap: h.observation_snap,
-              metadata: h.metadata,
-              time_created: now,
-            },
-          })
-          .run(),
-      )
-    })
+    const input = { ...h, id, time_created: now }
+    if (opts?.db) {
+      await handoff(opts.db, input)
+      return id
+    }
+    await Database.write((db) => handoff(db, input))
 
     return id
   }

@@ -72,7 +72,7 @@ export namespace Workspace {
 
     await adaptor.create(config)
     try {
-      await Database.use((db) =>
+      await Database.write((db) =>
         db
           .insert(WorkspaceTable)
           .values({
@@ -113,7 +113,7 @@ export namespace Workspace {
       const info = fromRow(row)
       const adaptor = await getAdaptor(row.type)
       await adaptor.remove(info)
-      await Database.use((db) => db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, id)).run())
+      await Database.write((db) => db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, id)).run())
       return info
     }
   })

@@ -3,10 +3,10 @@ import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
 import { TaskTool } from "../../src/tool/task"
 import { tmpdir } from "../fixture/fixture"
-import { Memory } from "../../src/memory"
 import { SessionPrompt } from "../../src/session/prompt"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionID, MessageID } from "../../src/session/schema"
+import { SubagentLaunch } from "../../src/subagent/launch"
 
 afterEach(async () => {
   await Instance.disposeAll()
@@ -51,7 +51,7 @@ describe("tool.task", () => {
     })
   })
 
-  test("cancel between session create and handoff write aborts before child prompt", async () => {
+  test("cancel between prepare and start aborts before child prompt", async () => {
     await using tmp = await tmpdir({
       git: true,
       config: {
@@ -81,12 +81,17 @@ describe("tool.task", () => {
             providerID: "test",
           },
         } as Awaited<ReturnType<typeof MessageV2.get>>)
-        const handoff = spyOn(Memory, "writeHandoff").mockImplementation(async () => {
+        const prep = spyOn(SubagentLaunch, "prepare").mockImplementation(async () => {
           hit.resolve()
           await hold.promise
-          return "handoff_test"
+          return {
+            launchId: "launch_test",
+            sessionId: SessionID.make("session_child"),
+            model: { modelID: "test/different-model", providerID: "test" },
+            agent: "helper",
+          }
         })
-        const parts = spyOn(SessionPrompt, "resolvePromptParts")
+        const start = spyOn(SubagentLaunch, "start")
         const prompt = spyOn(SessionPrompt, "prompt")
 
         const ac = new AbortController()
@@ -112,14 +117,82 @@ describe("tool.task", () => {
         hold.resolve()
 
         await expect(run).rejects.toThrow("Aborted")
-        expect(handoff).toHaveBeenCalled()
-        expect(parts).not.toHaveBeenCalled()
+        expect(prep).toHaveBeenCalled()
+        expect(start).not.toHaveBeenCalled()
         expect(prompt).not.toHaveBeenCalled()
 
         msg.mockRestore()
-        handoff.mockRestore()
-        parts.mockRestore()
+        prep.mockRestore()
+        start.mockRestore()
         prompt.mockRestore()
+      },
+    })
+  })
+
+  test("delegates launch workflow to SubagentLaunch for new tasks", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        agent: {
+          helper: {
+            mode: "subagent",
+            model: "test/different-model",
+          },
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const build = await Agent.get("build")
+        if (!build) throw new Error("build agent not found")
+        const tool = await TaskTool.init({ agent: build })
+        const msg = spyOn(MessageV2, "get").mockResolvedValue({
+          info: {
+            role: "assistant",
+            modelID: "parent-model",
+            providerID: "test",
+          },
+        } as Awaited<ReturnType<typeof MessageV2.get>>)
+        const prep = spyOn(SubagentLaunch, "prepare").mockResolvedValue({
+          launchId: "launch_test",
+          sessionId: SessionID.make("session_child"),
+          model: { modelID: "test/different-model", providerID: "test" },
+          agent: "helper",
+        })
+        const start = spyOn(SubagentLaunch, "start").mockResolvedValue({
+          parts: [{ type: "text", text: "done" }],
+        } as Awaited<ReturnType<typeof SessionPrompt.prompt>>)
+
+        const out = await tool.execute(
+          {
+            description: "task",
+            prompt: "do work",
+            subagent_type: "helper",
+          },
+          {
+            ask: async () => {},
+            metadata: () => {},
+            abort: new AbortController().signal,
+            sessionID: SessionID.make("session_parent"),
+            messageID: MessageID.make("message_parent"),
+            agent: "build",
+            extra: {},
+          } as unknown as Parameters<typeof tool.execute>[1],
+        )
+
+        expect(prep).toHaveBeenCalled()
+        expect(start).toHaveBeenCalledWith({
+          launchId: "launch_test",
+          abort: expect.any(AbortSignal),
+          tools: { task: false, todowrite: false },
+        })
+        expect(out.metadata?.sessionId).toBe(SessionID.make("session_child"))
+
+        msg.mockRestore()
+        prep.mockRestore()
+        start.mockRestore()
       },
     })
   })

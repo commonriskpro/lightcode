@@ -104,7 +104,7 @@ export namespace WorkingMemory {
     const safe = scope.type === "global_pattern" ? stripPrivate(value) : value
     const now = nowMs()
 
-    await Database.transaction(async () => {
+    await Database.tx(async () => {
       const existing = await Database.use((db) =>
         db
           .select()
@@ -120,7 +120,7 @@ export namespace WorkingMemory {
       )
 
       if (existing) {
-        await Database.use((db) =>
+        await Database.write((db) =>
           db
             .update(WorkingMemoryTable)
             .set({ value: safe, format, version: existing.version + 1, time_updated: now })
@@ -128,7 +128,7 @@ export namespace WorkingMemory {
             .run(),
         )
       } else {
-        await Database.use((db) =>
+        await Database.write((db) =>
           db
             .insert(WorkingMemoryTable)
             .values({
@@ -152,7 +152,7 @@ export namespace WorkingMemory {
    * Remove a working memory key from a scope.
    */
   export async function remove(scope: ScopeRef, key: string): Promise<void> {
-    await Database.use((db) =>
+    await Database.write((db) =>
       db
         .delete(WorkingMemoryTable)
         .where(
@@ -170,7 +170,7 @@ export namespace WorkingMemory {
    * Delete all working memory records for a scope (e.g. when a thread is deleted).
    */
   export async function clearScope(scope: ScopeRef): Promise<void> {
-    await Database.use((db) =>
+    await Database.write((db) =>
       db
         .delete(WorkingMemoryTable)
         .where(and(eq(WorkingMemoryTable.scope_type, scope.type), eq(WorkingMemoryTable.scope_id, scope.id)))

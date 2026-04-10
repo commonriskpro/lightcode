@@ -56,7 +56,7 @@ export class EmbeddingBackend implements RecallBackend {
     if (!vec) return id
 
     const emb = new Float32Array(vec)
-    await Database.use((db) =>
+    await Database.write((db) =>
       db.update(MemoryArtifactTable).set({ embedding: emb }).where(eq(MemoryArtifactTable.id, id)).run(),
     )
 
@@ -132,7 +132,7 @@ export class EmbeddingBackend implements RecallBackend {
 
     if (!(await this.isAvailable())) return
 
-    await Database.use((db) =>
+    await Database.write((db) =>
       db.update(MemoryArtifactTable).set({ embedding: null }).where(eq(MemoryArtifactTable.id, id)).run(),
     )
   }

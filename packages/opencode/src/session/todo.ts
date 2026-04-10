@@ -41,7 +41,7 @@ export namespace Todo {
 
       const update = Effect.fn("Todo.update")(function* (input: { sessionID: SessionID; todos: Info[] }) {
         yield* Effect.promise(() =>
-          Database.transaction(async (db) => {
+          Database.tx(async (db) => {
             await db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
             if (input.todos.length === 0) return
             await db

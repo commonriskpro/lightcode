@@ -90,7 +90,7 @@ export class FTS5Backend implements RecallBackend {
 
     let id = ""
 
-    await Database.transaction(async () => {
+    await Database.tx(async () => {
       // 1. Topic-key upsert
       if (topicKey) {
         const existing = await Database.use((db) =>
@@ -111,7 +111,7 @@ export class FTS5Backend implements RecallBackend {
         )
 
         if (existing) {
-          await Database.use((db) =>
+          await Database.write((db) =>
             db
               .update(MemoryArtifactTable)
               .set({
@@ -153,7 +153,7 @@ export class FTS5Backend implements RecallBackend {
       )
 
       if (dup) {
-        await Database.use((db) =>
+        await Database.write((db) =>
           db
             .update(MemoryArtifactTable)
             .set({ duplicate_count: dup.duplicate_count + 1, last_seen_at: now, time_updated: now })
@@ -166,7 +166,7 @@ export class FTS5Backend implements RecallBackend {
 
       // 3. Insert new artifact
       const newId = nowId()
-      await Database.use((db) =>
+      await Database.write((db) =>
         db
           .insert(MemoryArtifactTable)
           .values({

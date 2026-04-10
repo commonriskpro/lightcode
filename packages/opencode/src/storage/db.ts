@@ -27,6 +27,8 @@ export const NotFoundError = NamedError.create(
 const log = Log.create({ service: "db" })
 
 export namespace Database {
+  type Release = () => void
+
   export function getChannelPath() {
     if (["latest", "beta"].includes(CHANNEL) || Flag.OPENCODE_DISABLE_CHANNEL_DB)
       return path.join(Global.Path.data, "lightcode.db")
@@ -170,24 +172,92 @@ export namespace Database {
 
   export type TxOrDb = Transaction | DbClient
 
+  const gate = {
+    readers: 0,
+    writer: false,
+    reads: [] as Array<() => void>,
+    writes: [] as Array<() => void>,
+  }
+
+  function flush() {
+    if (gate.writer) return
+    if (gate.writes.length > 0) {
+      if (gate.readers > 0) return
+      gate.writer = true
+      gate.writes.shift()?.()
+      return
+    }
+    while (gate.reads.length > 0) {
+      gate.readers += 1
+      gate.reads.shift()?.()
+    }
+  }
+
+  async function enterRead(): Promise<Release> {
+    if (!gate.writer && gate.writes.length === 0) {
+      gate.readers += 1
+      return () => {
+        gate.readers -= 1
+        flush()
+      }
+    }
+    await new Promise<void>((resolve) => gate.reads.push(resolve))
+    return () => {
+      gate.readers -= 1
+      flush()
+    }
+  }
+
+  async function enterWrite(): Promise<Release> {
+    if (!gate.writer && gate.readers === 0) {
+      gate.writer = true
+      return () => {
+        gate.writer = false
+        flush()
+      }
+    }
+    await new Promise<void>((resolve) => gate.writes.push(resolve))
+    return () => {
+      gate.writer = false
+      flush()
+    }
+  }
+
   const ctx = Context.create<{
     tx: TxOrDb
     effects: (() => void | Promise<void>)[]
   }>("database")
 
-  export async function use<T>(callback: (trx: TxOrDb) => Promise<T> | T): Promise<T> {
+  async function call<T>(callback: (trx: TxOrDb) => Promise<T> | T, enter: () => Promise<Release>): Promise<T> {
     try {
       return await callback(ctx.use().tx)
     } catch (err) {
       if (err instanceof Context.NotFound) {
+        const release = await enter()
         const effects: (() => void | Promise<void>)[] = []
-        const client = await Client()
-        const result = await ctx.provide({ effects, tx: client }, () => callback(client))
-        for (const fx of effects) await fx()
-        return result
+        try {
+          const client = await Client()
+          const result = await ctx.provide({ effects, tx: client }, () => callback(client))
+          for (const fx of effects) await fx()
+          return result
+        } finally {
+          release()
+        }
       }
       throw err
     }
+  }
+
+  export async function read<T>(callback: (trx: TxOrDb) => Promise<T> | T): Promise<T> {
+    return call(callback, enterRead)
+  }
+
+  export async function write<T>(callback: (trx: TxOrDb) => Promise<T> | T): Promise<T> {
+    return call(callback, enterWrite)
+  }
+
+  export async function use<T>(callback: (trx: TxOrDb) => Promise<T> | T): Promise<T> {
+    return read(callback)
   }
 
   export function effect(fn: () => any | Promise<any>) {
@@ -199,7 +269,7 @@ export namespace Database {
     }
   }
 
-  export async function transaction<T>(
+  export async function tx<T>(
     callback: (tx: TxOrDb) => Promise<T> | T,
     options?: {
       behavior?: "deferred" | "immediate" | "exclusive"
@@ -209,18 +279,32 @@ export namespace Database {
       return await callback(ctx.use().tx)
     } catch (err) {
       if (err instanceof Context.NotFound) {
+        const release = await enterWrite()
         const effects: (() => void | Promise<void>)[] = []
-        const client = await Client()
-        const txCallback = InstanceState.bind((tx: Transaction) =>
-          ctx.provide({ tx, effects }, () => Promise.resolve(callback(tx))),
-        )
-        const result = await client.transaction(txCallback, {
-          behavior: options?.behavior,
-        })
-        for (const fx of effects) await fx()
-        return result as T
+        try {
+          const client = await Client()
+          const txCallback = InstanceState.bind((tx: Transaction) =>
+            ctx.provide({ tx, effects }, () => Promise.resolve(callback(tx))),
+          )
+          const result = await client.transaction(txCallback, {
+            behavior: options?.behavior,
+          })
+          for (const fx of effects) await fx()
+          return result as T
+        } finally {
+          release()
+        }
       }
       throw err
     }
+  }
+
+  export async function transaction<T>(
+    callback: (tx: TxOrDb) => Promise<T> | T,
+    options?: {
+      behavior?: "deferred" | "immediate" | "exclusive"
+    },
+  ): Promise<T> {
+    return tx(callback, options)
   }
 }

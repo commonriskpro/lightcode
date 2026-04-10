@@ -38,6 +38,7 @@ const CLEAN_TABLES = [
   "memory_links",
   "memory_session_chunks",
   "session_observation",
+  "subagent_launch",
   "session",
   "project",
 ]

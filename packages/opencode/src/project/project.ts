@@ -133,7 +133,11 @@ export namespace Project {
 
       const db = <T>(
         fn: (d: Parameters<typeof Database.use>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
-      ) => Effect.promise(() => Database.use(fn))
+      ) => Effect.promise(() => Database.read(fn))
+
+      const write = <T>(
+        fn: (d: Parameters<typeof Database.write>[0] extends (trx: infer D) => any ? D : never) => Promise<T> | T,
+      ) => Effect.promise(() => Database.write(fn))
 
       const emitUpdated = (data: Info) =>
         Effect.sync(() =>
@@ -278,7 +282,7 @@ export namespace Project {
           { concurrency: "unbounded" },
         ).pipe(Effect.map((arr) => arr.filter((x): x is string => x !== undefined)))
 
-        yield* db((d) =>
+        yield* write((d) =>
           d
             .insert(ProjectTable)
             .values({
@@ -312,7 +316,7 @@ export namespace Project {
         )
 
         if (data.id !== ProjectID.global) {
-          yield* db((d) =>
+          yield* write((d) =>
             d
               .update(SessionTable)
               .set({ project_id: data.id })
@@ -357,7 +361,7 @@ export namespace Project {
       })
 
       const update = Effect.fn("Project.update")(function* (input: UpdateInput) {
-        const result = yield* db((d) =>
+        const result = yield* write((d) =>
           d
             .update(ProjectTable)
             .set({
@@ -389,7 +393,7 @@ export namespace Project {
       })
 
       const setInitialized = Effect.fn("Project.setInitialized")(function* (id: ProjectID) {
-        yield* db((d) =>
+        yield* write((d) =>
           d.update(ProjectTable).set({ time_initialized: Date.now() }).where(eq(ProjectTable.id, id)).run(),
         )
       })
@@ -414,7 +418,7 @@ export namespace Project {
         if (!row) throw new Error(`Project not found: ${id}`)
         const sboxes = [...row.sandboxes]
         if (!sboxes.includes(directory)) sboxes.push(directory)
-        const result = yield* db((d) =>
+        const result = yield* write((d) =>
           d
             .update(ProjectTable)
             .set({ sandboxes: sboxes, time_updated: Date.now() })
@@ -430,7 +434,7 @@ export namespace Project {
         const row = yield* db((d) => d.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get())
         if (!row) throw new Error(`Project not found: ${id}`)
         const sboxes = row.sandboxes.filter((s) => s !== directory)
-        const result = yield* db((d) =>
+        const result = yield* write((d) =>
           d
             .update(ProjectTable)
             .set({ sandboxes: sboxes, time_updated: Date.now() })
@@ -487,7 +491,7 @@ export namespace Project {
   }
 
   export function setInitialized(id: ProjectID) {
-    return Database.use((db) =>
+    return Database.write((db) =>
       db.update(ProjectTable).set({ time_initialized: Date.now() }).where(eq(ProjectTable.id, id)).run(),
     )
   }
