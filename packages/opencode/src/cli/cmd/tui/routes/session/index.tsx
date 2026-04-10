@@ -64,6 +64,7 @@ import { Sidebar } from "./sidebar"
 import { ContextPanel } from "./context-panel"
 import { AtlasGraph } from "../../component/atlas-graph"
 import { AtlasGraphTGE } from "../../component/atlas-graph-tge"
+import { AtlasPanels } from "../../component/atlas-panels"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -1227,22 +1228,79 @@ export function Session() {
 
             {/* Main surface — atlas graph OR message thread */}
             <Show when={atlasVisible()}>
+              {/* Memory Atlas heading */}
+              <box flexShrink={0} paddingLeft={1} paddingTop={1}>
+                <text fg={theme.text} wrapMode="none">
+                  <b>Memory Atlas</b>
+                </text>
+                <text fg={theme.textMuted} wrapMode="none">
+                  Graph-first navigation for threads, anchors and nearby memory.
+                </text>
+              </box>
+
+              {/* Field strip — thread metadata chips */}
+              <box
+                flexDirection="row"
+                flexShrink={0}
+                gap={1}
+                paddingLeft={1}
+                paddingRight={1}
+                paddingTop={1}
+                paddingBottom={1}
+                flexWrap="wrap"
+              >
+                <text>
+                  <span style={{ bg: theme.backgroundElement, fg: theme.error }}> Field strip </span>
+                </text>
+                <text>
+                  <span style={{ bg: theme.backgroundElement, fg: theme.text }}>
+                    {" "}
+                    THREAD: {Locale.truncate(session()!.title, 18).toUpperCase()}{" "}
+                  </span>
+                </text>
+                <text>
+                  <span style={{ bg: theme.backgroundElement, fg: theme.info }}> CENTER LOCKED </span>
+                </text>
+                <text>
+                  <span style={{ bg: theme.backgroundElement, fg: theme.info }}>
+                    {" "}
+                    RELATED NODES:{" "}
+                    {(sync.data.message[route.sessionID] ?? []).filter((m) => m.role === "user").length}{" "}
+                  </span>
+                </text>
+                <text>
+                  <span
+                    style={{
+                      bg: theme.backgroundElement,
+                      fg:
+                        (sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length > 0
+                          ? theme.warning
+                          : theme.textMuted,
+                    }}
+                  >
+                    {" "}
+                    QUEUE: {(sync.data.todo[route.sessionID] ?? []).filter((t) => t.status !== "completed").length}{" "}
+                  </span>
+                </text>
+              </box>
+
               <Show
                 when={Flag.OPENCODE_EXPERIMENTAL_TGE}
                 fallback={
                   <AtlasGraph
                     sessionID={route.sessionID}
                     width={contentWidth()}
-                    height={Math.max(dimensions().height - 8, 10)}
+                    height={Math.max(dimensions().height - 22, 10)}
                   />
                 }
               >
                 <AtlasGraphTGE
                   sessionID={route.sessionID}
                   width={contentWidth()}
-                  height={Math.max(dimensions().height - 8, 10)}
+                  height={Math.max(dimensions().height - 22, 10)}
                 />
               </Show>
+              <AtlasPanels sessionID={route.sessionID} width={contentWidth()} />
             </Show>
             <Show when={!atlasVisible()}>
               <scrollbox
