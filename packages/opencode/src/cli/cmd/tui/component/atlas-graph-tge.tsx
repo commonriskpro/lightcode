@@ -116,21 +116,23 @@ export function AtlasGraphTGE(props: { sessionID: string; width: number; height:
 
     const pos = abs(anchor)
     // drawSuperSampleBuffer iterates from posX to terminal width,
-    // so the pixel buffer must cover the FULL remaining terminal area.
-    // We render the graph into the atlas field portion and fill the
-    // rest with void black (transparent pixels → void black in bridge).
+    // so the bridge buffer must cover the FULL remaining terminal area.
+    // The TGE renders in SCREEN PIXEL coordinates (square pixels) so
+    // circles are naturally circular. The bridge area-samples down to 2x.
     const c = Math.max(1, renderer.width - pos.col)
     const r = Math.max(1, renderer.height - pos.row)
-    // Clamp the graph area to the atlas field box size
     const gc = Math.min(props.width, c)
     const gr = Math.min(props.height, r)
-    // Render at 2x scale: drawSuperSampleBuffer expects 2×2 pixels per cell
-    const pw = c * 2
-    const ph = r * 2
+    // Screen pixel dimensions: cells × cell pixel size
+    const cw = Math.max(1, tge.cellW())
+    const ch = Math.max(1, tge.cellH())
+    const pw = gc * cw
+    const ph = gr * ch
     if (pw <= 0 || ph <= 0) return
 
-    // Render graph into the atlas field portion only
-    const f = renderAtlas(d, gc * 2, gr * 2, 2, 2)
+    // Render graph in screen-pixel space — circles are circular here.
+    // Bridge area-samples to 2x (non-uniform ratio: cw/2 in X, ch/2 in Y).
+    const f = renderAtlas(d, pw, ph, cw, ch)
 
     const labels: TextLabel[] = f.texts.map((t) => ({
       content: t.content,

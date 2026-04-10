@@ -35,8 +35,9 @@ export function edge(buf: PixelBuffer, nd: SceneNode) {
   const curve = (nd.data.curve as number) ?? 0
 
   const color = graph.edge[weight] ?? graph.edge.normal
-  // Weaker edges are more transparent
-  const adjusted = weight === "weak" ? alpha(color, 0x60) : weight === "normal" ? alpha(color, 0x90) : color
+  // Boost edge alpha so they survive downsample + quadrant rendering.
+  // Edge base colors are dark (close to void black), so full alpha helps contrast.
+  const adjusted = weight === "weak" ? alpha(color, 0x80) : color
   const w = WIDTH[weight]
 
   if (curve === 0 || Math.abs(curve) < 1) {

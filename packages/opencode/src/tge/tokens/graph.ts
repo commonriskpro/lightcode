@@ -2,30 +2,34 @@ import { palette, alpha } from "./color"
 
 /** Graph-specific visual tokens.
  *
- * Sizes are in pixels at 2x scale (2 pixels per terminal cell dimension).
- * drawSuperSampleBuffer renders quadrant blocks from 2×2 pixels per cell.
- * At 2x: 1px = 0.5 cells, radius 3 = 3 cells wide (diameter 6px).
+ * Sizes are in SCREEN PIXELS (the actual pixel dimensions of terminal cells).
+ * The TGE renders in screen-pixel coordinates where 1px = 1 screen pixel,
+ * so circles are naturally circular. The bridge area-samples the buffer
+ * down to 2x (2 pixels per cell) for drawSuperSampleBuffer.
+ *
+ * With typical Ghostty cells of 7×18px:
+ *   radius 20 = ~6 cells wide, ~2 cells tall = circular on screen (40×40px)
  */
 export const graph = {
-  /** Center (active thread) node radius — ~3 cells wide */
-  centerRadius: 3,
-  /** Standard node radius (ring 1) — ~2 cells wide */
-  nodeRadius: 2,
-  /** Small node radius (ring 2-3) — ~1 cell wide */
-  smallRadius: 1,
+  /** Center (active thread) node radius in screen pixels */
+  centerRadius: 20,
+  /** Standard node radius (ring 1) — ~3 cells wide */
+  nodeRadius: 12,
+  /** Small node radius (ring 2-3) — ~2 cells wide */
+  smallRadius: 8,
 
-  /** Edge line widths at 2x */
-  edgeStrong: 2,
-  edgeNormal: 1,
-  edgeWeak: 1,
+  /** Edge line widths at 8x */
+  edgeStrong: 8,
+  edgeNormal: 5,
+  edgeWeak: 3,
 
-  /** Halo glow around center node — ~5 cells radius */
-  haloRadius: 6,
-  haloColor: alpha(palette.thread, 0x90),
+  /** Halo glow around center node — ~8 cells radius */
+  haloRadius: 32,
+  haloColor: alpha(palette.thread, 0x70),
 
   /** Cluster halo */
-  clusterHaloRadius: 4,
-  clusterHaloColor: alpha(palette.borderStrong, 0x50),
+  clusterHaloRadius: 24,
+  clusterHaloColor: alpha(palette.borderStrong, 0x40),
 
   /** Node colors by kind */
   node: {
@@ -39,10 +43,10 @@ export const graph = {
     child: palette.thread,
   },
 
-  /** Edge colors */
+  /** Edge colors — brighter than border tokens to survive downsample + quadrant rendering */
   edge: {
-    strong: palette.borderStrong,
-    normal: palette.borderBase,
-    weak: palette.borderWeak,
+    strong: palette.borderFocus,
+    normal: palette.borderStrong,
+    weak: palette.borderBase,
   },
 } as const

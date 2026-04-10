@@ -6,6 +6,9 @@
  *   - Filled circle with anti-aliased edges
  *   - Selection ring (optional)
  *
+ * The TGE renders in screen-pixel coordinates (square pixels), so circles
+ * are naturally circular. The bridge area-samples to 2x for terminal display.
+ *
  * The label is rendered by the cell layer (opentui), not by this primitive.
  *
  * Scene data:
@@ -46,7 +49,7 @@ export function node(buf: PixelBuffer, nd: SceneNode) {
     paintHalo(buf, cx, cy, r * 3, alpha(color, 0x20), 0.6)
   }
 
-  // 2. Filled circle
+  // 2. Filled circle (circular in screen-pixel space)
   filled(buf, cx, cy, r, color)
 
   // 3. Selection ring

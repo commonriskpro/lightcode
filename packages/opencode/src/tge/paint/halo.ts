@@ -10,29 +10,35 @@ import { blend } from "./buffer"
 import { rgba } from "../tokens/color"
 
 /**
- * Draw a soft radial halo glow.
+ * Draw a soft radial halo glow (elliptical when ry specified).
  *
  * Falloff uses a plateau-then-drop curve: full intensity in the inner 40%,
- * then steep quadratic falloff. This ensures the halo survives supersample
- * averaging where each terminal cell averages ~10x20 pixels.
+ * then steep quadratic falloff. This ensures the halo survives the 4:1
+ * downsample + quadrant-block rendering pipeline.
+ *
+ * Pass `ry = rx * (cellW/cellH)` to compensate for non-square terminal cells.
  */
-export function halo(buf: PixelBuffer, cx: number, cy: number, r: number, color: number, intensity = 1) {
+export function halo(buf: PixelBuffer, cx: number, cy: number, rx: number, color: number, intensity = 1, ry?: number) {
   const [cr, cg, cb, ca] = rgba(color)
-  if (ca === 0 || r <= 0 || intensity <= 0) return
+  if (ca === 0 || rx <= 0 || intensity <= 0) return
+  const ey = ry ?? rx
 
-  const x0 = Math.max(0, Math.floor(cx - r))
-  const y0 = Math.max(0, Math.floor(cy - r))
-  const x1 = Math.min(buf.width, Math.ceil(cx + r))
-  const y1 = Math.min(buf.height, Math.ceil(cy + r))
+  const x0 = Math.max(0, Math.floor(cx - rx))
+  const y0 = Math.max(0, Math.floor(cy - ey))
+  const x1 = Math.min(buf.width, Math.ceil(cx + rx))
+  const y1 = Math.min(buf.height, Math.ceil(cy + ey))
 
   // Inner 40% of radius is full intensity, then quadratic falloff
-  const inner = r * 0.4
-  const outer = r - inner
+  const inner = rx * 0.4
+  const outer = rx - inner
 
   for (let py = y0; py < y1; py++) {
     for (let px = x0; px < x1; px++) {
-      const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
-      if (dist >= r) continue
+      // Normalize to circle space for elliptical distance
+      const nx = (px - cx) / rx
+      const ny = (py - cy) / ey
+      const dist = Math.sqrt(nx * nx + ny * ny) * rx
+      if (dist >= rx) continue
       const falloff = dist <= inner ? 1 : 1 - ((dist - inner) / outer) ** 2
       const a = Math.round(ca * falloff * intensity)
       if (a <= 0) continue

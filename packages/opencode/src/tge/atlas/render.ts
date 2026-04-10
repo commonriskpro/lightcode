@@ -21,7 +21,10 @@ export type AtlasFrame = {
   graph: PlacedGraph
 }
 
-/** Render the Atlas Field to a pixel buffer. */
+/** Render the Atlas Field to a pixel buffer.
+ * When called with actual terminal cell dimensions (cellW/cellH), the buffer
+ * is in screen-pixel coordinates and circles are naturally circular.
+ */
 export function render(data: GraphData, width: number, height: number, cellW: number, cellH: number): AtlasFrame {
   // 1. Layout nodes in concentric rings
   const placed = ringLayout(data.nodes, data.edges, width, height)

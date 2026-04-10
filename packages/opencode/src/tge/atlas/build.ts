@@ -18,7 +18,9 @@ import { graph as graphTokens } from "../tokens"
 import type { PlacedGraph, PlacedNode, Cluster } from "./layout"
 import type { EdgeWeight } from "./extract"
 
-/** Build a TGE scene graph from a placed graph. */
+/** Build a TGE scene graph from a placed graph.
+ * In screen-pixel mode, cellW and cellH are the actual terminal cell pixel sizes.
+ */
 export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
   const s = createScene(pg.width, pg.height)
 
@@ -89,7 +91,8 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
   // Nodes
   for (const n of pg.nodes) {
     const r = n.ring === 0 ? graphTokens.centerRadius : n.ring <= 1 ? graphTokens.nodeRadius : graphTokens.smallRadius
-    const size = (r + (n.ring === 0 ? graphTokens.haloRadius : r * 2)) * 2
+    const extent = r + (n.ring === 0 ? graphTokens.haloRadius : r * 2)
+    const size = extent * 2
 
     s.add(
       "panel",
@@ -113,8 +116,8 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number): Scene {
     const labelX = n.px - labelW / 2
     const labelY =
       n.ring === 0
-        ? n.py + graphTokens.centerRadius + 6 // below center node
-        : n.py + r + 3 // below regular node
+        ? n.py + graphTokens.centerRadius + cellH // below center node circle
+        : n.py + r + Math.round(cellH * 0.4) // below regular node circle
     const labelColor =
       n.ring === 0
         ? accent.thread
