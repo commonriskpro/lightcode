@@ -64,6 +64,7 @@ import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { TGEProvider } from "@/tge/bridge/context"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -227,7 +228,14 @@ export function tui(input: {
                                       <FrecencyProvider>
                                         <PromptHistoryProvider>
                                           <PromptRefProvider>
-                                            <App onSnapshot={input.onSnapshot} />
+                                            <Show
+                                              when={Flag.OPENCODE_EXPERIMENTAL_TGE}
+                                              fallback={<App onSnapshot={input.onSnapshot} />}
+                                            >
+                                              <TGEProvider>
+                                                <App onSnapshot={input.onSnapshot} />
+                                              </TGEProvider>
+                                            </Show>
                                           </PromptRefProvider>
                                         </PromptHistoryProvider>
                                       </FrecencyProvider>

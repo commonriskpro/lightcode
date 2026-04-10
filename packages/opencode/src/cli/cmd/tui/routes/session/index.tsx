@@ -63,6 +63,7 @@ import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { ContextPanel } from "./context-panel"
 import { AtlasGraph } from "../../component/atlas-graph"
+import { AtlasGraphTGE } from "../../component/atlas-graph-tge"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -1226,11 +1227,22 @@ export function Session() {
 
             {/* Main surface — atlas graph OR message thread */}
             <Show when={atlasVisible()}>
-              <AtlasGraph
-                sessionID={route.sessionID}
-                width={contentWidth()}
-                height={Math.max(dimensions().height - 8, 10)}
-              />
+              <Show
+                when={Flag.OPENCODE_EXPERIMENTAL_TGE}
+                fallback={
+                  <AtlasGraph
+                    sessionID={route.sessionID}
+                    width={contentWidth()}
+                    height={Math.max(dimensions().height - 8, 10)}
+                  />
+                }
+              >
+                <AtlasGraphTGE
+                  sessionID={route.sessionID}
+                  width={contentWidth()}
+                  height={Math.max(dimensions().height - 8, 10)}
+                />
+              </Show>
             </Show>
             <Show when={!atlasVisible()}>
               <scrollbox
