@@ -29,6 +29,23 @@ type Graph = {
   height: number
 }
 
+// --- Helpers ---
+
+const DEFAULT_TITLE = /^(New session|Child session) - \d{4}-\d{2}-\d{2}T/
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  // Try to break at word boundary
+  const cut = text.lastIndexOf(" ", max - 1)
+  if (cut > max * 0.4) return text.slice(0, cut)
+  return text.slice(0, max - 1) + "…"
+}
+
+function label(title: string, max: number, fallback: string): string {
+  if (DEFAULT_TITLE.test(title)) return fallback
+  return truncate(title, max)
+}
+
 // --- Node symbols ---
 
 const SYMBOL: Record<NodeKind, string> = {
@@ -189,13 +206,13 @@ function extract(
   const edges: GraphEdge[] = []
 
   // Ring 0: Active thread
-  nodes.push({ id: session.id, kind: "thread", label: session.title.slice(0, 14) || "thread", ring: 0 })
+  nodes.push({ id: session.id, kind: "thread", label: label(session.title, 14, "thread"), ring: 0 })
 
   // Ring 1: Parent thread
   if (session.parentID) {
     const parent = sessions.find((s) => s.id === session.parentID)
     if (parent) {
-      nodes.push({ id: parent.id, kind: "parent", label: parent.title.slice(0, 12) || "parent", ring: 1 })
+      nodes.push({ id: parent.id, kind: "parent", label: label(parent.title, 12, "parent"), ring: 1 })
       edges.push({ from: session.id, to: parent.id })
     }
   }
@@ -203,7 +220,7 @@ function extract(
   // Ring 1: Children threads
   const children = sessions.filter((s) => s.parentID === session.id)
   for (const child of children.slice(0, 4)) {
-    nodes.push({ id: child.id, kind: "child", label: child.title.slice(0, 12) || "fork", ring: 1 })
+    nodes.push({ id: child.id, kind: "child", label: label(child.title, 12, "fork"), ring: 1 })
     edges.push({ from: session.id, to: child.id })
   }
 
@@ -213,8 +230,10 @@ function extract(
   const sampled = anchors.filter((_, i) => i % step === 0).slice(0, 5)
   for (const [i, msg] of sampled.entries()) {
     const id = `anchor-${i}`
-    const label = msg.summary?.title?.slice(0, 12) ?? `turn ${i + 1}`
-    nodes.push({ id, kind: "anchor", label, ring: 1 })
+    // Use summary title, or extract first words from message parts
+    const parts = msg.summary?.title
+    const text = parts ?? `anchor ${i + 1}`
+    nodes.push({ id, kind: "anchor", label: truncate(text, 12), ring: 1 })
     edges.push({ from: session.id, to: id })
   }
 
@@ -259,7 +278,7 @@ function extract(
   const pending = todos.filter((t) => t.status === "pending" || t.status === "in_progress")
   for (const [i, todo] of pending.slice(0, 5).entries()) {
     const id = `signal-${i}`
-    nodes.push({ id, kind: "signal", label: todo.content.slice(0, 12), ring: 2 })
+    nodes.push({ id, kind: "signal", label: truncate(todo.content, 12), ring: 2 })
     edges.push({ from: session.id, to: id })
   }
 
@@ -267,7 +286,7 @@ function extract(
   for (const [i, diff] of diffs.slice(0, 5).entries()) {
     const id = `file-${i}`
     const name = diff.file.split("/").pop() ?? diff.file
-    nodes.push({ id, kind: "file", label: name.slice(0, 12), ring: 2 })
+    nodes.push({ id, kind: "file", label: truncate(name, 12), ring: 2 })
     edges.push({ from: session.id, to: id })
   }
 
@@ -275,19 +294,19 @@ function extract(
   const active = mcp.filter((m) => m.status === "connected")
   for (const [i, srv] of active.slice(0, 4).entries()) {
     const id = `mcp-${i}`
-    nodes.push({ id, kind: "mcp", label: srv.name.slice(0, 10), ring: 3 })
+    nodes.push({ id, kind: "mcp", label: truncate(srv.name, 10), ring: 3 })
     edges.push({ from: session.id, to: id })
   }
 
-  // Ring 3: Sibling threads (recent threads in same project, excluding self/parent/children)
+  // Ring 3: Sibling threads (recent threads with real titles, excluding self/parent/children/subagents)
   const exclude = new Set([session.id, session.parentID ?? "", ...children.map((c) => c.id)])
   const siblings = sessions
-    .filter((s) => !exclude.has(s.id) && !s.parentID && s.id !== session.id)
+    .filter((s) => !exclude.has(s.id) && !s.parentID && !DEFAULT_TITLE.test(s.title))
     .sort((a, b) => b.time.updated - a.time.updated)
     .slice(0, 3)
   for (const [i, sib] of siblings.entries()) {
     const id = `sibling-${i}`
-    nodes.push({ id, kind: "parent", label: sib.title.slice(0, 10), ring: 3 })
+    nodes.push({ id, kind: "parent", label: truncate(sib.title, 10), ring: 3 })
     // No edge to center — these are ambient context, not direct relations
   }
 
