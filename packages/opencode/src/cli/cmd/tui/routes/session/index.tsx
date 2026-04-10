@@ -62,6 +62,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { ContextPanel } from "./context-panel"
+import { AtlasGraph } from "../../component/atlas-graph"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -211,6 +212,7 @@ export function Session() {
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [animationsEnabled, setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
+  const [atlasVisible, setAtlasVisible] = createSignal(false)
 
   const wide = createMemo(() => dimensions().width > 120)
   const extraWide = createMemo(() => dimensions().width > 180)
@@ -704,6 +706,19 @@ export function Session() {
       },
     },
     {
+      title: atlasVisible() ? "Hide memory atlas" : "Show memory atlas",
+      value: "session.atlas.toggle",
+      keybind: "atlas_toggle",
+      category: "Thread",
+      slash: {
+        name: "atlas",
+      },
+      onSelect: (dialog) => {
+        setAtlasVisible((prev) => !prev)
+        dialog.clear()
+      },
+    },
+    {
       title: "Page up",
       value: "session.page.up",
       keybind: "messages_page_up",
@@ -1128,129 +1143,143 @@ export function Session() {
               <text fg={theme.textMuted} wrapMode="none">
                 <span style={{ fg: theme.info }}>{"◈"}</span>{" "}
                 <span style={{ fg: theme.text }}>{Locale.truncate(session()!.title, 40)}</span>
+                <Show when={atlasVisible()}>
+                  <span style={{ fg: theme.textMuted }}> · atlas</span>
+                </Show>
               </text>
-              <Show when={contextVisible()}>
-                <text fg={theme.textMuted} wrapMode="none">
-                  {sync.data.session_status?.[route.sessionID]?.type === "idle" ? "idle" : "active"}
-                </text>
-              </Show>
+              <text fg={theme.textMuted} wrapMode="none">
+                {atlasVisible()
+                  ? "/atlas to close"
+                  : sync.data.session_status?.[route.sessionID]?.type === "idle"
+                    ? "idle"
+                    : "active"}
+              </text>
             </box>
-            <scrollbox
-              ref={(r) => (scroll = r)}
-              viewportOptions={{
-                paddingRight: showScrollbar() ? 1 : 0,
-              }}
-              verticalScrollbarOptions={{
-                paddingLeft: 1,
-                visible: showScrollbar(),
-                trackOptions: {
-                  backgroundColor: theme.backgroundElement,
-                  foregroundColor: theme.border,
-                },
-              }}
-              stickyScroll={true}
-              stickyStart="bottom"
-              flexGrow={1}
-              scrollAcceleration={scrollAcceleration()}
-            >
-              <box height={1} />
-              <For each={messages()}>
-                {(message, index) => (
-                  <Switch>
-                    <Match when={message.id === revert()?.messageID}>
-                      {(function () {
-                        const command = useCommandDialog()
-                        const [hover, setHover] = createSignal(false)
-                        const dialog = useDialog()
+            <Show when={atlasVisible()}>
+              <AtlasGraph
+                sessionID={route.sessionID}
+                width={contentWidth()}
+                height={Math.max(dimensions().height - 6, 10)}
+              />
+            </Show>
+            <Show when={!atlasVisible()}>
+              <scrollbox
+                ref={(r) => (scroll = r)}
+                viewportOptions={{
+                  paddingRight: showScrollbar() ? 1 : 0,
+                }}
+                verticalScrollbarOptions={{
+                  paddingLeft: 1,
+                  visible: showScrollbar(),
+                  trackOptions: {
+                    backgroundColor: theme.backgroundElement,
+                    foregroundColor: theme.border,
+                  },
+                }}
+                stickyScroll={true}
+                stickyStart="bottom"
+                flexGrow={1}
+                scrollAcceleration={scrollAcceleration()}
+              >
+                <box height={1} />
+                <For each={messages()}>
+                  {(message, index) => (
+                    <Switch>
+                      <Match when={message.id === revert()?.messageID}>
+                        {(function () {
+                          const command = useCommandDialog()
+                          const [hover, setHover] = createSignal(false)
+                          const dialog = useDialog()
 
-                        const handleUnrevert = async () => {
-                          const confirmed = await DialogConfirm.show(
-                            dialog,
-                            "Confirm Redo",
-                            "Are you sure you want to restore the reverted messages?",
-                          )
-                          if (confirmed) {
-                            command.trigger("session.redo")
+                          const handleUnrevert = async () => {
+                            const confirmed = await DialogConfirm.show(
+                              dialog,
+                              "Confirm Redo",
+                              "Are you sure you want to restore the reverted messages?",
+                            )
+                            if (confirmed) {
+                              command.trigger("session.redo")
+                            }
                           }
-                        }
 
-                        return (
-                          <box
-                            onMouseOver={() => setHover(true)}
-                            onMouseOut={() => setHover(false)}
-                            onMouseUp={handleUnrevert}
-                            marginTop={1}
-                            flexShrink={0}
-                            border={["left"]}
-                            customBorderChars={SplitBorder.customBorderChars}
-                            borderColor={theme.backgroundPanel}
-                          >
+                          return (
                             <box
-                              paddingTop={1}
-                              paddingBottom={1}
-                              paddingLeft={2}
-                              backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                              onMouseOver={() => setHover(true)}
+                              onMouseOut={() => setHover(false)}
+                              onMouseUp={handleUnrevert}
+                              marginTop={1}
+                              flexShrink={0}
+                              border={["left"]}
+                              customBorderChars={SplitBorder.customBorderChars}
+                              borderColor={theme.backgroundPanel}
                             >
-                              <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
-                              <text fg={theme.textMuted}>
-                                <span style={{ fg: theme.text }}>{keybind.print("messages_redo")}</span> or /redo to
-                                restore
-                              </text>
-                              <Show when={revert()!.diffFiles?.length}>
-                                <box marginTop={1}>
-                                  <For each={revert()!.diffFiles}>
-                                    {(file) => (
-                                      <text fg={theme.text}>
-                                        {file.filename}
-                                        <Show when={file.additions > 0}>
-                                          <span style={{ fg: theme.diffAdded }}> +{file.additions}</span>
-                                        </Show>
-                                        <Show when={file.deletions > 0}>
-                                          <span style={{ fg: theme.diffRemoved }}> -{file.deletions}</span>
-                                        </Show>
-                                      </text>
-                                    )}
-                                  </For>
-                                </box>
-                              </Show>
+                              <box
+                                paddingTop={1}
+                                paddingBottom={1}
+                                paddingLeft={2}
+                                backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                              >
+                                <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
+                                <text fg={theme.textMuted}>
+                                  <span style={{ fg: theme.text }}>{keybind.print("messages_redo")}</span> or /redo to
+                                  restore
+                                </text>
+                                <Show when={revert()!.diffFiles?.length}>
+                                  <box marginTop={1}>
+                                    <For each={revert()!.diffFiles}>
+                                      {(file) => (
+                                        <text fg={theme.text}>
+                                          {file.filename}
+                                          <Show when={file.additions > 0}>
+                                            <span style={{ fg: theme.diffAdded }}> +{file.additions}</span>
+                                          </Show>
+                                          <Show when={file.deletions > 0}>
+                                            <span style={{ fg: theme.diffRemoved }}> -{file.deletions}</span>
+                                          </Show>
+                                        </text>
+                                      )}
+                                    </For>
+                                  </box>
+                                </Show>
+                              </box>
                             </box>
-                          </box>
-                        )
-                      })()}
-                    </Match>
-                    <Match when={revert()?.messageID && message.id >= revert()!.messageID}>
-                      <></>
-                    </Match>
-                    <Match when={message.role === "user"}>
-                      <UserMessage
-                        index={index()}
-                        onMouseUp={() => {
-                          if (renderer.getSelection()?.getSelectedText()) return
-                          dialog.replace(() => (
-                            <DialogMessage
-                              messageID={message.id}
-                              sessionID={route.sessionID}
-                              setPrompt={(promptInfo) => prompt?.set(promptInfo)}
-                            />
-                          ))
-                        }}
-                        message={message as UserMessage}
-                        parts={sync.data.part[message.id] ?? []}
-                        queued={queued()}
-                        steered={steered()}
-                      />
-                    </Match>
-                    <Match when={message.role === "assistant" && message.finish !== "steered"}>
-                      <AssistantMessage
-                        last={lastAssistant()?.id === message.id}
-                        message={message as AssistantMessage}
-                        parts={sync.data.part[message.id] ?? []}
-                      />
-                    </Match>
-                  </Switch>
-                )}
-              </For>
-            </scrollbox>
+                          )
+                        })()}
+                      </Match>
+                      <Match when={revert()?.messageID && message.id >= revert()!.messageID}>
+                        <></>
+                      </Match>
+                      <Match when={message.role === "user"}>
+                        <UserMessage
+                          index={index()}
+                          onMouseUp={() => {
+                            if (renderer.getSelection()?.getSelectedText()) return
+                            dialog.replace(() => (
+                              <DialogMessage
+                                messageID={message.id}
+                                sessionID={route.sessionID}
+                                setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+                              />
+                            ))
+                          }}
+                          message={message as UserMessage}
+                          parts={sync.data.part[message.id] ?? []}
+                          queued={queued()}
+                          steered={steered()}
+                        />
+                      </Match>
+                      <Match when={message.role === "assistant" && message.finish !== "steered"}>
+                        <AssistantMessage
+                          last={lastAssistant()?.id === message.id}
+                          message={message as AssistantMessage}
+                          parts={sync.data.part[message.id] ?? []}
+                        />
+                      </Match>
+                    </Switch>
+                  )}
+                </For>
+              </scrollbox>
+            </Show>
             <box flexShrink={0}>
               <Show when={permissions().length > 0}>
                 <PermissionPrompt request={permissions()[0]} />
