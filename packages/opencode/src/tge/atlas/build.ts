@@ -94,12 +94,12 @@ export function build(pg: PlacedGraph, cellW: number, cellH: number, selectedId?
     const b = idx.get(e.to)
     if (!a || !b) continue
 
-    // Compute curvature — all edges arc for organic constellation feel.
-    // Alternate sign so adjacent edges bow opposite directions.
+    // Compute curvature — subtle arc for organic constellation feel.
+    // Cap at 40px so long edges don't curve too aggressively.
     const dx = b.px - a.px
     const dy = b.py - a.py
     const dist = Math.sqrt(dx * dx + dy * dy)
-    const mag = dist * 0.25
+    const mag = Math.min(dist * 0.12, 40)
     const sign = ei % 2 === 0 ? 1 : -1
     const curve = mag * sign
 

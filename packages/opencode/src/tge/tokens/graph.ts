@@ -18,18 +18,18 @@ export const graph = {
   /** Small node radius (ring 2-3) — ~2 cells wide */
   smallRadius: 8,
 
-  /** Edge line widths at 8x */
-  edgeStrong: 8,
-  edgeNormal: 5,
-  edgeWeak: 3,
+  /** Edge line widths in screen pixels */
+  edgeStrong: 3,
+  edgeNormal: 2,
+  edgeWeak: 2,
 
   /** Halo glow around center node — ~8 cells radius */
   haloRadius: 32,
   haloColor: alpha(palette.thread, 0x70),
 
   /** Orbit ring guides (concentric ellipses behind nodes) */
-  orbitWidth: 3,
-  orbitColor: alpha(palette.borderBase, 0x45),
+  orbitWidth: 5,
+  orbitColor: alpha(palette.borderStrong, 0x60),
 
   /** Cluster halo */
   clusterHaloRadius: 24,
@@ -47,10 +47,10 @@ export const graph = {
     child: palette.thread,
   },
 
-  /** Edge colors — brighter than border tokens to survive downsample + quadrant rendering */
+  /** Edge colors — visible against void black background */
   edge: {
-    strong: palette.borderFocus,
-    normal: palette.borderStrong,
-    weak: palette.borderBase,
+    strong: alpha(palette.muted, 0xcc), // #52587a at 80% — visible but subtle
+    normal: alpha(palette.borderFocus, 0xaa), // #3e4a68 at 67%
+    weak: alpha(palette.borderStrong, 0x70), // #303850 at 44%
   },
 } as const

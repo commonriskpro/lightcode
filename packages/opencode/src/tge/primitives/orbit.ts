@@ -4,6 +4,9 @@
  * Paints the faint orbit lines behind graph nodes, giving the Atlas Field
  * its constellation / planetary system aesthetic.
  *
+ * Uses the analytical stroked() ellipse renderer — exact SDF per pixel,
+ * no stamp overlap issues.
+ *
  * Scene data:
  *   node.data.rx = number (horizontal radius in screen pixels)
  *   node.data.ry = number (vertical radius in screen pixels)

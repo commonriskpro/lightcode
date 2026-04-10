@@ -36,10 +36,7 @@ export function edge(buf: PixelBuffer, nd: SceneNode) {
 
   const dimmed = (nd.data.dimmed as boolean) ?? false
   const base = graph.edge[weight] ?? graph.edge.normal
-  // Boost edge alpha so they survive downsample + quadrant rendering.
-  // Edge base colors are dark (close to void black), so full alpha helps contrast.
-  const color = dimmed ? alpha(base, 0x30) : base
-  const adjusted = weight === "weak" ? alpha(color, 0x80) : color
+  const adjusted = dimmed ? alpha(base, 0x28) : base
   const w = WIDTH[weight]
 
   if (curve === 0 || Math.abs(curve) < 1) {
